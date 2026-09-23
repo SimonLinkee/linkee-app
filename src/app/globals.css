@@ -30,6 +30,10 @@
   --client-req-bg: rgba(124, 92, 217, 0.14);
   --warn: #c98500;
   --warn-bg: #fbf0dc;
+  --stock-accent: #b97600;
+  --stock-accent-bg: rgba(237, 161, 0, 0.16);
+  --exc-accent: #1f93a8;
+  --exc-accent-bg: rgba(79, 193, 214, 0.18);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -61,6 +65,10 @@
     --client-req-bg: rgba(164, 140, 232, 0.2);
     --warn: #e0a63c;
     --warn-bg: #3a2e12;
+    --stock-accent: #e0a63c;
+    --stock-accent-bg: rgba(224, 166, 60, 0.18);
+    --exc-accent: #5fd3e6;
+    --exc-accent-bg: rgba(95, 211, 230, 0.18);
   }
 }
 
@@ -92,6 +100,10 @@
   --client-req-bg: rgba(164, 140, 232, 0.2);
   --warn: #e0a63c;
   --warn-bg: #3a2e12;
+  --stock-accent: #e0a63c;
+  --stock-accent-bg: rgba(224, 166, 60, 0.18);
+  --exc-accent: #5fd3e6;
+  --exc-accent-bg: rgba(95, 211, 230, 0.18);
 }
 
 @theme inline {
