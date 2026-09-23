@@ -28,6 +28,8 @@
   --seq-tint: rgba(42, 120, 214, 0.14);
   --client-req: #7c5cd9;
   --client-req-bg: rgba(124, 92, 217, 0.14);
+  --warn: #c98500;
+  --warn-bg: #fbf0dc;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -57,6 +59,8 @@
     --seq-tint: rgba(85, 152, 231, 0.18);
     --client-req: #a48ce8;
     --client-req-bg: rgba(164, 140, 232, 0.2);
+    --warn: #e0a63c;
+    --warn-bg: #3a2e12;
   }
 }
 
@@ -86,6 +90,8 @@
   --seq-tint: rgba(85, 152, 231, 0.18);
   --client-req: #a48ce8;
   --client-req-bg: rgba(164, 140, 232, 0.2);
+  --warn: #e0a63c;
+  --warn-bg: #3a2e12;
 }
 
 @theme inline {
