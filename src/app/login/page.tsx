@@ -22,7 +22,7 @@ export default function LoginPage() {
       setError("Email ou mot de passe incorrect.");
       return;
     }
-    router.push("/dashboard");
+    router.push("/"); // the proxy sends each role to its own space
     router.refresh();
   }
 
