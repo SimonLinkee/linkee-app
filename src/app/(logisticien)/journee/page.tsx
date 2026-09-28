@@ -1,13 +1,31 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 type Kind = "partner" | "dropoff" | "stock" | "exceptionnel";
-type ResultItem = { denree?: string; name?: string; kg: number; from?: string };
+type ResultItem = { denree?: string; name?: string; kg: number; from?: string; sourceId?: string };
 type StopResult = { items?: ResultItem[]; totalKg?: number; photos?: number; motif?: string };
+type ChecklistItem = { id: string; label: string };
+type Rel = { name: string; category: string | null; address: string | null; fiche: Record<string, unknown> | null };
+type DbItem = { denree: string | null; name: string | null; kg: number; source_collecte_id: string | null };
+type DbStop = {
+  id: string;
+  kind: string;
+  label: string | null;
+  comment: string | null;
+  status: string;
+  motif: string | null;
+  photos_count: number;
+  scheduled_time: string | null;
+  partners: Rel | Rel[] | null;
+  beneficiaries: Rel | Rel[] | null;
+  collecte_items: DbItem[] | null;
+};
+type WeekRow = { scheduled_date: string; scheduled_time: string | null; status: string; label: string | null; partners: { name: string; category: string | null } | { name: string; category: string | null }[] | null; beneficiaries: { name: string; category: string | null } | { name: string; category: string | null }[] | null };
 type Stop = {
+  id: string;
   time: string;
   name: string;
   cat: string;
@@ -23,25 +41,59 @@ type Stop = {
 };
 
 const DENREE_OPTIONS = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
+const DEPOT_ADDRESS = "110 Rue du Companet, 69140 Rillieux-la-Pape";
 
-const INITIAL_STOPS: Stop[] = [
-  { time: "08:30", name: "Boulangerie des Terreaux", cat: "Boulangerie", access: ["digicode"], status: "todo", kind: "partner", address: "12 Rue des Capucins, 69001 Lyon", accessDetails: "Digicode 2468B, sonner à l'interphone « Linkee ». Livraison par la porte arrière, dans la cour." },
-  { time: "09:15", name: "Supermarché Presqu'île", cat: "Supermarché", access: ["quai", "ascenseur"], status: "todo", kind: "partner", address: "48 Rue de la République, 69002 Lyon", accessDetails: "Quai de livraison à l'arrière (hauteur max. 2,10 m). Demander M. Belkacem à l'accueil." },
-  { time: "10:00", name: "Traiteur Lumière", cat: "Traiteur", access: ["digicode"], status: "todo", kind: "partner", address: "5 Rue Romarin, 69001 Lyon", accessDetails: "Digicode 1479A. 2ème étage, ascenseur au fond du couloir à droite." },
-  { time: "10:15", name: "Épicerie de la Guillotière", cat: "Supermarché", access: [], status: "todo", kind: "exceptionnel", address: "12 Rue de Marseille, 69007 Lyon", comment: "Collecte exceptionnelle ajoutée par l'admin — surplus signalé après un événement en boutique. Prévoir un carton supplémentaire." },
-  { time: "11:30", name: "Hôtel des Brotteaux", cat: "Hôtel", access: ["quai"], status: "todo", kind: "partner", address: "1 Place Jules Ferry, 69006 Lyon", accessDetails: "Accès par le quai de livraison côté cour. Horaire strict : 11h-12h uniquement." },
-  { time: "12:00", name: "Épicerie Sociale Saint-Camille de Vaise", cat: "Association partenaire", access: [], status: "todo", kind: "dropoff", address: "26 Rue du Bourbonnais, 69009 Lyon", accessDetails: "Sonner à l'accueil, dépose directement au réfectoire.", allowedTypes: ["Produits frais", "Plats préparés"] },
-  { time: "14:00", name: "Grossiste Rhône Frais", cat: "Grossiste", access: ["quai", "horaire"], status: "todo", kind: "partner", address: "22 Avenue Jean Mermoz, 69008 Lyon", accessDetails: "Quai de livraison n°3. Créneau 13h30-15h obligatoire, badge visiteur à l'accueil." },
-  {
-    time: "15:30", name: "Entrepôt Linkee", cat: "Dépôt stock", access: [], status: "todo", kind: "stock", address: "110 Rue du Companet, 69140 Rillieux-la-Pape",
-    accessDetails: "Ouverture avec badge personnel. Case n°4 réservée aux sorties du jour.",
-    presetItems: [{ name: "Riz / pâtes", kg: 15 }, { name: "Conserves de légumes", kg: 25 }, { name: "Eau en bouteille", kg: 40 }, { name: "Kits d'hygiène", kg: 8 }],
-  },
-];
+function one<T>(v: T | T[] | null | undefined): T | null {
+  return Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
+}
+const isoDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const dbWeekday = (d: Date) => (d.getDay() === 0 ? 7 : d.getDay());
+const ACCESS_KEY_MAP: Record<string, string> = { digicode: "digicode", quai: "quai", camion: "camion", etage: "ascenseur", horaire: "horaire" };
 
-const MAP_LAYOUT = [{ x: 30, y: 42 }, { x: 102, y: 78 }, { x: 172, y: 34 }, { x: 210, y: 130 }, { x: 242, y: 82 }, { x: 322, y: 40 }, { x: 262, y: 172 }, { x: 96, y: 214 }];
+/** Positions for the schematic map: spread the stops on a loose zig-zag. */
+function mapPoint(i: number) {
+  const cols = 4;
+  const row = Math.floor(i / cols);
+  const col = i % cols;
+  const x = 40 + (row % 2 === 0 ? col : cols - 1 - col) * 95;
+  return { x, y: 40 + row * 62 };
+}
 
-const DEP_CHECKLIST = ["Vérifier le niveau de carburant", "Charger les caisses et les glacières", "Contrôler la pression des pneus"];
+function stockPresets(items: { name: string; kg: number }[]) {
+  return items.filter((it) => it.kg > 0);
+}
+
+function rowToStop(r: DbStop, all: DbStop[]): Stop {
+  const rel = one(r.partners) ?? one(r.beneficiaries);
+  const fiche = (rel?.fiche ?? {}) as { access?: Record<string, boolean>; accessNote?: string; denrees?: Record<string, boolean> };
+  const kind: Kind = r.kind === "dropoff" ? "dropoff" : r.kind === "stock" ? "stock" : r.kind === "partner" ? "partner" : "exceptionnel";
+  const items: ResultItem[] = (r.collecte_items ?? []).map((it) => {
+    const src = it.source_collecte_id ? all.find((x) => x.id === it.source_collecte_id) : null;
+    const srcRel = src ? (one(src.partners) ?? one(src.beneficiaries)) : null;
+    return { denree: it.denree ?? undefined, name: it.name ?? undefined, kg: Number(it.kg), sourceId: it.source_collecte_id ?? undefined, from: srcRel?.name ?? src?.label ?? undefined };
+  });
+  const status = r.status === "collecte" ? "collecte" : r.status === "annule" ? "annule" : "todo";
+  return {
+    id: r.id,
+    time: r.scheduled_time ? r.scheduled_time.slice(0, 5) : "",
+    name: rel?.name ?? r.label ?? "Point de tournée",
+    cat: rel?.category ?? (r.kind === "stock" ? "Dépôt stock" : ""),
+    access: Object.entries(fiche.access ?? {}).filter(([, on]) => on).map(([k]) => ACCESS_KEY_MAP[k] ?? k),
+    status,
+    kind,
+    address: rel?.address ?? (r.kind === "stock" ? DEPOT_ADDRESS : ""),
+    accessDetails: fiche.accessNote || undefined,
+    comment: r.comment || undefined,
+    allowedTypes: kind === "dropoff" ? Object.entries(fiche.denrees ?? {}).filter(([, on]) => on).map(([k]) => k) : undefined,
+    result:
+      status === "collecte"
+        ? { items, totalKg: Math.round(items.reduce((s, it) => s + it.kg, 0) * 10) / 10, photos: r.photos_count }
+        : status === "annule"
+          ? { motif: r.motif ?? "" }
+          : undefined,
+  };
+}
+
 const TRUCK_SLOTS = [
   { key: "front", label: "Face avant" }, { key: "back", label: "Face arrière" }, { key: "left", label: "Côté gauche" },
   { key: "right", label: "Côté droit" }, { key: "cabin", label: "Intérieur cabine" }, { key: "hold", label: "Intérieur benne" },
@@ -52,49 +104,9 @@ const TRUCK_REVISIONS = [
   { label: "Révision 3 mois", sub: "Prochaine échéance : 15 décembre 2026" },
 ];
 
-const POOL = [
-  { t: "08:30", n: "Boulangerie des Terreaux", c: "Boulangerie" },
-  { t: "09:15", n: "Supermarché Presqu'île", c: "Supermarché" },
-  { t: "09:45", n: "Boulangerie Croix-Rousse", c: "Boulangerie" },
-  { t: "10:30", n: "Traiteur Lumière", c: "Traiteur" },
-  { t: "11:00", n: "Hôtel des Brotteaux", c: "Hôtel" },
-  { t: "11:45", n: "Épicerie Sociale Saint-Camille de Vaise", c: "Association partenaire" },
-  { t: "13:45", n: "Grossiste Rhône Frais", c: "Grossiste" },
-  { t: "14:30", n: "Supermarché Monplaisir", c: "Supermarché" },
-  { t: "15:15", n: "Restaurant Le Vieux Lyon", c: "Restauration rapide" },
-  { t: "16:00", n: "Entrepôt Linkee", c: "Dépôt stock" },
-];
-function poolSlice(count: number, offset: number) {
-  return Array.from({ length: count }, (_, k) => POOL[(offset + k) % POOL.length]);
-}
-const WEEK_TEMPLATE = [
-  { dow: "Lun", title: "Tournée standard", count: 5, offset: 0 },
-  { dow: "Mar", title: "Tournée standard", count: 5, offset: 1 },
-  { dow: "Mer", title: "Tournée standard", count: 7, offset: 3 },
-  { dow: "Jeu", title: "Tournée + créneau exceptionnel", count: 6, offset: 0 },
-  { dow: "Ven", title: "Tournée standard", count: 5, offset: 4 },
-  { dow: "Sam", title: "Tournée réduite", count: 3, offset: 7 },
-];
-function buildWeek(now: Date) {
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
-  const todayKey = now.toDateString();
-  return WEEK_TEMPLATE.map((w, k) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + k);
-    const isToday = d.toDateString() === todayKey;
-    return {
-      dow: w.dow,
-      dom: String(d.getDate()),
-      title: isToday ? "Aujourd'hui" : w.title,
-      status: isToday ? ("today" as const) : d < now ? ("past" as const) : ("upcoming" as const),
-      stops: poolSlice(w.count, w.offset),
-    };
-  });
-}
-
-const ACCESS_LABELS: Record<string, string> = { digicode: "Digicode", quai: "Quai de livraison", ascenseur: "Ascenseur", horaire: "Horaire strict" };
+const ACCESS_LABELS: Record<string, string> = { digicode: "Digicode", quai: "Quai de livraison", camion: "Accès camion", ascenseur: "Ascenseur / étage", horaire: "Horaire strict" };
 const ACCESS_PATHS: Record<string, ReactNode> = {
+  camion: <><rect x="2" y="9" width="12" height="8" rx="1" /><path d="M14 12 H18 L21 15 V17 H14 Z" /><circle cx="6.5" cy="18.5" r="1.4" /><circle cx="18" cy="18.5" r="1.4" /></>,
   digicode: <><rect x="5" y="3" width="14" height="18" rx="2" /><circle cx="9" cy="8" r="1" /><circle cx="15" cy="8" r="1" /><circle cx="9" cy="13" r="1" /><circle cx="15" cy="13" r="1" /></>,
   quai: <><rect x="2" y="9" width="12" height="8" rx="1" /><path d="M14 12 H18 L21 15 V17 H14 Z" /><circle cx="6.5" cy="18.5" r="1.4" /><circle cx="18" cy="18.5" r="1.4" /></>,
   ascenseur: <><rect x="6" y="3" width="12" height="18" rx="1.5" /><path d="M10 8 L12 6 L14 8 M10 14 L12 16 L14 14" /></>,
@@ -194,7 +206,7 @@ function StopPanel({ stops, index, onDone }: { stops: Stop[]; index: number; onD
       dropChecked.forEach((key) => {
         const [p, it] = key.split(":").map(Number);
         const src = stops[p].result!.items![it];
-        dropped.push({ denree: src.denree, kg: src.kg, from: stops[p].name });
+        dropped.push({ denree: src.denree, kg: src.kg, from: stops[p].name, sourceId: stops[p].id });
       });
       if (dropped.length < 1 || photos < 1) return setErrCollecte("Cochez au moins un produit à laisser ici, et ajoutez une photo.");
       onDone({ items: dropped, totalKg: Math.round(dropped.reduce((sum, it) => sum + it.kg, 0) * 10) / 10, photos }, "collecte");
@@ -371,7 +383,15 @@ export default function JourneePage() {
   const router = useRouter();
   const [view, setView] = useState<"jour" | "semaine" | "camion">("jour");
   const [dayState, setDayState] = useState<"idle" | "running" | "closed">("idle");
-  const [stops, setStops] = useState<Stop[]>(INITIAL_STOPS);
+  const supabase = useMemo(() => createClient(), []);
+  const [stops, setStops] = useState<Stop[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [cityId, setCityId] = useState<string | null>(null);
+  const [firstName, setFirstName] = useState("");
+  const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
+  const [weekRows, setWeekRows] = useState<WeekRow[]>([]);
+  const [vehicle, setVehicle] = useState<{ name: string; plate: string | null } | null>(null);
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   const [depChecked, setDepChecked] = useState<Set<number>>(new Set());
   const [mapOpen, setMapOpen] = useState(false);
@@ -387,7 +407,7 @@ export default function JourneePage() {
   const [receipts, setReceipts] = useState(0);
   const timer = useRef<number | null>(null);
 
-  const depDone = depChecked.size === DEP_CHECKLIST.length;
+  const depDone = depChecked.size === checklist.length;
   const doneCount = stops.filter((s) => s.status !== "todo").length;
   const remaining = stops.length - doneCount;
   const breakIdx = stops.findIndex((s) => s.time >= "13:30");
@@ -395,29 +415,132 @@ export default function JourneePage() {
   const timerText = `${pad(Math.floor(elapsed / 3600))}:${pad(Math.floor((elapsed % 3600) / 60))}:${pad(elapsed % 60)}`;
   const [now] = useState(() => new Date());
   const today = now.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
-  const week = buildWeek(now);
+  const iso = isoDate(now);
 
+  const week = (() => {
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    const names = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+    return names
+      .map((dow, k) => {
+        const d = new Date(monday);
+        d.setDate(monday.getDate() + k);
+        const key = isoDate(d);
+        const rows = weekRows.filter((r) => r.scheduled_date === key);
+        return {
+          dow,
+          dom: String(d.getDate()),
+          key,
+          title: key === iso ? "Aujourd'hui" : rows.length ? "Tournée planifiée" : "Pas de tournée",
+          status: key === iso ? ("today" as const) : key < iso ? ("past" as const) : ("upcoming" as const),
+          stops: rows.map((r) => ({
+            t: r.scheduled_time ? r.scheduled_time.slice(0, 5) : "—",
+            n: one(r.partners)?.name ?? one(r.beneficiaries)?.name ?? r.label ?? "Point",
+            c: one(r.partners)?.category ?? one(r.beneficiaries)?.category ?? (r.label ? "Dépôt stock" : ""),
+          })),
+        };
+      })
+      .filter((w) => w.dow !== "Dim" || w.stops.length > 0);
+  })();
+
+  function startTimer(fromSeconds: number) {
+    if (timer.current) window.clearInterval(timer.current);
+    setElapsed(fromSeconds);
+    timer.current = window.setInterval(() => setElapsed((e) => e + 1), 1000);
+  }
   useEffect(() => () => { if (timer.current) window.clearInterval(timer.current); }, []);
+
+  useEffect(() => {
+    (async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      const uid = auth.user?.id;
+      if (!uid) return;
+      setUserId(uid);
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      const [prof, col, tpl, ovr, stock, veh, ses, wk] = await Promise.all([
+        supabase.from("profiles").select("city_id,full_name,email").eq("id", uid).maybeSingle(),
+        supabase
+          .from("collectes")
+          .select("id,kind,label,comment,status,motif,photos_count,scheduled_time,partners(name,category,address,fiche),beneficiaries(name,category,address,fiche),collecte_items(denree,name,kg,source_collecte_id)")
+          .eq("scheduled_date", iso)
+          .order("sort_order"),
+        supabase.from("checklist_templates").select("items").eq("weekday", dbWeekday(now)).maybeSingle(),
+        supabase.from("checklist_overrides").select("items").eq("day", iso).maybeSingle(),
+        supabase.from("stock_items").select("name,kg").order("name"),
+        supabase.from("vehicles").select("name,plate").limit(1).maybeSingle(),
+        supabase.from("day_sessions").select("started_at,closed_at").eq("logisticien_id", uid).eq("day", iso).maybeSingle(),
+        supabase
+          .from("collectes")
+          .select("scheduled_date,scheduled_time,status,label,partners(name,category),beneficiaries(name,category)")
+          .gte("scheduled_date", isoDate(monday))
+          .lte("scheduled_date", isoDate(sunday))
+          .order("scheduled_date")
+          .order("sort_order"),
+      ]);
+      setCityId(prof.data?.city_id ?? null);
+      setFirstName(((prof.data?.full_name || prof.data?.email?.split("@")[0] || "") as string).split(" ")[0]);
+      if (col.error) showToast("Chargement impossible : " + col.error.message);
+      const rows = (col.data ?? []) as unknown as DbStop[];
+      const presets = stockPresets(((stock.data ?? []) as { name: string; kg: number }[]).map((s) => ({ name: s.name, kg: Number(s.kg) })));
+      setStops(rows.map((r) => rowToStop(r, rows)).map((s) => (s.kind === "stock" ? { ...s, presetItems: presets } : s)));
+      setChecklist((ovr.data?.items ?? tpl.data?.items ?? []) as ChecklistItem[]);
+      setVehicle((veh.data as { name: string; plate: string | null } | null) ?? null);
+      setWeekRows((wk.data ?? []) as unknown as WeekRow[]);
+      const s = ses.data as { started_at: string | null; closed_at: string | null } | null;
+      if (s?.closed_at) {
+        setDayState("closed");
+        const secs = s.started_at ? Math.floor((new Date(s.closed_at).getTime() - new Date(s.started_at).getTime()) / 1000) : 0;
+        setClosedText(`Journée clôturée — ${pad(Math.floor(secs / 3600))}:${pad(Math.floor((secs % 3600) / 60))}:${pad(secs % 60)} travaillées.`);
+      } else if (s?.started_at) {
+        setDayState("running");
+        startTimer(Math.max(0, Math.floor((Date.now() - new Date(s.started_at).getTime()) / 1000)));
+      }
+      setLoading(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase]);
 
   function showToast(msg: string) {
     setToast(msg);
     window.setTimeout(() => setToast(null), 2200);
   }
-  function startDay() {
+  async function startDay() {
+    if (!userId || !cityId) return showToast("Compte sans ville : contacte l'administrateur.");
+    const { error } = await supabase
+      .from("day_sessions")
+      .upsert({ city_id: cityId, logisticien_id: userId, day: iso, checklist_done: checklist.map((c) => c.id), started_at: new Date().toISOString(), closed_at: null }, { onConflict: "logisticien_id,day" });
+    if (error) return showToast("Démarrage impossible : " + error.message);
     setDayState("running");
-    setElapsed(0);
-    timer.current = window.setInterval(() => setElapsed((e) => e + 1), 1000);
-    const now = new Date();
-    showToast(`Journée démarrée à ${pad(now.getHours())}:${pad(now.getMinutes())}.`);
+    startTimer(0);
+    const n = new Date();
+    showToast(`Journée démarrée à ${pad(n.getHours())}:${pad(n.getMinutes())}.`);
   }
-  function closeDay() {
+  async function closeDay() {
+    if (!userId) return;
+    const { error } = await supabase.from("day_sessions").update({ closed_at: new Date().toISOString() }).eq("logisticien_id", userId).eq("day", iso);
+    if (error) return showToast("Clôture impossible : " + error.message);
     if (timer.current) window.clearInterval(timer.current);
     setClosedText(`Journée clôturée — ${timerText} travaillées. La journée de demain reste verrouillée jusqu'à son ouverture.`);
     setDayState("closed");
     setOpenIdx(null);
   }
-  function finishStop(i: number, result: StopResult, status: "collecte" | "annule") {
-    setStops((prev) => prev.map((s, idx) => (idx === i ? { ...s, status, result } : s)));
+  async function finishStop(i: number, result: StopResult, status: "collecte" | "annule") {
+    const s = stops[i];
+    const { error } = await supabase
+      .from("collectes")
+      .update({ status, motif: result.motif ?? null, photos_count: result.photos ?? 0, done_at: new Date().toISOString(), logisticien_id: userId })
+      .eq("id", s.id);
+    if (error) return showToast("Enregistrement impossible : " + error.message);
+    if (status === "collecte" && result.items?.length) {
+      const { error: e2 } = await supabase.from("collecte_items").insert(
+        result.items.map((it) => ({ collecte_id: s.id, denree: it.denree ?? null, name: it.name ?? null, kg: it.kg, source_collecte_id: it.sourceId ?? null })),
+      );
+      if (e2) return showToast("Poids non enregistrés : " + e2.message);
+    }
+    setStops((prev) => prev.map((x, idx) => (idx === i ? { ...x, status, result } : x)));
     setOpenIdx(null);
   }
   async function logout() {
@@ -426,19 +549,19 @@ export default function JourneePage() {
     router.refresh();
   }
 
-  const pts = stops.map((s, i) => ({ ...(MAP_LAYOUT[i] || { x: 20 + i * 40, y: 130 }), kind: s.kind, name: s.name, num: i + 1 }));
+  const pts = stops.map((s, i) => ({ ...mapPoint(i), kind: s.kind, name: s.name, num: i + 1 }));
   const todayWeekStops = stops.map((s) => ({ t: s.time, n: s.name, c: s.cat }));
 
   return (
     <div className="relative">
       <div className="flex items-center justify-between pt-2.5 pb-3.5">
         <div>
-          <div className="font-display text-2xl leading-none font-black">Bonjour Akram</div>
+          <div className="font-display text-2xl leading-none font-black">Bonjour{firstName ? ` ${firstName}` : ""}</div>
           <div className="mt-[3px] text-[12.5px] text-[var(--slate)] capitalize">{today}</div>
         </div>
         <div className="flex items-center gap-2.5">
           <button type="button" onClick={logout} className="text-xs font-semibold text-[var(--slate)] underline">Déconnexion</button>
-          <span className="flex h-[38px] w-[38px] items-center justify-center rounded-full bg-[var(--turquoise)] font-display text-[15px] font-bold text-[#04262e]">A</span>
+          <span className="flex h-[38px] w-[38px] items-center justify-center rounded-full bg-[var(--turquoise)] font-display text-[15px] font-bold text-[#04262e]">{(firstName || "?").charAt(0).toUpperCase()}</span>
         </div>
       </div>
 
@@ -459,16 +582,18 @@ export default function JourneePage() {
             </div>
           )}
 
-          {dayState === "idle" && (
+          {loading && <div className="py-6 text-center text-[13px] text-[var(--slate)]">Chargement de ta journée…</div>}
+
+          {!loading && dayState === "idle" && checklist.length > 0 && (
             <div className="mb-[14px] rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-[18px] shadow-[var(--shadow)]">
               <span className="mb-2 inline-block rounded-[40px] bg-[var(--good-bg)] px-2.5 py-1 text-[10.5px] font-bold tracking-[0.03em] text-[var(--good)] uppercase">À faire avant de commencer</span>
               <h3 className="mb-2 font-display text-[17px] font-extrabold">Checklist de départ</h3>
               <div className="flex flex-col gap-2">
-                {DEP_CHECKLIST.map((label, idx) => (
-                  <CheckRow key={idx} label={label} checked={depChecked.has(idx)} onChange={() => setDepChecked(toggle(depChecked, idx))} />
+                {checklist.map((item, idx) => (
+                  <CheckRow key={item.id} label={item.label} checked={depChecked.has(idx)} onChange={() => setDepChecked(toggle(depChecked, idx))} />
                 ))}
               </div>
-              <div className="mt-2 text-center text-[11.5px] text-[var(--slate)]">{depDone ? "Checklist complète — prête à démarrer." : `${depChecked.size} / ${DEP_CHECKLIST.length} points validés.`}</div>
+              <div className="mt-2 text-center text-[11.5px] text-[var(--slate)]">{depDone ? "Checklist complète — prête à démarrer." : `${depChecked.size} / ${checklist.length} points validés.`}</div>
             </div>
           )}
 
@@ -477,7 +602,7 @@ export default function JourneePage() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="font-display text-base font-extrabold">{dayState === "running" ? "Journée en cours" : "Journée pas encore démarrée"}</div>
-                  <div className="mt-[3px] text-xs text-[var(--panel-fg-dim)]">{stops.length} arrêts prévus aujourd&apos;hui</div>
+                  <div className="mt-[3px] text-xs text-[var(--panel-fg-dim)]">{stops.length === 0 && !loading ? "Aucun arrêt planifié aujourd'hui" : `${stops.length} arrêts prévus aujourd'hui`}</div>
                 </div>
                 {dayState === "running" && <div className="font-display text-[26px] font-extrabold tabular-nums">{timerText}</div>}
               </div>
@@ -485,7 +610,7 @@ export default function JourneePage() {
                 <>
                   <div className="relative">
                     {!depDone && <span title="Checklist de départ requise" className="absolute top-0 right-2.5 z-[2] flex h-[22px] w-[22px] -translate-y-[40%] items-center justify-center rounded-full border-2 border-[var(--navy-deep)] bg-[var(--critical)] text-xs font-extrabold text-white shadow">!</span>}
-                    <button type="button" disabled={!depDone} onClick={startDay} className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-[40px] bg-[var(--turquoise)] p-4 font-display text-[17px] font-bold text-[#04262e] disabled:cursor-not-allowed disabled:bg-white/[0.18] disabled:text-white/50">
+                    <button type="button" disabled={!depDone || loading} onClick={startDay} className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-[40px] bg-[var(--turquoise)] p-4 font-display text-[17px] font-bold text-[#04262e] disabled:cursor-not-allowed disabled:bg-white/[0.18] disabled:text-white/50">
                       <Icon className="h-[18px] w-[18px]" sw={2}><path d="M6 4 L20 12 L6 20 Z" /></Icon>
                       Démarrer ma journée
                     </button>
@@ -617,7 +742,7 @@ export default function JourneePage() {
                       </>
                     )}
                     {s.status === "collecte" && <div className="mt-2 border-t border-[var(--border)] pt-2 text-xs text-[var(--slate)]">{summary(s)}</div>}
-                    {s.status === "annule" && <div className="mt-2 border-t border-[var(--border)] pt-2 text-xs text-[var(--slate)]">Motif : <strong className="text-[var(--navy)]">{s.result?.motif}</strong></div>}
+                    {s.status === "annule" && <div className="mt-2 border-t border-[var(--border)] pt-2 text-xs text-[var(--slate)]">Motif : <strong className="text-[var(--navy)]">{s.result?.motif || "annulé depuis le planning"}</strong></div>}
 
                     {!done && dayState === "running" && openIdx === i && <StopPanel stops={stops} index={i} onDone={(r, st) => finishStop(i, r, st)} />}
                   </div>
@@ -677,7 +802,7 @@ export default function JourneePage() {
           <p className="mb-3 text-[12.5px] leading-[1.5] text-[var(--slate)]">Suivi de l&apos;entretien du camion. Tour complet en photo tous les lundis, comme un état des lieux de location, plus un contrôle d&apos;usage courant.</p>
           <div className="mb-4 flex items-center gap-2.5 rounded-[14px] bg-[var(--navy-deep)] px-3.5 py-[11px] text-[12.5px] text-[var(--panel-fg)]">
             <Icon className="h-5 w-5 flex-none" sw={1.7}><path d="M2 16 V8.5 L5 5 H12 V16" /><path d="M12 9 H16 L19.5 12.5 V16" /><path d="M1 16 H21" /><circle cx="6.5" cy="16" r="2.2" /><circle cx="16.5" cy="16" r="2.2" /></Icon>
-            <span><strong>Renault Master</strong> — EH-482-QT · véhicule qui vous est attribué</span>
+            <span>{vehicle ? <><strong>{vehicle.name}</strong>{vehicle.plate ? ` — ${vehicle.plate}` : ""} · véhicule de la flotte</> : "Aucun véhicule enregistré pour l'instant (ajoutez-en un dans Flotte)."}</span>
           </div>
 
           <div className="mb-3.5 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-[18px] shadow-[var(--shadow)]">

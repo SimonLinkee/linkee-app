@@ -1,45 +1,53 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { geocode, toKm, type LatLng } from "@/lib/geocode";
 
 type Kind = "partner" | "dropoff" | "stock" | "exceptionnel" | "demande_client";
 type Status = "planifie" | "annule";
 type Coords = { x: number; y: number };
-type Stop = { id: string; name: string; cat: string; kind: Kind; duration: number; coords: Coords; status: Status; comment?: string };
-type EnrichedStop = Stop & { scheduledTime: string | null; travelFromPrev: number; travelKmFromPrev: number; arrivalMin?: number };
+type Stop = {
+  id: string;
+  name: string;
+  cat: string;
+  kind: Kind;
+  duration: number;
+  status: Status;
+  dbStatus: string;
+  comment?: string;
+  address: string;
+  partnerId: string | null;
+  beneficiaryId: string | null;
+  label: string | null;
+};
+type StopC = Stop & { coords: Coords };
+type EnrichedStop = StopC & { scheduledTime: string | null; travelFromPrev: number; travelKmFromPrev: number; arrivalMin?: number };
 type ChecklistItem = { id: string; label: string };
+type Place = { key: string; kind: "partner" | "dropoff" | "stock"; name: string; cat: string; address: string; partnerId: string | null; beneficiaryId: string | null };
+type DbRel = { name: string; category: string | null; address: string | null };
+type DbCollecte = {
+  id: string;
+  kind: Kind;
+  partner_id: string | null;
+  beneficiary_id: string | null;
+  label: string | null;
+  comment: string | null;
+  status: string;
+  duration_min: number;
+  scheduled_time: string | null;
+  partners: DbRel | DbRel[] | null;
+  beneficiaries: DbRel | DbRel[] | null;
+};
+type WeekLine = { date: string; time: string | null; name: string; status: string };
 
 const DAY_START = 9 * 60;
 const LUNCH_START = 12 * 60 + 30;
 const LUNCH_END = 13 * 60 + 30;
 const HARD_LIMIT = 18 * 60;
-const DEPOT = { name: "Entrepôt Linkee", address: "110 Rue du Companet, 69140 Rillieux-la-Pape", coords: { x: 230, y: 15 } };
+const DEPOT = { name: "Entrepôt Linkee", address: "110 Rue du Companet, 69140 Rillieux-la-Pape" };
+const DEPOT_PLACE: Place = { key: "depot", kind: "stock", name: DEPOT.name, cat: "Dépôt stock", address: DEPOT.address, partnerId: null, beneficiaryId: null };
 
-const PLACE_POOL: Record<string, { cat: string; kind: "partner" | "dropoff" | "stock"; coords: Coords }> = {
-  "Boulangerie des Terreaux": { cat: "Boulangerie", kind: "partner", coords: { x: 40, y: 78 } },
-  "Supermarché Presqu'île": { cat: "Supermarché", kind: "partner", coords: { x: 130, y: 122 } },
-  "Traiteur Lumière": { cat: "Traiteur", kind: "partner", coords: { x: 220, y: 70 } },
-  "Hôtel des Brotteaux": { cat: "Hôtel", kind: "partner", coords: { x: 310, y: 126 } },
-  "Épicerie Sociale Saint-Camille de Vaise": { cat: "Association partenaire", kind: "dropoff", coords: { x: 410, y: 78 } },
-  "Grossiste Rhône Frais": { cat: "Grossiste", kind: "partner", coords: { x: 340, y: 230 } },
-  "Entrepôt Linkee": { cat: "Dépôt stock", kind: "stock", coords: { x: 230, y: 15 } },
-  "Boulangerie Croix-Rousse": { cat: "Boulangerie", kind: "partner", coords: { x: 70, y: 180 } },
-  "Épicerie de la Guillotière": { cat: "Supermarché", kind: "partner", coords: { x: 250, y: 170 } },
-  "Café des Terreaux": { cat: "Restauration rapide", kind: "partner", coords: { x: 20, y: 50 } },
-  "Marché des Capucins": { cat: "Grossiste", kind: "partner", coords: { x: 440, y: 180 } },
-};
-
-const DAY_TEMPLATES: Record<number, string[]> = {
-  1: ["Boulangerie des Terreaux", "Supermarché Presqu'île", "Traiteur Lumière", "Hôtel des Brotteaux", "Épicerie Sociale Saint-Camille de Vaise", "Grossiste Rhône Frais", "Entrepôt Linkee"],
-  2: ["Boulangerie Croix-Rousse", "Supermarché Presqu'île", "Traiteur Lumière", "Hôtel des Brotteaux", "Grossiste Rhône Frais"],
-  3: ["Boulangerie des Terreaux", "Épicerie de la Guillotière", "Traiteur Lumière", "Hôtel des Brotteaux", "Épicerie Sociale Saint-Camille de Vaise", "Grossiste Rhône Frais", "Entrepôt Linkee"],
-  4: ["Café des Terreaux", "Supermarché Presqu'île", "Traiteur Lumière", "Hôtel des Brotteaux", "Marché des Capucins"],
-  5: ["Boulangerie des Terreaux", "Supermarché Presqu'île", "Grossiste Rhône Frais", "Hôtel des Brotteaux"],
-  6: ["Boulangerie des Terreaux", "Épicerie de la Guillotière", "Entrepôt Linkee"],
-  0: [],
-};
-
-const EXTRA_PARTNERS = Object.keys(PLACE_POOL).map((name) => ({ name, cat: PLACE_POOL[name].cat, coords: PLACE_POOL[name].coords }));
 const DENREE_OPTIONS = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
 const DOW_NAMES = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
 const MONTH_NAMES = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
@@ -52,14 +60,15 @@ function isoDate(d: Date) {
 function fmtDayLabel(d: Date) {
   return `${DOW_NAMES[d.getDay()]} ${d.getDate()} ${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
 }
+// Crow-flight distance in km × 1.35 for the road, ≈ 23 km/h in town (parking included).
 function dist(a: Coords, b: Coords) {
   return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
 }
-function travelMinutes(a: Coords, b: Coords) {
-  return Math.round(dist(a, b) * 0.11);
-}
 function travelKm(a: Coords, b: Coords) {
-  return dist(a, b) * 0.045;
+  return dist(a, b) * 1.35;
+}
+function travelMinutes(a: Coords, b: Coords) {
+  return Math.round(travelKm(a, b) * 2.6);
 }
 function fmtTime(mins: number) {
   const h = Math.floor(mins / 60);
@@ -71,22 +80,45 @@ function fmtDuration(mins: number) {
   const m = mins % 60;
   return h > 0 ? `${h}h${m < 10 ? "0" : ""}${m}` : `${m}min`;
 }
-function buildStopsForDate(d: Date): Stop[] {
-  const dow = d.getDay();
-  const names = DAY_TEMPLATES[dow] || [];
-  return names.map((name, i) => {
-    const p = PLACE_POOL[name];
-    return { id: `d${dow}_${i}_${name.length}`, name, cat: p.cat, kind: p.kind, duration: 10, coords: p.coords, status: "planifie" as Status };
-  });
+function one<T>(v: T | T[] | null | undefined): T | null {
+  return Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
+}
+// DB weekdays: 1 = Monday … 7 = Sunday
+const dbWeekday = (d: Date) => (d.getDay() === 0 ? 7 : d.getDay());
+
+function rowToStop(r: DbCollecte): Stop {
+  const p = one(r.partners);
+  const b = one(r.beneficiaries);
+  const rel = p ?? b;
+  return {
+    id: r.id,
+    name: rel?.name ?? r.label ?? "Point de tournée",
+    cat: rel?.category ?? (r.kind === "stock" ? "Dépôt stock" : ""),
+    kind: r.kind,
+    duration: r.duration_min ?? 10,
+    status: r.status === "annule" ? "annule" : "planifie",
+    dbStatus: r.status,
+    comment: r.comment ?? undefined,
+    address: rel?.address ?? (r.kind === "stock" ? DEPOT.address : ""),
+    partnerId: r.partner_id,
+    beneficiaryId: r.beneficiary_id,
+    label: r.label,
+  };
 }
 
-function computeSchedule(stops: Stop[]) {
+function pseudoCoords(seed: string): Coords {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return { x: (h % 2000) / 100 - 10, y: ((h >> 8) % 2000) / 100 - 10 };
+}
+
+function computeSchedule(stops: StopC[]) {
   let t = DAY_START;
   let totalTravel = 0;
   let totalKm = 0;
   let totalDuration = 0;
   let lunchAt = -1;
-  let prevCoords: Coords = DEPOT.coords;
+  let prevCoords: Coords = { x: 0, y: 0 };
   const enriched: EnrichedStop[] = stops.map((s, i) => {
     if (s.status === "annule") {
       return { ...s, scheduledTime: null, travelFromPrev: 0, travelKmFromPrev: 0 };
@@ -111,29 +143,6 @@ function computeSchedule(stops: Stop[]) {
   return { stops: enriched, dayEnd: t, totalTravel, totalKm, totalDuration, lunchAt };
 }
 
-const DEFAULT_CHECKLIST_TEMPLATES: Record<number, ChecklistItem[]> = {
-  0: [],
-  1: [
-    { id: "ck1", label: "Vérifier le niveau de carburant" },
-    { id: "ck2", label: "Charger les caisses et les glacières" },
-    { id: "ck3", label: "Contrôler la pression des pneus" },
-  ],
-  2: [],
-  3: [],
-  4: [],
-  5: [],
-  6: [],
-};
-
-const WEEK = [
-  { dow: "Lundi 15 sept.", today: true, lines: null as { t: string; n: string }[] | null },
-  { dow: "Mardi 16 sept.", lines: [{ t: "09:00", n: "Départ — Entrepôt Linkee" }, { t: "09:20", n: "Boulangerie Croix-Rousse" }, { t: "10:05", n: "Supermarché Presqu'île" }, { t: "11:00", n: "Traiteur Lumière" }, { t: "14:10", n: "Hôtel des Brotteaux" }, { t: "15:00", n: "Grossiste Rhône Frais" }] },
-  { dow: "Mercredi 17 sept.", lines: [{ t: "09:00", n: "Départ — Entrepôt Linkee" }, { t: "09:20", n: "Boulangerie des Terreaux" }, { t: "09:45", n: "Épicerie de la Guillotière" }, { t: "10:30", n: "Traiteur Lumière" }, { t: "11:15", n: "Hôtel des Brotteaux" }, { t: "12:00", n: "Épicerie Sociale Saint-Camille de Vaise" }, { t: "14:00", n: "Grossiste Rhône Frais" }, { t: "15:30", n: "Entrepôt Linkee (stock)" }] },
-  { dow: "Jeudi 18 sept.", lines: [{ t: "09:00", n: "Départ — Entrepôt Linkee" }, { t: "09:25", n: "Café des Terreaux" }, { t: "10:05", n: "Supermarché Presqu'île" }, { t: "11:00", n: "Traiteur Lumière" }, { t: "11:45", n: "Hôtel des Brotteaux" }, { t: "14:15", n: "Marché des Capucins" }] },
-  { dow: "Vendredi 19 sept.", lines: [{ t: "09:00", n: "Départ — Entrepôt Linkee" }, { t: "09:20", n: "Boulangerie des Terreaux" }, { t: "10:05", n: "Supermarché Presqu'île" }, { t: "11:00", n: "Grossiste Rhône Frais" }, { t: "14:00", n: "Hôtel des Brotteaux" }] },
-  { dow: "Samedi 20 sept.", lines: [{ t: "09:00", n: "Départ — Entrepôt Linkee" }, { t: "09:20", n: "Boulangerie des Terreaux" }, { t: "09:50", n: "Épicerie de la Guillotière" }, { t: "10:30", n: "Entrepôt Linkee (stock)" }] },
-];
-
 const KIND_BADGE: Record<string, string> = { stock: "Stock", dropoff: "Dépose", demande_client: "Demande exceptionnelle client", exceptionnel: "Exceptionnel" };
 const KIND_BORDER: Record<Kind, string> = {
   partner: "",
@@ -149,116 +158,310 @@ const KIND_BADGE_CLS: Record<string, string> = {
   demande_client: "bg-[var(--client-req)] text-white",
 };
 
+const SELECT_DAY =
+  "id,kind,partner_id,beneficiary_id,label,comment,status,duration_min,scheduled_time,partners(name,category,address),beneficiaries(name,category,address)";
+
 export default function PlanningPage() {
+  const supabase = useMemo(() => createClient(), []);
+  const [cityId, setCityId] = useState<string | null>(null);
+  const [places, setPlaces] = useState<Place[]>([DEPOT_PLACE]);
   const [view, setView] = useState<"jour" | "semaine">("jour");
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 8, 15));
-  const [stops, setStops] = useState<Stop[]>(() => buildStopsForDate(new Date(2026, 8, 15)));
+  const [currentDate, setCurrentDate] = useState(() => new Date());
+  const [stops, setStops] = useState<Stop[]>([]);
+  const [loadingDay, setLoadingDay] = useState(true);
+  const [geo, setGeo] = useState<Record<string, LatLng>>({});
+  const [weekLines, setWeekLines] = useState<WeekLine[]>([]);
   const [toast, setToast] = useState<string | null>(null);
 
   const [excOpen, setExcOpen] = useState(false);
-  const [excPartnerIdx, setExcPartnerIdx] = useState(0);
+  const [excPlaceKey, setExcPlaceKey] = useState("");
   const [excDenree, setExcDenree] = useState(DENREE_OPTIONS[0]);
   const [excVolume, setExcVolume] = useState("");
-  const [excDate, setExcDate] = useState(isoDate(new Date(2026, 8, 15)));
+  const [excDate, setExcDate] = useState(() => isoDate(new Date()));
   const [excTime, setExcTime] = useState("10:30");
   const [excComment, setExcComment] = useState("");
+  const [addPlaceKey, setAddPlaceKey] = useState("");
 
   const [checklistOpen, setChecklistOpen] = useState(false);
-  const [checklistTemplates, setChecklistTemplates] = useState<Record<number, ChecklistItem[]>>(DEFAULT_CHECKLIST_TEMPLATES);
-  const [checklistOverrides, setChecklistOverrides] = useState<Record<string, ChecklistItem[]>>({});
-  const [checklistRepeat, setChecklistRepeat] = useState(true);
+  const [checklistTemplates, setChecklistTemplates] = useState<Record<number, ChecklistItem[]>>({});
+  const [checklistOverride, setChecklistOverride] = useState<ChecklistItem[] | null>(null);
   const [checklistNewItem, setChecklistNewItem] = useState("");
 
   const dragSrcId = useRef<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const dirty = useRef(false);
+  const persistTimer = useRef<number | null>(null);
 
   function showToast(msg: string) {
     setToast(msg);
     window.setTimeout(() => setToast(null), 2600);
   }
+  function fail(prefix: string, message: string) {
+    showToast(`${prefix} : ${message}`);
+  }
 
-  const sched = useMemo(() => computeSchedule(stops), [stops]);
+  const iso = isoDate(currentDate);
+  const depotGeo = geo[DEPOT.address];
+
+  /* ---------- coordinates ---------- */
+  const stopsC: StopC[] = useMemo(
+    () =>
+      stops.map((s) => {
+        const g = geo[s.address];
+        return { ...s, coords: g && depotGeo ? toKm(g, depotGeo) : pseudoCoords(s.address || s.name) };
+      }),
+    [stops, geo, depotGeo],
+  );
+  const sched = useMemo(() => computeSchedule(stopsC), [stopsC]);
   const activeStops = sched.stops.filter((s) => s.status !== "annule");
   const cancelledCount = stops.length - activeStops.length;
   const overflow = sched.dayEnd - HARD_LIMIT;
 
-  const checklistIso = isoDate(currentDate);
-  const checklistItems = checklistOverrides[checklistIso] || checklistTemplates[currentDate.getDay()] || [];
-  const checklistRepeatsNow = !checklistOverrides[checklistIso];
+  // geocode every address we have not seen yet
+  useEffect(() => {
+    const addrs = Array.from(new Set([DEPOT.address, ...stops.map((s) => s.address)])).filter((a) => a && !geo[a]);
+    if (!addrs.length) return;
+    let cancelled = false;
+    (async () => {
+      const found: Record<string, LatLng> = {};
+      for (const a of addrs) {
+        const g = await geocode(a);
+        if (g) found[a] = g;
+      }
+      if (!cancelled && Object.keys(found).length) setGeo((prev) => ({ ...prev, ...found }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [stops, geo]);
 
-  function loadDate(d: Date) {
-    setCurrentDate(d);
-    setStops(buildStopsForDate(d));
+  /* ---------- initial load: city, places, checklist templates ---------- */
+  useEffect(() => {
+    (async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      const { data: prof } = await supabase.from("profiles").select("city_id").eq("id", auth.user?.id ?? "").maybeSingle();
+      setCityId(prof?.city_id ?? null);
+      const [ps, bs, tpl] = await Promise.all([
+        supabase.from("partners").select("id,name,category,address").eq("active", true).order("name"),
+        supabase.from("beneficiaries").select("id,name,category,address").eq("active", true).order("name"),
+        supabase.from("checklist_templates").select("weekday,items"),
+      ]);
+      const list: Place[] = [
+        ...((ps.data ?? []) as { id: string; name: string; category: string | null; address: string | null }[]).map((p) => ({
+          key: "p:" + p.id, kind: "partner" as const, name: p.name, cat: p.category ?? "", address: p.address ?? "", partnerId: p.id, beneficiaryId: null,
+        })),
+        ...((bs.data ?? []) as { id: string; name: string; category: string | null; address: string | null }[]).map((b) => ({
+          key: "b:" + b.id, kind: "dropoff" as const, name: b.name, cat: b.category ?? "", address: b.address ?? "", partnerId: null, beneficiaryId: b.id,
+        })),
+        DEPOT_PLACE,
+      ];
+      setPlaces(list);
+      const firstPartner = list.find((p) => p.kind === "partner");
+      setExcPlaceKey(firstPartner?.key ?? "");
+      setAddPlaceKey(list[0].key);
+      const t: Record<number, ChecklistItem[]> = {};
+      ((tpl.data ?? []) as { weekday: number; items: ChecklistItem[] }[]).forEach((r) => (t[r.weekday] = r.items));
+      setChecklistTemplates(t);
+    })();
+  }, [supabase]);
+
+  /* ---------- load the selected day (+ its checklist override + the week) ---------- */
+  async function loadDay() {
+    setLoadingDay(true);
+    dirty.current = false;
+    const { data, error } = await supabase.from("collectes").select(SELECT_DAY).eq("scheduled_date", iso).order("sort_order");
+    if (error) fail("Chargement impossible", error.message);
+    const list = ((data ?? []) as unknown as DbCollecte[]).map(rowToStop);
+    setStops(list);
+    // rows that were never scheduled (fresh copies) get their times written once
+    if ((data ?? []).some((r) => (r as { scheduled_time: string | null }).scheduled_time === null && (r as { status: string }).status !== "annule")) dirty.current = true;
+    setLoadingDay(false);
+  }
+  async function loadOverride() {
+    const { data } = await supabase.from("checklist_overrides").select("items").eq("day", iso).maybeSingle();
+    setChecklistOverride((data?.items as ChecklistItem[] | undefined) ?? null);
+  }
+  async function loadWeek() {
+    const monday = new Date(currentDate);
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const { data } = await supabase
+      .from("collectes")
+      .select("scheduled_date,scheduled_time,status,label,sort_order,partners(name),beneficiaries(name)")
+      .gte("scheduled_date", isoDate(monday))
+      .lte("scheduled_date", isoDate(sunday))
+      .order("scheduled_date")
+      .order("sort_order");
+    setWeekLines(
+      ((data ?? []) as unknown as { scheduled_date: string; scheduled_time: string | null; status: string; label: string | null; partners: { name: string } | { name: string }[] | null; beneficiaries: { name: string } | { name: string }[] | null }[]).map((r) => ({
+        date: r.scheduled_date,
+        time: r.scheduled_time ? r.scheduled_time.slice(0, 5) : null,
+        name: one(r.partners)?.name ?? one(r.beneficiaries)?.name ?? r.label ?? "Point",
+        status: r.status,
+      })),
+    );
+  }
+  useEffect(() => {
+    if (!cityId) return;
+    loadDay();
+    loadOverride();
+    loadWeek();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cityId, iso]);
+
+  /* ---------- write back order / times after user edits ---------- */
+  useEffect(() => {
+    if (!dirty.current || !cityId || loadingDay || stops.length === 0) return;
+    if (persistTimer.current) window.clearTimeout(persistTimer.current);
+    persistTimer.current = window.setTimeout(async () => {
+      const rows = sched.stops.map((st, i) => ({
+        id: st.id,
+        city_id: cityId,
+        kind: st.kind,
+        partner_id: st.partnerId,
+        beneficiary_id: st.beneficiaryId,
+        label: st.label,
+        scheduled_date: iso,
+        scheduled_time: st.scheduledTime,
+        sort_order: i,
+        status: st.dbStatus,
+        comment: st.comment ?? null,
+        duration_min: st.duration,
+      }));
+      const { error } = await supabase.from("collectes").upsert(rows);
+      if (error) fail("Enregistrement impossible", error.message);
+      else loadWeek();
+    }, 800);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sched]);
+
+  function editStops(fn: (prev: Stop[]) => Stop[]) {
+    dirty.current = true;
+    setStops(fn);
   }
 
-  function saveChecklist(items: ChecklistItem[], repeats: boolean) {
-    const iso = isoDate(currentDate);
+  /* ---------- checklist ---------- */
+  const weekday = dbWeekday(currentDate);
+  const checklistItems = checklistOverride ?? checklistTemplates[weekday] ?? [];
+  const checklistRepeatsNow = checklistOverride === null;
+
+  async function saveChecklist(items: ChecklistItem[], repeats: boolean) {
+    if (!cityId) return;
     if (repeats) {
-      setChecklistTemplates((prev) => ({ ...prev, [currentDate.getDay()]: items }));
-      setChecklistOverrides((prev) => {
-        const next = { ...prev };
-        delete next[iso];
-        return next;
-      });
+      setChecklistTemplates((prev) => ({ ...prev, [weekday]: items }));
+      setChecklistOverride(null);
+      const a = await supabase.from("checklist_templates").upsert({ city_id: cityId, weekday, items });
+      const b = await supabase.from("checklist_overrides").delete().eq("city_id", cityId).eq("day", iso);
+      if (a.error || b.error) fail("Checklist non enregistrée", (a.error ?? b.error)!.message);
     } else {
-      setChecklistOverrides((prev) => ({ ...prev, [iso]: items }));
+      setChecklistOverride(items);
+      const { error } = await supabase.from("checklist_overrides").upsert({ city_id: cityId, day: iso, items });
+      if (error) fail("Checklist non enregistrée", error.message);
     }
   }
-
   function addChecklistItem() {
     const label = checklistNewItem.trim();
     if (!label) return;
-    saveChecklist([...checklistItems, { id: "ck" + Date.now(), label }], checklistRepeat);
+    saveChecklist([...checklistItems, { id: "ck" + Date.now(), label }], checklistRepeatsNow);
     setChecklistNewItem("");
   }
   function removeChecklistItem(idx: number) {
-    saveChecklist(checklistItems.filter((_, i) => i !== idx), checklistRepeat);
+    saveChecklist(checklistItems.filter((_, i) => i !== idx), checklistRepeatsNow);
   }
 
-  function submitExceptional() {
-    const p = EXTRA_PARTNERS[excPartnerIdx];
-    const timeVal = excTime || "10:30";
-    const dateVal = excDate || isoDate(currentDate);
-    const [hh, mm] = timeVal.split(":");
-    const desiredMin = (+hh) * 60 + (+mm);
-    const switchedDay = dateVal !== isoDate(currentDate);
+  /* ---------- stops ---------- */
+  async function insertStop(place: Place, kind: Kind, extra: { comment?: string; denree?: string; volume?: number | null }, insertAt?: number) {
+    if (!cityId) return showToast("Aucune ville n'est associée à ton compte.");
+    const { data, error } = await supabase
+      .from("collectes")
+      .insert({
+        city_id: cityId,
+        kind,
+        partner_id: place.partnerId,
+        beneficiary_id: place.beneficiaryId,
+        label: place.key === "depot" ? place.name : null,
+        scheduled_date: iso,
+        sort_order: stops.length,
+        status: "todo",
+        comment: extra.comment || null,
+        duration_min: 10,
+        denree: extra.denree ?? null,
+        volume_kg: extra.volume ?? null,
+      })
+      .select("id")
+      .single();
+    if (error || !data) return fail("Ajout impossible", error?.message ?? "erreur inconnue");
+    const stop: Stop = {
+      id: data.id as string, name: place.name, cat: place.cat, kind, duration: 10, status: "planifie", dbStatus: "todo",
+      comment: extra.comment || undefined, address: place.address, partnerId: place.partnerId, beneficiaryId: place.beneficiaryId,
+      label: place.key === "depot" ? place.name : null,
+    };
+    editStops((prev) => {
+      const next = [...prev];
+      next.splice(insertAt ?? next.length, 0, stop);
+      return next;
+    });
+  }
 
-    const baseStops = switchedDay ? buildStopsForDate(new Date(dateVal + "T00:00:00")) : stops;
-    const baseSched = computeSchedule(baseStops);
-    const newStop: Stop = { id: "exc" + Date.now(), name: p.name, cat: p.cat, kind: "exceptionnel", duration: 10, coords: p.coords, status: "planifie", comment: excComment.trim() };
+  function addPlaceToTour() {
+    const place = places.find((p) => p.key === addPlaceKey);
+    if (place) insertStop(place, place.kind, {}).then(() => showToast(`${place.name} ajouté à la tournée.`));
+  }
 
-    let insertAt = baseStops.length;
-    for (let i = 0; i < baseSched.stops.length; i++) {
-      if ((baseSched.stops[i].arrivalMin ?? -Infinity) > desiredMin) {
-        insertAt = i;
-        break;
+  async function submitExceptional() {
+    const place = places.find((p) => p.key === excPlaceKey);
+    if (!place) return showToast("Choisis d'abord un partenaire (crée-en un dans l'onglet Partenaires).");
+    const dateVal = excDate || iso;
+    const [hh, mm] = (excTime || "10:30").split(":");
+    const desiredMin = +hh * 60 + +mm;
+    if (dateVal !== iso) {
+      // insert on another day, then jump there
+      const { error } = await supabase.from("collectes").insert({
+        city_id: cityId, kind: "exceptionnel", partner_id: place.partnerId, beneficiary_id: place.beneficiaryId, scheduled_date: dateVal,
+        sort_order: 99, status: "todo", comment: excComment.trim() || null, duration_min: 10, denree: excDenree, volume_kg: excVolume ? +excVolume : null,
+      });
+      if (error) return fail("Ajout impossible", error.message);
+      setCurrentDate(new Date(dateVal + "T00:00:00"));
+      showToast(`Planning basculé sur le ${fmtDayLabel(new Date(dateVal + "T00:00:00"))} — collecte exceptionnelle ajoutée.`);
+    } else {
+      let insertAt = stops.length;
+      for (let i = 0; i < sched.stops.length; i++) {
+        if ((sched.stops[i].arrivalMin ?? -Infinity) > desiredMin) {
+          insertAt = i;
+          break;
+        }
       }
+      await insertStop(place, "exceptionnel", { comment: excComment.trim(), denree: excDenree, volume: excVolume ? +excVolume : null }, insertAt);
+      showToast("Collecte exceptionnelle ajoutée au planning.");
     }
-    const newStops = [...baseStops];
-    newStops.splice(insertAt, 0, newStop);
-
-    if (switchedDay) setCurrentDate(new Date(dateVal + "T00:00:00"));
-    setStops(newStops);
     setExcOpen(false);
     setExcVolume("");
     setExcComment("");
-    showToast(switchedDay ? `Planning basculé sur le ${fmtDayLabel(new Date(dateVal + "T00:00:00"))} — collecte exceptionnelle ajoutée.` : "Collecte exceptionnelle ajoutée au planning.");
   }
 
   function toggleCancel(id: string) {
-    setStops((prev) => prev.map((s) => (s.id === id ? { ...s, status: s.status === "annule" ? "planifie" : "annule" } : s)));
+    editStops((prev) =>
+      prev.map((s) => {
+        if (s.id !== id || s.dbStatus === "collecte") return s;
+        const cancel = s.status !== "annule";
+        return { ...s, status: cancel ? "annule" : "planifie", dbStatus: cancel ? "annule" : "todo" };
+      }),
+    );
   }
-  function removeStop(id: string) {
-    setStops((prev) => prev.filter((s) => s.id !== id));
+  async function removeStop(id: string) {
+    const { error } = await supabase.from("collectes").delete().eq("id", id);
+    if (error) return fail("Suppression impossible", error.message);
+    editStops((prev) => prev.filter((s) => s.id !== id));
   }
   function updateDuration(idx: number, value: number) {
-    setStops((prev) => prev.map((s, i) => (i === idx ? { ...s, duration: Math.max(0, value) } : s)));
+    editStops((prev) => prev.map((s, i) => (i === idx ? { ...s, duration: Math.max(0, value) } : s)));
   }
   function handleDrop(targetId: string) {
     const srcId = dragSrcId.current;
     setDragOverId(null);
     if (!srcId || srcId === targetId) return;
-    setStops((prev) => {
+    editStops((prev) => {
       const srcIdx = prev.findIndex((s) => s.id === srcId);
       const tgtIdx = prev.findIndex((s) => s.id === targetId);
       const next = [...prev];
@@ -268,13 +471,47 @@ export default function PlanningPage() {
     });
   }
 
-  // map
-  let lunchActivePos = -1;
-  if (sched.lunchAt !== -1) {
-    const lunchStop = sched.stops[sched.lunchAt];
-    lunchActivePos = activeStops.indexOf(lunchStop);
+  async function copyFromLastWeek() {
+    if (!cityId) return;
+    const prev = new Date(currentDate);
+    prev.setDate(prev.getDate() - 7);
+    const { data, error } = await supabase
+      .from("collectes")
+      .select("kind,partner_id,beneficiary_id,label,duration_min,sort_order")
+      .eq("scheduled_date", isoDate(prev))
+      .in("kind", ["partner", "dropoff", "stock"])
+      .order("sort_order");
+    if (error) return fail("Copie impossible", error.message);
+    if (!data || data.length === 0) return showToast(`Aucune tournée le ${fmtDayLabel(prev)} à recopier.`);
+    const rows = data.map((r, i) => ({ ...r, city_id: cityId, scheduled_date: iso, sort_order: i, status: "todo" }));
+    const { error: e2 } = await supabase.from("collectes").insert(rows);
+    if (e2) return fail("Copie impossible", e2.message);
+    await loadDay();
+    showToast(`Tournée du ${fmtDayLabel(prev)} recopiée.`);
   }
-  const allPts = [DEPOT.coords, ...activeStops.map((s) => s.coords)];
+
+  /* ---------- map projection (km → svg) ---------- */
+  let lunchActivePos = -1;
+  if (sched.lunchAt !== -1) lunchActivePos = activeStops.indexOf(sched.stops[sched.lunchAt]);
+  const rawPts: Coords[] = [{ x: 0, y: 0 }, ...activeStops.map((s) => s.coords)];
+  const MW = 720, MH = 290, PAD = 46;
+  const minX = Math.min(...rawPts.map((p) => p.x)), maxX = Math.max(...rawPts.map((p) => p.x));
+  const minY = Math.min(...rawPts.map((p) => p.y)), maxY = Math.max(...rawPts.map((p) => p.y));
+  const scale = Math.min((MW - 2 * PAD) / Math.max(maxX - minX, 1), (MH - 2 * PAD) / Math.max(maxY - minY, 1));
+  const proj = (p: Coords): Coords => ({ x: PAD + (p.x - minX) * scale + ((MW - 2 * PAD) - (maxX - minX) * scale) / 2, y: PAD + (p.y - minY) * scale + ((MH - 2 * PAD) - (maxY - minY) * scale) / 2 });
+  const depotPt = proj({ x: 0, y: 0 });
+  const allPts = [depotPt, ...activeStops.map((s) => proj(s.coords))];
+  const mapIsReal = !!depotGeo;
+
+  const weekDays = (() => {
+    const monday = new Date(currentDate);
+    monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+    return Array.from({ length: 7 }, (_, k) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + k);
+      return d;
+    });
+  })();
 
   return (
     <div>
@@ -303,7 +540,7 @@ export default function PlanningPage() {
               onClick={() => {
                 const d = new Date(currentDate);
                 d.setDate(d.getDate() - 1);
-                loadDate(d);
+                setCurrentDate(d);
               }}
               className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-[var(--border)] bg-[var(--card)] text-[var(--navy)]"
             >
@@ -314,8 +551,8 @@ export default function PlanningPage() {
             <span className="min-w-[170px] text-center font-display text-base font-extrabold text-[var(--navy)]">{fmtDayLabel(currentDate)}</span>
             <input
               type="date"
-              value={isoDate(currentDate)}
-              onChange={(e) => e.target.value && loadDate(new Date(e.target.value + "T00:00:00"))}
+              value={iso}
+              onChange={(e) => e.target.value && setCurrentDate(new Date(e.target.value + "T00:00:00"))}
               className="rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-2.5 py-1.5 text-[12.5px] font-semibold text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
             />
             <button
@@ -324,7 +561,7 @@ export default function PlanningPage() {
               onClick={() => {
                 const d = new Date(currentDate);
                 d.setDate(d.getDate() + 1);
-                loadDate(d);
+                setCurrentDate(d);
               }}
               className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-[var(--border)] bg-[var(--card)] text-[var(--navy)]"
             >
@@ -342,7 +579,7 @@ export default function PlanningPage() {
             type="button"
             onClick={() => {
               setExcOpen((v) => !v);
-              if (!excOpen) setExcDate(isoDate(currentDate));
+              if (!excOpen) setExcDate(iso);
             }}
             className="mb-3 flex w-full items-center gap-2 rounded-2xl border-[1.5px] border-dashed border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[13px] font-bold text-[var(--navy)] hover:border-[var(--exc-accent)] hover:text-[var(--exc-accent)]"
           >
@@ -350,15 +587,7 @@ export default function PlanningPage() {
               <path d="M12 5 V19 M5 12 H19" />
             </svg>
             Ajouter une collecte exceptionnelle
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className={`ml-auto h-4 w-4 transition-transform ${excOpen ? "rotate-180" : ""}`}
-            >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={`ml-auto h-4 w-4 transition-transform ${excOpen ? "rotate-180" : ""}`}>
               <path d="M6 9 L12 15 L18 9" />
             </svg>
           </button>
@@ -368,9 +597,10 @@ export default function PlanningPage() {
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div>
                   <label className={labelCls}>Partenaire</label>
-                  <select value={excPartnerIdx} onChange={(e) => setExcPartnerIdx(+e.target.value)} className={inputCls}>
-                    {EXTRA_PARTNERS.map((p, idx) => (
-                      <option key={p.name} value={idx}>
+                  <select value={excPlaceKey} onChange={(e) => setExcPlaceKey(e.target.value)} className={inputCls}>
+                    {places.filter((p) => p.kind === "partner").length === 0 && <option value="">Aucun partenaire — crée-en un d&apos;abord</option>}
+                    {places.filter((p) => p.kind === "partner").map((p) => (
+                      <option key={p.key} value={p.key}>
                         {p.name} ({p.cat})
                       </option>
                     ))}
@@ -398,13 +628,7 @@ export default function PlanningPage() {
                 </div>
                 <div className="sm:col-span-3">
                   <label className={labelCls}>Commentaire (optionnel)</label>
-                  <textarea
-                    value={excComment}
-                    onChange={(e) => setExcComment(e.target.value)}
-                    rows={2}
-                    placeholder="Ex : accès particulier, contexte, consigne pour le logisticien…"
-                    className={`${inputCls} resize-y`}
-                  />
+                  <textarea value={excComment} onChange={(e) => setExcComment(e.target.value)} rows={2} placeholder="Ex : accès particulier, contexte, consigne pour le logisticien…" className={`${inputCls} resize-y`} />
                   <p className="mt-1.5 text-[11px] text-[var(--slate)]">S&apos;il est renseigné, ce commentaire s&apos;affiche directement sous l&apos;adresse côté logisticien, sans avoir besoin de dérouler.</p>
                 </div>
               </div>
@@ -429,15 +653,7 @@ export default function PlanningPage() {
               <path d="M20 12 V18 A2 2 0 0 1 18 20 H6 A2 2 0 0 1 4 18 V6 A2 2 0 0 1 6 4 H14" />
             </svg>
             Checklist de départ
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className={`ml-auto h-4 w-4 transition-transform ${checklistOpen ? "rotate-180" : ""}`}
-            >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={`ml-auto h-4 w-4 transition-transform ${checklistOpen ? "rotate-180" : ""}`}>
               <path d="M6 9 L12 15 L18 9" />
             </svg>
           </button>
@@ -453,12 +669,7 @@ export default function PlanningPage() {
                 checklistItems.map((it, idx) => (
                   <div key={it.id} className="flex items-center justify-between gap-2.5 border-b border-[var(--border)] py-2.5 text-[13px] font-semibold text-[var(--navy)] last:border-none">
                     <span>{it.label}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeChecklistItem(idx)}
-                      title="Retirer"
-                      className="flex h-6 w-6 flex-none items-center justify-center rounded-full border-[1.5px] border-[var(--border)] bg-[var(--card)] text-sm leading-none text-[var(--slate)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]"
-                    >
+                    <button type="button" onClick={() => removeChecklistItem(idx)} title="Retirer" className="flex h-6 w-6 flex-none items-center justify-center rounded-full border-[1.5px] border-[var(--border)] bg-[var(--card)] text-sm leading-none text-[var(--slate)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]">
                       ×
                     </button>
                   </div>
@@ -482,14 +693,7 @@ export default function PlanningPage() {
                 </button>
               </div>
               <label className="mt-3.5 flex cursor-pointer items-center gap-2 text-[12.5px] font-semibold text-[var(--slate)]">
-                <input
-                  type="checkbox"
-                  checked={checklistRepeatsNow}
-                  onChange={(e) => {
-                    setChecklistRepeat(e.target.checked);
-                    saveChecklist(checklistItems, e.target.checked);
-                  }}
-                />
+                <input type="checkbox" checked={checklistRepeatsNow} onChange={(e) => saveChecklist(checklistItems, e.target.checked)} />
                 Se répète chaque semaine (tous les {DOW_NAMES[currentDate.getDay()]}s)
               </label>
             </div>
@@ -498,51 +702,40 @@ export default function PlanningPage() {
           <div className="mb-[18px] rounded-[20px] border border-[var(--border)] bg-[var(--card)] p-[18px] shadow-[var(--shadow)]">
             <h3 className="mb-0.5 font-display text-base font-extrabold">Itinéraire du jour</h3>
             <p className="mb-2.5 text-[11.5px] text-[var(--slate)] italic">
-              Carte schématique (aperçu hors-ligne, sans tuiles cartographiques) — la version réelle utilisera Leaflet / OpenStreetMap avec les adresses géolocalisées et OpenRouteService pour les
-              temps de trajet.
+              {mapIsReal
+                ? "Positions réelles (adresses géolocalisées, à l'échelle) sur un schéma sans fond de carte. Les temps de trajet sont estimés à vol d'oiseau × 1,35 — le calcul routier viendra avec OpenRouteService."
+                : "Géolocalisation des adresses en cours… (positions provisoires tant qu'une adresse n'est pas trouvée)."}
             </p>
-            <svg viewBox="0 0 720 290" className="block w-full rounded-xl bg-[var(--input-bg)]">
+            <svg viewBox={`0 0 ${MW} ${MH}`} className="block w-full rounded-xl bg-[var(--input-bg)]">
               {allPts.slice(0, -1).map((pt, k) => {
                 const next = allPts[k + 1];
                 const isBreak = k === lunchActivePos;
-                return (
-                  <line
-                    key={k}
-                    x1={pt.x}
-                    y1={pt.y}
-                    x2={next.x}
-                    y2={next.y}
-                    stroke="var(--slate)"
-                    strokeWidth={2}
-                    strokeDasharray={isBreak ? "5 5" : undefined}
-                    opacity={isBreak ? 0.5 : 0.3}
-                  />
-                );
+                return <line key={k} x1={pt.x} y1={pt.y} x2={next.x} y2={next.y} stroke="var(--slate)" strokeWidth={2} strokeDasharray={isBreak ? "5 5" : undefined} opacity={isBreak ? 0.5 : 0.3} />;
               })}
               <g>
-                <circle cx={DEPOT.coords.x} cy={DEPOT.coords.y} r={12} fill="var(--turquoise)" stroke="var(--card)" strokeWidth={2.5} />
-                <text x={DEPOT.coords.x} y={DEPOT.coords.y + 4} fontSize={13} textAnchor="middle">
+                <circle cx={depotPt.x} cy={depotPt.y} r={12} fill="var(--turquoise)" stroke="var(--card)" strokeWidth={2.5} />
+                <text x={depotPt.x} y={depotPt.y + 4} fontSize={13} textAnchor="middle">
                   🏠
                 </text>
-                <text x={DEPOT.coords.x} y={DEPOT.coords.y + 26} fontSize={9.5} fontWeight={700} fill="var(--navy)" textAnchor="middle">
+                <text x={depotPt.x} y={depotPt.y + 26} fontSize={9.5} fontWeight={700} fill="var(--navy)" textAnchor="middle">
                   Départ {fmtTime(DAY_START)}
                 </text>
               </g>
               {activeStops.map((s) => {
-                const color =
-                  s.kind === "stock" ? "var(--stock-accent)" : s.kind === "dropoff" ? "var(--dropoff)" : s.kind === "demande_client" ? "var(--client-req)" : s.kind === "exceptionnel" ? "var(--exc-accent)" : "var(--navy-deep)";
+                const p = proj(s.coords);
+                const color = s.kind === "stock" ? "var(--stock-accent)" : s.kind === "dropoff" ? "var(--dropoff)" : s.kind === "demande_client" ? "var(--client-req)" : s.kind === "exceptionnel" ? "var(--exc-accent)" : "var(--navy-deep)";
                 const short = s.name.length > 16 ? s.name.slice(0, 15) + "…" : s.name;
                 const num = sched.stops.findIndex((x) => x.id === s.id) + 1;
                 return (
                   <g key={s.id}>
-                    <circle cx={s.coords.x} cy={s.coords.y} r={12} fill={color} stroke="var(--card)" strokeWidth={2.5} />
-                    <text x={s.coords.x} y={s.coords.y + 4} fontSize={11} fontWeight={700} fill="#fff" textAnchor="middle">
+                    <circle cx={p.x} cy={p.y} r={12} fill={color} stroke="var(--card)" strokeWidth={2.5} />
+                    <text x={p.x} y={p.y + 4} fontSize={11} fontWeight={700} fill="#fff" textAnchor="middle">
                       {num}
                     </text>
-                    <text x={s.coords.x} y={s.coords.y + 25} fontSize={9.5} fill="var(--slate)" textAnchor="middle">
+                    <text x={p.x} y={p.y + 25} fontSize={9.5} fill="var(--slate)" textAnchor="middle">
                       {short}
                     </text>
-                    <text x={s.coords.x} y={s.coords.y - 16} fontSize={9.5} fontWeight={700} fill="var(--navy)" textAnchor="middle">
+                    <text x={p.x} y={p.y - 16} fontSize={9.5} fontWeight={700} fill="var(--navy)" textAnchor="middle">
                       {s.scheduledTime}
                     </text>
                   </g>
@@ -576,15 +769,23 @@ export default function PlanningPage() {
               <span className="font-display text-[15px] font-extrabold text-[var(--turquoise)]">{fmtTime(DAY_START)}</span>
             </div>
 
-            {stops.length === 0 && (
-              <div className="rounded-2xl border-[1.5px] border-dashed border-[var(--border)] bg-[var(--card)] py-10 text-center text-[13px] text-[var(--slate)]">
-                Aucune tournée récurrente ce jour. Utilisez « Ajouter une collecte exceptionnelle » si besoin.
+            {loadingDay && <div className="py-6 text-center text-[13px] text-[var(--slate)]">Chargement…</div>}
+
+            {!loadingDay && stops.length === 0 && (
+              <div className="rounded-2xl border-[1.5px] border-dashed border-[var(--border)] bg-[var(--card)] px-4 py-8 text-center text-[13px] text-[var(--slate)]">
+                Aucune collecte planifiée ce jour.
+                <div className="mt-3 flex flex-wrap justify-center gap-2.5">
+                  <button type="button" onClick={copyFromLastWeek} className="rounded-[40px] bg-[var(--navy-deep)] px-4 py-2 font-display text-[13px] font-bold text-[var(--panel-fg)]">
+                    Recopier la tournée de la semaine dernière
+                  </button>
+                </div>
               </div>
             )}
 
             {sched.stops.map((s, i) => {
               const cancelled = s.status === "annule";
               const isLunch = i === sched.lunchAt;
+              const done = s.dbStatus === "collecte";
               return (
                 <div key={s.id}>
                   {cancelled ? (
@@ -619,9 +820,7 @@ export default function PlanningPage() {
                       e.preventDefault();
                       handleDrop(s.id);
                     }}
-                    className={`flex cursor-grab items-center gap-3 rounded-2xl border-[1.5px] bg-[var(--card)] px-3.5 py-3 shadow-[var(--shadow)] transition-[opacity,transform] ${KIND_BORDER[s.kind]} ${
-                      dragOverId === s.id ? "-translate-y-0.5 border-[var(--turquoise)]" : "border-[var(--border)]"
-                    } ${cancelled ? "opacity-55" : ""}`}
+                    className={`flex cursor-grab items-center gap-3 rounded-2xl border-[1.5px] bg-[var(--card)] px-3.5 py-3 shadow-[var(--shadow)] transition-[opacity,transform] ${KIND_BORDER[s.kind]} ${dragOverId === s.id ? "-translate-y-0.5 border-[var(--turquoise)]" : "border-[var(--border)]"} ${cancelled ? "opacity-55" : ""}`}
                   >
                     <span className="flex-none text-[var(--muted)]">
                       <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
@@ -639,8 +838,8 @@ export default function PlanningPage() {
                       <div className={`truncate text-[13.5px] font-bold text-[var(--navy)] ${cancelled ? "line-through" : ""}`}>{s.name}</div>
                       <div className="text-[11.5px] text-[var(--slate)]">{s.cat}</div>
                     </span>
-                    <span className={`flex-none rounded-[40px] px-2 py-[3px] text-[9.5px] font-bold tracking-[0.03em] uppercase ${cancelled ? "bg-[var(--critical-bg)] text-[var(--critical)]" : KIND_BADGE_CLS[s.kind] || "bg-[var(--track)] text-[var(--slate)]"}`}>
-                      {cancelled ? "Annulé" : KIND_BADGE[s.kind] || "Collecte"}
+                    <span className={`flex-none rounded-[40px] px-2 py-[3px] text-[9.5px] font-bold tracking-[0.03em] uppercase ${cancelled ? "bg-[var(--critical-bg)] text-[var(--critical)]" : done ? "bg-[var(--good-bg)] text-[var(--good)]" : KIND_BADGE_CLS[s.kind] || "bg-[var(--track)] text-[var(--slate)]"}`}>
+                      {cancelled ? "Annulé" : done ? "Réalisée" : KIND_BADGE[s.kind] || "Collecte"}
                     </span>
                     <span className="flex flex-none items-center gap-1">
                       <input
@@ -655,33 +854,33 @@ export default function PlanningPage() {
                       <small className="text-[11px] text-[var(--slate)]">min</small>
                     </span>
                     <span className="flex flex-none gap-1.5">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleCancel(s.id);
-                        }}
-                        title={cancelled ? "Réactiver ce point" : "Marquer comme annulé"}
-                        className={`flex h-[26px] w-[26px] items-center justify-center rounded-full border-[1.5px] ${
-                          cancelled ? "border-[var(--good)] bg-[var(--good-bg)] text-[var(--good)]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]"
-                        }`}
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
-                          {cancelled ? <path d="M20 6 L9 17 L4 12" /> : <path d="M6 6 L18 18 M18 6 L6 18" />}
-                        </svg>
-                      </button>
-                      {s.kind === "exceptionnel" && (
+                      {!done && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleCancel(s.id);
+                          }}
+                          title={cancelled ? "Réactiver ce point" : "Marquer comme annulé"}
+                          className={`flex h-[26px] w-[26px] items-center justify-center rounded-full border-[1.5px] ${cancelled ? "border-[var(--good)] bg-[var(--good-bg)] text-[var(--good)]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]"}`}
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                            {cancelled ? <path d="M20 6 L9 17 L4 12" /> : <path d="M6 6 L18 18 M18 6 L6 18" />}
+                          </svg>
+                        </button>
+                      )}
+                      {!done && (
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             removeStop(s.id);
                           }}
-                          title="Supprimer"
+                          title="Retirer de la tournée"
                           className="flex h-[26px] w-[26px] items-center justify-center rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]"
                         >
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
-                            <path d="M6 6 L18 18 M18 6 L6 18" />
+                            <path d="M4 7 H20 M9 7 V4 H15 V7 M6 7 L7 20 H17 L18 7" />
                           </svg>
                         </button>
                       )}
@@ -690,6 +889,20 @@ export default function PlanningPage() {
                 </div>
               );
             })}
+
+            <div className="mt-1 flex flex-wrap items-center gap-2.5 rounded-2xl border border-[var(--border)] bg-[var(--card)] px-3.5 py-3">
+              <span className="text-[12.5px] font-bold text-[var(--navy)]">Ajouter un point à la tournée</span>
+              <select value={addPlaceKey} onChange={(e) => setAddPlaceKey(e.target.value)} className={`${inputCls} !w-auto min-w-[220px] flex-1`}>
+                {places.map((p) => (
+                  <option key={p.key} value={p.key}>
+                    {p.name} — {p.kind === "dropoff" ? "dépose" : p.kind === "stock" ? "stock" : "collecte"}
+                  </option>
+                ))}
+              </select>
+              <button type="button" onClick={addPlaceToTour} className="rounded-[40px] bg-[var(--navy-deep)] px-4 py-2 font-display text-[13px] font-bold text-[var(--panel-fg)]">
+                + Ajouter
+              </button>
+            </div>
           </div>
 
           <div className="mb-[18px] grid grid-cols-2 gap-3.5 lg:grid-cols-5">
@@ -718,9 +931,7 @@ export default function PlanningPage() {
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow)]">
               <span className="mb-1.5 block text-[11px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">Points de tournée</span>
               <span className="font-display text-2xl font-black text-[var(--navy)]">{activeStops.length}</span>
-              <div className="mt-1 text-[11.5px] text-[var(--slate)]">
-                {cancelledCount ? `${cancelledCount} annulé(s) exclu(s)` : `${stops.filter((s) => s.kind === "exceptionnel").length} exceptionnel(s)`}
-              </div>
+              <div className="mt-1 text-[11.5px] text-[var(--slate)]">{cancelledCount ? `${cancelledCount} annulé(s) exclu(s)` : `${stops.filter((s) => s.kind === "exceptionnel").length} exceptionnel(s)`}</div>
             </div>
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow)]">
               <span className="mb-1.5 block text-[11px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">Amplitude horaire</span>
@@ -741,7 +952,7 @@ export default function PlanningPage() {
               {activeStops.length === 0 || overflow <= 0 ? <path d="M20 6 L9 17 L4 12" /> : <path d="M12 9 V13 M12 17 H12.01" />}
             </svg>
             {activeStops.length === 0 ? (
-              <span>Aucune collecte active ce jour — ajoutez une collecte exceptionnelle si besoin.</span>
+              <span>Aucune collecte active ce jour.</span>
             ) : overflow > 0 ? (
               <span>
                 Tournée <strong>non réalisable</strong> dans les créneaux 9h-12h / 13h-18h — dépassement de {fmtDuration(overflow)} après 18h00. Retirez un point ou avancez le départ.
@@ -755,31 +966,34 @@ export default function PlanningPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-3">
-          {WEEK.map((d) => {
-            const lines = d.today ? [{ t: fmtTime(DAY_START), n: "Départ — Entrepôt Linkee" }, ...sched.stops.map((s) => ({ t: s.scheduledTime || "Annulé", n: s.name }))] : d.lines!;
-            return (
-              <div key={d.dow} className={`rounded-2xl border bg-[var(--card)] p-4 shadow-[var(--shadow)] ${d.today ? "border-[var(--turquoise)]" : "border-[var(--border)]"}`}>
-                <h4 className="mb-2.5 font-display text-base font-extrabold text-[var(--navy)]">
-                  {d.dow}
-                  {d.today ? " · aujourd'hui" : ""}
-                </h4>
-                {lines.map((l, i) => (
-                  <div key={i} className="flex justify-between gap-2.5 border-b border-[var(--border)] py-1.5 text-[12.5px] last:border-none">
-                    <span className="flex-none font-bold text-[var(--slate)]">{l.t}</span>
-                    <span className="truncate text-right font-semibold text-[var(--navy)]">{l.n}</span>
-                  </div>
-                ))}
-              </div>
-            );
-          })}
+          {weekDays
+            .filter((d) => d.getDay() !== 0 || weekLines.some((l) => l.date === isoDate(d)))
+            .map((d) => {
+              const key = isoDate(d);
+              const isToday = key === isoDate(new Date());
+              const lines = weekLines.filter((l) => l.date === key);
+              return (
+                <div key={key} className={`rounded-2xl border bg-[var(--card)] p-4 shadow-[var(--shadow)] ${isToday ? "border-[var(--turquoise)]" : "border-[var(--border)]"}`}>
+                  <h4 className="mb-2.5 font-display text-base font-extrabold text-[var(--navy)]">
+                    {DOW_NAMES[d.getDay()]} {d.getDate()} {MONTH_NAMES[d.getMonth()].slice(0, 4)}.{isToday ? " · aujourd'hui" : ""}
+                  </h4>
+                  {lines.length === 0 ? (
+                    <p className="text-[12.5px] text-[var(--slate)]">Rien de planifié.</p>
+                  ) : (
+                    lines.map((l, i) => (
+                      <div key={i} className="flex justify-between gap-2.5 border-b border-[var(--border)] py-1.5 text-[12.5px] last:border-none">
+                        <span className="flex-none font-bold text-[var(--slate)]">{l.status === "annule" ? "Annulé" : (l.time ?? "—")}</span>
+                        <span className="truncate text-right font-semibold text-[var(--navy)]">{l.name}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              );
+            })}
         </div>
       )}
 
-      {toast && (
-        <div className="fixed bottom-[26px] left-1/2 z-[999] max-w-[380px] -translate-x-1/2 rounded-[14px] bg-[var(--navy-deep)] px-[18px] py-3 text-center text-[13px] font-semibold text-[var(--panel-fg)] shadow-[var(--shadow)]">
-          {toast}
-        </div>
-      )}
+      {toast && <div className="fixed bottom-[26px] left-1/2 z-[999] max-w-[380px] -translate-x-1/2 rounded-[14px] bg-[var(--navy-deep)] px-[18px] py-3 text-center text-[13px] font-semibold text-[var(--panel-fg)] shadow-[var(--shadow)]">{toast}</div>}
     </div>
   );
 }
