@@ -234,7 +234,7 @@ export function Sidebar() {
 
         <nav className="flex flex-col gap-[3px]">
           {visibleNav.map((item) => {
-            const active = pathname === item.href;
+            const active = pathname === item.href || (item.href === "/distributions" && pathname.startsWith("/distributions"));
             return (
               <Link
                 key={item.href}

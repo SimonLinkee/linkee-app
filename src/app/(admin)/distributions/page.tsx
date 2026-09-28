@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
 import { signedUrls, uploadPrivatePhoto } from "@/lib/photos";
+import DistribTabs from "@/components/DistribTabs";
 
 /* ---------------- types ---------------- */
 type Place = { id: string; name: string; cat: string; address: string };
@@ -184,6 +185,8 @@ export default function DistributionsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cityId]);
 
+  // deep link from the steering page: /distributions?b=<lieu>&date=YYYY-MM-DD
+  const deepLinked = useRef(false);
   const placeById = useMemo(() => new Map(places.map((p) => [p.id, p])), [places]);
 
   // saved distributions + planning drop-offs at Linkee places that were not turned into a distribution yet
@@ -198,6 +201,17 @@ export default function DistributionsPage() {
     }
     return out.sort((a, b) => b.date.localeCompare(a.date));
   }, [dists, drops]);
+  useEffect(() => {
+    if (deepLinked.current || loading || entries.length === 0) return;
+    const q = new URLSearchParams(window.location.search);
+    const b = q.get("b");
+    const date = q.get("date");
+    if (!b || !date) return;
+    deepLinked.current = true;
+    const e = entries.find((x) => x.key === `${b}|${date}`);
+    if (e) void open(e);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries, loading]);
   const shown = entries.filter((e) => (filter === "all" ? true : filter === "done" ? e.status === "distribuee" : e.status === "prevue"));
   const nTodo = entries.filter((e) => e.status === "prevue").length;
 
@@ -416,7 +430,7 @@ export default function DistributionsPage() {
 
   return (
     <div>
-      <div className="mb-[18px] flex flex-wrap items-end justify-between gap-3">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-[32px] leading-none font-black">Distributions Linkee</h1>
           <p className="mt-1 text-[13.5px] text-[var(--slate)]">Suivi des distributions de {city?.name ?? "la ville"} : inscrits, paniers, produits distribués. Les livraisons du planning apparaissent ici automatiquement.</p>
@@ -425,6 +439,8 @@ export default function DistributionsPage() {
           + Nouvelle distribution
         </button>
       </div>
+
+      <DistribTabs />
 
       {msg && (
         <div className="mb-3 flex items-start justify-between gap-3 rounded-xl bg-[var(--critical-bg)] px-3.5 py-2.5 text-[12.5px] font-semibold text-[var(--critical)]">
@@ -602,8 +618,14 @@ export default function DistributionsPage() {
                     </label>
                   </div>
                 </div>
-                <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
-                  <h3 className="mb-2 text-[14.5px] font-semibold text-[var(--navy)]">Commentaire</h3>
+                <div className="rounded-2xl border-[1.5px] border-[#2a78d6] bg-[var(--card)] p-4">
+                  <h3 className="mb-0.5 flex items-center gap-2 text-[14.5px] font-semibold text-[var(--navy)]">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px] text-[#2a78d6]">
+                      <path d="M4 5 H20 V16 H10 L5.5 20 V16 H4 Z" />
+                    </svg>
+                    Commentaire de la distribution
+                  </h3>
+                  <p className="mb-2 text-[11.5px] text-[var(--slate)]">Affluence, imprévus, retours des bénéficiaires… il apparaît aussi dans l&apos;historique du pilotage.</p>
                   <textarea className={`${fieldCls} min-h-[90px] resize-y`} placeholder="Ex : rupture de pain, forte affluence…" value={draft.comment} onChange={(e) => edit((d) => ({ ...d, comment: e.target.value }))} />
                   <div className="mt-2 flex items-center gap-2">
                     <label className="text-[11.5px] font-semibold text-[var(--slate)]">Cible F&amp;L par personne</label>
