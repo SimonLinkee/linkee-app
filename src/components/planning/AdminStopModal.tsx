@@ -17,9 +17,9 @@ const labelCls = "mb-1 block text-[11px] font-bold tracking-[0.03em] text-[var(-
 const PICKUP = ["partner", "exceptionnel", "demande_client"];
 
 /** Lets the Superadmin do what the logisticien does: mark a stop collected/delivered (goods, weights), cancelled (reason) — and change it afterwards, or put it back to "to do". */
-export default function AdminStopModal({ stop, cityId, date, current = "todo", onClose, onSaved }: { stop: AdminStop; cityId: string; date: string; current?: string; onClose: () => void; onSaved: (r: AdminStopSaved) => void }) {
+export default function AdminStopModal({ stop, cityId, date, current = "todo", mode = "status", onClose, onSaved }: { stop: AdminStop; cityId: string; date: string; current?: string; mode?: "status" | "data"; onClose: () => void; onSaved: (r: AdminStopSaved) => void }) {
   const supabase = useMemo(() => createClient(), []);
-  const [pick, setPick] = useState<"collecte" | "annule" | "todo">(current === "annule" ? "annule" : current === "collecte" && stop.kind === "stock" ? "todo" : "collecte");
+  const [pick, setPick] = useState<"collecte" | "annule" | "todo">(mode === "data" ? "collecte" : current === "annule" ? "annule" : current === "collecte" && stop.kind === "stock" ? "todo" : "collecte");
   const [existingPhotos, setExistingPhotos] = useState<string[]>([]);
   const alreadyDone = current === "collecte";
   const [rows, setRows] = useState<Row[]>([{ denree: "", sub: "", qty: "" }]);
@@ -166,12 +166,12 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", o
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <h3 className="font-display text-[20px] font-black text-[var(--navy)]">{stop.name}</h3>
-            <p className="text-[12px] text-[var(--slate)]">{stop.cat} · {current === "todo" ? "renseigner l&apos;arrêt à la place du logisticien" : "modifier le statut de l&apos;arrêt"}</p>
+            <p className="text-[12px] text-[var(--slate)]">{stop.cat} · {mode === "data" ? "compléter les infos à la place du logisticien — le statut passe à « Réalisée » ensuite" : "changer le statut de l&apos;arrêt"}</p>
           </div>
           <button type="button" onClick={onClose} className="flex h-8 w-8 flex-none items-center justify-center rounded-full border-[1.5px] border-[var(--border)] text-[var(--slate)]" aria-label="Fermer">×</button>
         </div>
 
-        <div className="mb-3.5 flex gap-2.5">
+        <div className={`mb-3.5 flex gap-2.5 ${mode === "data" ? "hidden" : ""}`}>
           {!(stop.kind === "stock" && alreadyDone) && <button type="button" onClick={() => setPick("collecte")} className={`flex-1 rounded-2xl border-2 px-2 py-2.5 font-display text-[14px] font-bold ${pick === "collecte" ? "border-[var(--good)] bg-[var(--good-bg)] text-[var(--good)]" : "border-[var(--border)] text-[var(--navy)]"}`}>{okLabel}</button>}
           <button type="button" onClick={() => setPick("annule")} className={`flex-1 rounded-2xl border-2 px-2 py-2.5 font-display text-[14px] font-bold ${pick === "annule" ? "border-[var(--critical)] bg-[var(--critical-bg)] text-[var(--critical)]" : "border-[var(--border)] text-[var(--navy)]"}`}>Annulé</button>
           {current !== "todo" && <button type="button" onClick={() => setPick("todo")} className={`flex-1 rounded-2xl border-2 px-2 py-2.5 font-display text-[14px] font-bold ${pick === "todo" ? "border-[var(--navy-deep)] bg-[var(--track)] text-[var(--navy)]" : "border-[var(--border)] text-[var(--navy)]"}`}>À faire</button>}

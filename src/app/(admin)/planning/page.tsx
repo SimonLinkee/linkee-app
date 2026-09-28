@@ -240,6 +240,7 @@ export default function PlanningPage() {
 
   const [pendingReqs, setPendingReqs] = useState<PartnerReq[]>([]);
   const [resultStop, setResultStop] = useState<Stop | null>(null);
+  const [resultMode, setResultMode] = useState<"status" | "data">("status");
   const [gallery, setGallery] = useState<{ name: string; urls: string[] } | null>(null);
   async function openGallery(s: Stop) {
     const urls = await signedUrls(supabase, s.photoPaths);
@@ -1046,11 +1047,26 @@ export default function PlanningPage() {
                       <small className="text-[11px] text-[var(--slate)]">min</small>
                     </span>
                     <span className="flex flex-none gap-1.5">
+                      {!ro && !(s.kind === "stock" && done) && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setResultMode("data");
+                            setResultStop(s);
+                          }}
+                          title="Saisir les denrées, poids ou produits à la place du logisticien — le statut se met à jour tout seul"
+                          className="flex h-[28px] flex-none items-center gap-1 rounded-full bg-[var(--navy-deep)] px-3 text-[11.5px] font-bold whitespace-nowrap text-[var(--panel-fg)] hover:brightness-110"
+                        >
+                          Compléter les infos
+                        </button>
+                      )}
                       {!ro && (
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
+                            setResultMode("status");
                             setResultStop(s);
                           }}
                           title="Changer le statut : à faire, réalisé (denrées, poids) ou annulé (motif)"
@@ -1219,6 +1235,7 @@ export default function PlanningPage() {
           cityId={cityId}
           date={iso}
           current={resultStop.dbStatus}
+          mode={resultMode}
           onClose={() => setResultStop(null)}
           onSaved={(r) => {
             const id = resultStop.id;
