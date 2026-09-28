@@ -527,6 +527,7 @@ export default function JourneePage() {
   // missions assigned to this person (RLS already limits the list to them)
   type MissionRow = { id: string; title: string; comment: string | null; importance: number; deadline: string | null; status: MissionStatus };
   const [missions, setMissions] = useState<MissionRow[]>([]);
+  const [missionsOpen, setMissionsOpen] = useState(false); // collapsed: the day's planning comes first
   const openMissions = missions
     .filter((m) => m.status !== "fait")
     .sort((a, b) => b.importance - a.importance || (a.deadline ?? "9999").localeCompare(b.deadline ?? "9999"));
@@ -918,14 +919,17 @@ export default function JourneePage() {
       {view === "jour" && (
         <div>
           {/* Mes missions: only the missions assigned to this person */}
-          <div className="mb-4 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-[18px] shadow-[var(--shadow)]">
-            <div className="mb-2.5 flex items-center gap-2">
+          <div className="mb-4 rounded-[18px] border border-[var(--border)] bg-[var(--card)] shadow-[var(--shadow)]">
+            <button type="button" onClick={() => setMissionsOpen((v) => !v)} aria-expanded={missionsOpen} className="flex w-full items-center gap-2 px-[18px] py-3 text-left">
               <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-[var(--navy-deep)] text-[var(--panel-fg)]">
                 <Icon className="h-4 w-4" sw={2}><path d="M9 11 L12 14 L20 6" /><path d="M20 12 V18 A2 2 0 0 1 18 20 H6 A2 2 0 0 1 4 18 V6 A2 2 0 0 1 6 4 H14" /></Icon>
               </span>
               <h3 className="font-display text-[17px] font-extrabold">Mes missions</h3>
               {openMissions.length > 0 && <span className="rounded-[40px] bg-[var(--critical)] px-2 py-0.5 text-[11px] font-bold text-white">{openMissions.length}</span>}
-            </div>
+              <Icon className={`ml-auto h-4 w-4 flex-none text-[var(--slate)] transition-transform ${missionsOpen ? "rotate-180" : ""}`} sw={2}><path d="M6 9 L12 15 L18 9" /></Icon>
+            </button>
+            {missionsOpen && (
+            <div className="border-t border-[var(--border)] p-[18px] pt-3.5">
             {openMissions.length === 0 && <p className="text-[12.5px] text-[var(--slate)]">Aucune mission en cours. Quand l&apos;équipe t&apos;en confie une, elle apparaît ici.</p>}
             <div className="flex flex-col gap-2.5">
               {openMissions.map((m) => {
