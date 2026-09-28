@@ -95,8 +95,8 @@ const s = (v: string | number | null | undefined) => (v == null ? "" : String(v)
 // closed lists (no free typing): values taken from the Linkee follow-up spreadsheet
 const OPTIONS: Record<string, string[]> = {
   delivery_mode: ["Collecte Log", "Reste camion", "Livraison sur site", "Sortie stock", "Stockage sur place"],
-  eco_label: ["BIO"],
-  geo_label: ["BIO"],
+  eco_label: ["BIO", "HVE"],
+  geo_label: ["Local", "France", "Monde"],
 };
 const STOCK_SUPPLIER = "Stock Linkee";
 
