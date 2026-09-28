@@ -7,6 +7,7 @@ import { PASSAGE_ITEMS, PassageIcon, type Passage } from "@/components/PassageIc
 import PartnerDocuments from "@/components/partner/PartnerDocuments";
 import PartnerValuation from "@/components/partner/PartnerValuation";
 import PartnerCollectes from "@/components/partner/PartnerCollectes";
+import BeneficiaryMap from "@/components/partner/BeneficiaryMap";
 
 type FicheTab = "fiche" | "documents" | "valorisation" | "collectes";
 
@@ -287,6 +288,7 @@ export default function PartenairesPage() {
   }
 
   const logoInput = useRef<HTMLInputElement>(null);
+  const ficheRef = useRef<HTMLDivElement>(null);
   async function uploadLogo(ev: React.ChangeEvent<HTMLInputElement>) {
     const file = ev.target.files?.[0];
     ev.target.value = "";
@@ -449,6 +451,18 @@ export default function PartenairesPage() {
         </button>
       </div>
 
+      {tab === "beneficiaire" && !loading && (
+        <BeneficiaryMap
+          key={cityId ?? "none"}
+          items={beneficiaires.map((b) => ({ id: b.id, name: b.name, cat: b.cat, address: b.address, active: b.active, pinned: b.pinned, horaires: b.horaires, denrees: b.denrees, equipement: b.equipement }))}
+          selectedId={currentId}
+          onSelect={(id) => {
+            setCurrentId(id);
+            window.setTimeout(() => ficheRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+          }}
+        />
+      )}
+
       <div className="mt-[18px] grid grid-cols-1 items-start gap-[18px] xl:grid-cols-[330px_1fr]">
         <div className="max-h-[calc(100vh-200px)] overflow-y-auto rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-2.5 shadow-[var(--shadow)]">
           {loading && <p className="p-4 text-[13px] text-[var(--slate)]">Chargement…</p>}
@@ -473,7 +487,7 @@ export default function PartenairesPage() {
           ))}
         </div>
 
-        <div className="rounded-[20px] border border-[var(--border)] bg-[var(--card)] px-7 pt-[26px] pb-[30px] shadow-[var(--shadow)]">
+        <div ref={ficheRef} className="scroll-mt-4 rounded-[20px] border border-[var(--border)] bg-[var(--card)] px-7 pt-[26px] pb-[30px] shadow-[var(--shadow)]">
           {!current ? (
             <div className="flex flex-col items-center gap-2.5 py-[60px] text-center text-[var(--slate)]">
               <p>Sélectionnez une fiche dans la liste.</p>

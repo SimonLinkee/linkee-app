@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { uploadPrivatePhoto } from "@/lib/photos";
-import { CAT_KEYS, CAT_LABELS, SUBCAT_SELECT, UNIT_LABEL, kgFromQuantity, type SubCat } from "@/lib/stats";
+import { CAT_KEYS, CAT_LABELS, SUBCAT_SELECT, UNIT_LABEL, itemValue, kgFromQuantity, subMap, type SubCat } from "@/lib/stats";
 
 export type AdminStop = { id: string; name: string; kind: string; partnerId: string | null; cat: string };
 export type AdminStopSaved = { status: "collecte" | "annule"; photoPaths: string[] };
@@ -124,6 +124,11 @@ export default function AdminStopModal({ stop, cityId, date, onClose, onSaved }:
   }
 
   const total = rows.reduce((s, r) => s + (rowKg(r) ?? 0), 0);
+  const subsById = subMap(subs);
+  const donValue = rows.reduce((s, r) => {
+    const kg = rowKg(r);
+    return kg == null ? s : s + itemValue({ kg, subcategory_id: r.sub || null, quantity: parseFloat(r.qty.replace(",", ".")) }, subsById).value;
+  }, 0);
   const okLabel = stop.kind === "stock" ? "Pris" : stop.kind === "dropoff" ? "Déposé" : "Collecté";
 
   return (
@@ -217,6 +222,10 @@ export default function AdminStopModal({ stop, cityId, date, onClose, onSaved }:
             <div className="mt-2.5 flex items-center justify-between rounded-xl bg-[var(--track)] px-4 py-2">
               <span className="text-[12px] font-bold text-[var(--slate)]">Total</span>
               <span className="font-display text-[18px] font-black text-[var(--navy)]">{Math.round(total * 10) / 10} kg</span>
+            </div>
+            <div className="mt-2 flex items-center justify-between rounded-xl border-[1.5px] border-[var(--good)] bg-[var(--good-bg)] px-4 py-2.5">
+              <span className="text-[12px] font-semibold text-[var(--navy)]">Valeur totale du don</span>
+              <span className="font-display text-[20px] font-black text-[var(--navy)] tabular-nums">{donValue.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</span>
             </div>
           </div>
         )}

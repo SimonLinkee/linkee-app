@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { CAT_KEYS, CAT_LABELS, SUBCAT_SELECT, UNIT_LABEL, isCollectKind, itemValue, kgFromQuantity, subMap, type SubCat, type Unit } from "@/lib/stats";
+import { CAT_KEYS, CAT_LABELS, DEFAULT_EUR_PER_KG, SUBCAT_SELECT, UNIT_LABEL, isCollectKind, itemValue, kgFromQuantity, subMap, type SubCat, type Unit } from "@/lib/stats";
 import { DOC_ACCEPT, DOC_SELECT, openDocument, uploadDocument, type DocRow } from "@/lib/documents";
 
 type Item = { id: string; denree: string | null; kg: number | string; subcategory_id: string | null; quantity: number | string | null; unit: string | null };
@@ -243,6 +243,15 @@ export default function PartnerCollectes({ partnerId, cityId }: { partnerId: str
             </p>
           )}
           {unit === "litre" && kgResult != null && <p className="mt-2.5 text-[12px] text-[var(--slate)]">1 litre compte pour 1 kg dans les statistiques → {fmtKg(kgResult)}.</p>}
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border-[1.5px] border-[var(--good)] bg-[var(--good-bg)] px-4 py-3">
+            <div>
+              <div className="text-[12px] font-semibold text-[var(--navy)]">Valeur totale du don</div>
+              <div className="text-[11px] text-[var(--slate)]">
+                {kgResult != null ? (itemValue({ kg: kgResult, subcategory_id: sub?.id ?? null, quantity: qtyNum }, subsById).custom ? `Au prix de « ${sub?.name} »` : `Calcul par défaut : ${DEFAULT_EUR_PER_KG} € / kg`) : "Renseigne la quantité"}
+              </div>
+            </div>
+            <div className="font-display text-[24px] font-black text-[var(--navy)] tabular-nums">{kgResult != null ? fmtEur(itemValue({ kg: kgResult, subcategory_id: sub?.id ?? null, quantity: qtyNum }, subsById).value) : "—"}</div>
+          </div>
           <div className="mt-3">
             <label className={labelCls}>Justificatif (facultatif)</label>
             <div className="flex flex-wrap items-center gap-2.5">
