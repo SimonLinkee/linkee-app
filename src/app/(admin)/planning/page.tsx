@@ -1053,13 +1053,13 @@ export default function PlanningPage() {
                             e.stopPropagation();
                             setResultStop(s);
                           }}
-                          title="Changer le statut : collecté (denrées, poids), annulé (motif) ou remis à faire"
-                          className="flex h-[26px] flex-none items-center gap-1 rounded-full border-[1.5px] border-[var(--good)] bg-[var(--good-bg)] px-2.5 text-[11px] font-bold whitespace-nowrap text-[var(--good)] hover:brightness-95"
+                          title="Changer le statut : à faire, réalisé (denrées, poids) ou annulé (motif)"
+                          className={`flex h-[28px] flex-none items-center gap-1 rounded-full border-[1.5px] px-3 text-[11.5px] font-bold whitespace-nowrap hover:brightness-95 ${done ? "border-[var(--good)] bg-[var(--good-bg)] text-[var(--good)]" : cancelled ? "border-[var(--critical)] bg-[var(--critical-bg)] text-[var(--critical)]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--navy)]"}`}
                         >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
-                            <path d="M20 6 L9 17 L4 12" />
+                          {done ? "Réalisée" : cancelled ? "Annulée" : "À faire"}
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                            <path d="M6 9 L12 15 L18 9" />
                           </svg>
-                          {done || cancelled ? "Statut" : "Renseigner"}
                         </button>
                       )}
                       {!done && !ro && (
