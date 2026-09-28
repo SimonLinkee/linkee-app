@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useCity } from "@/components/admin/CityContext";
 import { signedUrls } from "@/lib/photos";
 
 type CheckItem = { key: string; label: string; intervalDays: number; lastDate: string };
 type Invoice = { date: string; fournisseur: string; montant: number; statut: "Payé" | "À payer"; motif: string };
 type Vehicle = {
   id: string;
+  cityId?: string;
   name: string;
   plate: string;
   type: string;
@@ -35,9 +37,10 @@ const defaultRevisions = (): CheckItem[] => [
   { key: "karcher", label: "Grand nettoyage (Kärcher + aspirateur)", intervalDays: 15, lastDate: todayIso() },
 ];
 
-type VehicleRow = { id: string; name: string; plate: string | null; assigned_to: string | null; fiche: Partial<Vehicle> | null };
+type VehicleRow = { id: string; name: string; plate: string | null; assigned_to: string | null; fiche: Partial<Vehicle> | null; city_id?: string };
 const rowToVehicle = (r: VehicleRow): Vehicle => ({
   id: r.id,
+  cityId: r.city_id,
   name: r.name,
   plate: r.plate ?? "",
   assignedTo: r.assigned_to ?? "",
@@ -78,7 +81,7 @@ export default function FlottePage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [currentId, setCurrentId] = useState("");
   const [loading, setLoading] = useState(true);
-  const [cityId, setCityId] = useState<string | null>(null);
+  const { cityId, isAll, cities } = useCity(); // cityId is null in the national view; the page remounts when the city changes
   const [logisticiens, setLogisticiens] = useState<{ id: string; name: string }[]>([{ id: "", name: "Non assigné" }]);
   const [toast, setToast] = useState<string | null>(null);
   const [reports, setReports] = useState<Record<string, Report>>({});
@@ -102,13 +105,14 @@ export default function FlottePage() {
 
   useEffect(() => {
     (async () => {
-      const { data: auth } = await supabase.auth.getUser();
-      const { data: prof } = await supabase.from("profiles").select("city_id").eq("id", auth.user?.id ?? "").maybeSingle();
-      setCityId(prof?.city_id ?? null);
-      const [v, l] = await Promise.all([
-        supabase.from("vehicles").select("id,name,plate,assigned_to,fiche").order("created_at"),
-        supabase.from("profiles").select("id,full_name,email").eq("role", "logisticien").order("full_name"),
-      ]);
+      // one city, or every city in the national view
+      let vq = supabase.from("vehicles").select("id,name,plate,assigned_to,fiche,city_id").order("created_at");
+      let lq = supabase.from("profiles").select("id,full_name,email").eq("role", "logisticien").order("full_name");
+      if (cityId) {
+        vq = vq.eq("city_id", cityId);
+        lq = lq.eq("city_id", cityId);
+      }
+      const [v, l] = await Promise.all([vq, lq]);
       if (v.error) showToast("Chargement impossible : " + v.error.message);
       let list = ((v.data ?? []) as unknown as VehicleRow[]).map(rowToVehicle);
       // what the logisticien declared from his app (checks done, tour photos, receipts)
@@ -161,7 +165,7 @@ export default function FlottePage() {
   }
 
   async function addVehicle() {
-    if (!cityId) return showToast("Aucune ville n'est associée à ton compte.");
+    if (!cityId) return showToast(isAll ? "Choisis d'abord une ville dans le menu pour y ajouter un véhicule." : "Aucune ville n'est associée à ton compte.");
     const fiche = { type: "Véhicule", statut: "En service", checks: defaultChecks(), revisions: defaultRevisions(), invoices: [] };
     const { data, error } = await supabase.from("vehicles").insert({ city_id: cityId, name: "Nouveau véhicule", plate: "", fiche }).select("id,name,plate,assigned_to,fiche").single();
     if (error || !data) return showToast("Création impossible : " + (error?.message ?? "erreur"));
@@ -239,7 +243,7 @@ export default function FlottePage() {
         <p className="mb-[18px] text-[13.5px] text-[var(--slate)]">Véhicules, contrôles d&apos;entretien et suivi devis/factures.</p>
         <div className="rounded-[18px] border border-dashed border-[var(--border)] bg-[var(--card)] px-6 py-10 text-center text-[13px] text-[var(--slate)]">
           {loading ? "Chargement…" : "Aucun véhicule pour l'instant."}
-          {!loading && (
+          {!loading && !isAll && (
             <div className="mt-3">
               <button type="button" onClick={addVehicle} className="rounded-[40px] bg-[var(--navy-deep)] px-[18px] py-2.5 font-display text-[13.5px] font-bold text-[var(--panel-fg)]">
                 + Ajouter un véhicule
@@ -306,15 +310,24 @@ export default function FlottePage() {
                   <div className="truncate text-[13px] font-bold text-[var(--navy)]">{v.name}</div>
                   <div className="text-[11px] text-[var(--slate)]">
                     {v.plate} · {assignedName}
+                    {isAll && v.cityId && (
+                      <span className="ml-1.5 inline-flex items-center gap-1 rounded-[40px] px-1.5 py-px align-middle text-[9.5px] font-bold text-white" style={{ background: cities.find((c) => c.id === v.cityId)?.color ?? "var(--slate)" }}>
+                        {cities.find((c) => c.id === v.cityId)?.name ?? "?"}
+                      </span>
+                    )}
                   </div>
                 </span>
                 {overdue > 0 && <span title={`${overdue} échéance(s) dépassée(s)`} className="h-[9px] w-[9px] flex-none rounded-full bg-[var(--critical)]" />}
               </div>
             );
           })}
-          <button type="button" onClick={addVehicle} className="mt-1 w-full rounded-xl border-[1.5px] border-dashed border-[var(--border)] px-3 py-2.5 text-[12.5px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]">
-            + Ajouter un véhicule
-          </button>
+          {isAll ? (
+            <p className="mt-1 px-2 py-2 text-[11.5px] text-[var(--slate)]">Vue nationale : choisis une ville dans le menu pour y ajouter un véhicule.</p>
+          ) : (
+            <button type="button" onClick={addVehicle} className="mt-1 w-full rounded-xl border-[1.5px] border-dashed border-[var(--border)] px-3 py-2.5 text-[12.5px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]">
+              + Ajouter un véhicule
+            </button>
+          )}
         </div>
 
         <div className="rounded-[20px] border border-[var(--border)] bg-[var(--card)] px-7 pt-[26px] pb-[30px] shadow-[var(--shadow)]">

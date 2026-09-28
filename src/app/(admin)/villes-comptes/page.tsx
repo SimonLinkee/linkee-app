@@ -2,9 +2,10 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { CITY_PALETTE, DEFAULT_DEPOT, useCity } from "@/components/admin/CityContext";
 
 type Role = "en_attente" | "admin_principal" | "admin_local" | "logisticien" | "partenaire" | "beneficiaire";
-type City = { id: string; name: string };
+type City = { id: string; name: string; color?: string | null; depot_address?: string | null };
 type PartnerLite = { id: string; name: string; city_id: string };
 type Account = { id: string; name: string; email: string; role: Role; city: string | null; active: boolean; partnerIds: string[] };
 type ProfileRow = {
@@ -78,7 +79,7 @@ export default function VillesComptesPage() {
     const { data: auth } = await supabase.auth.getUser();
     setMe(auth.user?.id ?? null);
     const [c, p, b] = await Promise.all([
-      supabase.from("cities").select("id,name").order("name"),
+      supabase.from("cities").select("id,name,color,depot_address").order("name").then((r) => (r.error ? supabase.from("cities").select("id,name").order("name") : r)), // before migration 011
       supabase.from("partners").select("id,name,city_id").order("name"),
       supabase.from("beneficiaries").select("id,city_id"),
     ]);
@@ -126,11 +127,21 @@ export default function VillesComptesPage() {
   const countByCity = (cityId: string, role: Role) => accounts.filter((a) => a.city === cityId && a.role === role).length;
   const partnersInCity = (cityId: string) => partners.filter((p) => p.city_id === cityId);
 
+  const { reloadCities } = useCity();
+  const colorOf = (c: City, i: number) => c.color || CITY_PALETTE[i % CITY_PALETTE.length];
+  async function updateCity(id: string, patch: { color?: string; depot_address?: string }) {
+    setCities((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+    const { error } = await supabase.from("cities").update(patch).eq("id", id);
+    if (error) return showToast("Ville non modifiée : " + error.message + " (la migration 011 est-elle passée ?)");
+    await reloadCities(); // the selector in the menu takes the new colour / depot
+  }
+
   async function addCity() {
     const name = newCityName.trim();
     if (!name) return;
-    const { error } = await supabase.from("cities").insert({ name });
+    const { error } = await supabase.from("cities").insert({ name, color: CITY_PALETTE[cities.length % CITY_PALETTE.length] });
     if (error) return showToast("Ville non créée : " + error.message);
+    reloadCities();
     setAddingCity(false);
     setNewCityName("");
     showToast(`Ville « ${name} » ajoutée — reste à y rattacher des comptes et des partenaires.`);
@@ -281,10 +292,11 @@ export default function VillesComptesPage() {
       </div>
 
       <div className="mb-[34px] grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-4">
-        {cities.map((c) => {
+        {cities.map((c, ci) => {
           const nPartners = partnersInCity(c.id).length;
+          const color = colorOf(c, ci);
           return (
-            <div key={c.id} className="rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]">
+            <div key={c.id} className="overflow-hidden rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]" style={{ borderTop: `6px solid ${color}` }}>
               <div className="mb-3 flex items-center justify-between">
                 <span className="font-display text-[19px] font-extrabold text-[var(--navy)]">{c.name}</span>
                 <span className={`rounded-[40px] px-[9px] py-1 text-[9.5px] font-bold uppercase ${nPartners > 0 ? "bg-[var(--good-bg)] text-[var(--good)]" : "bg-[var(--warn-bg)] text-[var(--warn)]"}`}>{nPartners > 0 ? "Active" : "À paramétrer"}</span>
@@ -301,6 +313,24 @@ export default function VillesComptesPage() {
                     <strong className="block font-display text-[17px] font-extrabold text-[var(--navy)]">{n}</strong>
                   </div>
                 ))}
+              </div>
+              <div className="mt-3.5 border-t border-[var(--border)] pt-3">
+                <div className="mb-1.5 text-[10.5px] font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Couleur</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {CITY_PALETTE.map((hex) => (
+                    <button key={hex} type="button" title={hex} onClick={() => updateCity(c.id, { color: hex })} className="h-6 w-6 rounded-full border-2" style={{ background: hex, borderColor: hex === color ? "var(--navy)" : "transparent" }} />
+                  ))}
+                </div>
+                <div className="mt-2.5 mb-1 text-[10.5px] font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Adresse de l&apos;entrepôt (départ des tournées)</div>
+                <input
+                  defaultValue={c.depot_address ?? (c.name === "Lyon" ? DEFAULT_DEPOT : "")}
+                  placeholder="Rue, code postal, ville"
+                  onBlur={(e) => {
+                    const v = e.target.value.trim();
+                    if (v && v !== (c.depot_address ?? "")) updateCity(c.id, { depot_address: v });
+                  }}
+                  className="w-full rounded-[9px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[12px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
+                />
               </div>
             </div>
           );

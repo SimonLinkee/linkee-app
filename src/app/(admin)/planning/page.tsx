@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { geocode, toKm, type LatLng } from "@/lib/geocode";
 import { signedUrls } from "@/lib/photos";
+import { useCity } from "@/components/admin/CityContext";
 import dynamic from "next/dynamic";
 import type { MapPoint } from "@/components/RouteMap";
 
@@ -66,8 +67,8 @@ const DEFAULT_DAY_START = 9 * 60; // 09:00, adjustable per day (day_settings)
 const LUNCH_START = 12 * 60 + 30;
 const LUNCH_END = 13 * 60 + 30;
 const HARD_LIMIT = 18 * 60;
-const DEPOT = { name: "Entrepôt Linkee", address: "110 Rue du Companet, 69140 Rillieux-la-Pape" };
-const DEPOT_PLACE: Place = { key: "depot", kind: "stock", name: DEPOT.name, cat: "Dépôt stock", address: DEPOT.address, partnerId: null, beneficiaryId: null };
+const DEPOT_NAME = "Entrepôt Linkee"; // the depot address depends on the city (cities.depot_address)
+const depotPlace = (address: string): Place => ({ key: "depot", kind: "stock", name: DEPOT_NAME, cat: "Dépôt stock", address, partnerId: null, beneficiaryId: null });
 
 const DENREE_OPTIONS = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
 const DOW_NAMES = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
@@ -107,7 +108,7 @@ function one<T>(v: T | T[] | null | undefined): T | null {
 // DB weekdays: 1 = Monday … 7 = Sunday
 const dbWeekday = (d: Date) => (d.getDay() === 0 ? 7 : d.getDay());
 
-function rowToStop(r: DbCollecte): Stop {
+function rowToStop(r: DbCollecte, depotAddress: string): Stop {
   const p = one(r.partners);
   const b = one(r.beneficiaries);
   const rel = p ?? b;
@@ -120,7 +121,7 @@ function rowToStop(r: DbCollecte): Stop {
     status: r.status === "annule" ? "annule" : "planifie",
     dbStatus: r.status,
     comment: r.comment ?? undefined,
-    address: rel?.address ?? (r.kind === "stock" ? DEPOT.address : ""),
+    address: rel?.address ?? (r.kind === "stock" ? depotAddress : ""),
     partnerId: r.partner_id,
     beneficiaryId: r.beneficiary_id,
     label: r.label,
@@ -201,8 +202,10 @@ const SELECT_DAY =
 
 export default function PlanningPage() {
   const supabase = useMemo(() => createClient(), []);
-  const [cityId, setCityId] = useState<string | null>(null);
-  const [places, setPlaces] = useState<Place[]>([DEPOT_PLACE]);
+  const { cityId, depotAddress } = useCity(); // the page remounts when the city changes
+  const DEPOT = { name: DEPOT_NAME, address: depotAddress };
+  const DEPOT_PLACE = depotPlace(depotAddress);
+  const [places, setPlaces] = useState<Place[]>([depotPlace(depotAddress)]);
   const [view, setView] = useState<"jour" | "semaine">("jour");
   const [currentDate, setCurrentDate] = useState(() => new Date());
   // deep link from the Stock screen: /planning?date=YYYY-MM-DD
@@ -329,13 +332,10 @@ export default function PlanningPage() {
   /* ---------- initial load: city, places, checklist templates ---------- */
   useEffect(() => {
     (async () => {
-      const { data: auth } = await supabase.auth.getUser();
-      const { data: prof } = await supabase.from("profiles").select("city_id").eq("id", auth.user?.id ?? "").maybeSingle();
-      setCityId(prof?.city_id ?? null);
       const [ps, bs, tpl] = await Promise.all([
-        supabase.from("partners").select("id,name,category,address").eq("active", true).order("name"),
-        supabase.from("beneficiaries").select("id,name,category,address").eq("active", true).order("name"),
-        supabase.from("checklist_templates").select("weekday,items"),
+        supabase.from("partners").select("id,name,category,address").eq("city_id", cityId ?? "").eq("active", true).order("name"),
+        supabase.from("beneficiaries").select("id,name,category,address").eq("city_id", cityId ?? "").eq("active", true).order("name"),
+        supabase.from("checklist_templates").select("weekday,items").eq("city_id", cityId ?? ""),
       ]);
       const list: Place[] = [
         ...((ps.data ?? []) as { id: string; name: string; category: string | null; address: string | null }[]).map((p) => ({
@@ -360,9 +360,9 @@ export default function PlanningPage() {
   async function loadDay() {
     setLoadingDay(true);
     dirty.current = false;
-    const { data, error } = await supabase.from("collectes").select(SELECT_DAY).eq("scheduled_date", iso).order("sort_order");
+    const { data, error } = await supabase.from("collectes").select(SELECT_DAY).eq("city_id", cityId ?? "").eq("scheduled_date", iso).order("sort_order");
     if (error) fail("Chargement impossible", error.message);
-    const list = ((data ?? []) as unknown as DbCollecte[]).map(rowToStop);
+    const list = ((data ?? []) as unknown as DbCollecte[]).map((r) => rowToStop(r, depotAddress));
     setStops(list);
     // rows that were never scheduled (fresh copies) get their times written once
     if ((data ?? []).some((r) => (r as { scheduled_time: string | null }).scheduled_time === null && (r as { status: string }).status !== "annule")) dirty.current = true;
@@ -371,7 +371,8 @@ export default function PlanningPage() {
   async function loadRequests() {
     const { data } = await supabase
       .from("exceptional_requests")
-      .select("id,partner_id,wished_date,wished_time,denree,volume_kg,comment,partners(name)")
+      .select("id,partner_id,wished_date,wished_time,denree,volume_kg,comment,partners!inner(name,city_id)")
+      .eq("partners.city_id", cityId ?? "")
       .eq("status", "en_attente")
       .order("wished_date");
     setPendingReqs((data ?? []) as unknown as PartnerReq[]);
@@ -397,7 +398,7 @@ export default function PlanningPage() {
     showToast("Demande refusée.");
   }
   async function loadDayStart() {
-    const { data } = await supabase.from("day_settings").select("start_min").eq("day", iso).maybeSingle();
+    const { data } = await supabase.from("day_settings").select("start_min").eq("city_id", cityId ?? "").eq("day", iso).maybeSingle();
     setDayStart(data?.start_min ?? DEFAULT_DAY_START);
   }
   async function changeDayStart(min: number) {
@@ -408,7 +409,7 @@ export default function PlanningPage() {
     if (error) fail("Heure de départ non enregistrée", error.message + " (la migration 010 est-elle passée ?)");
   }
   async function loadOverride() {
-    const { data } = await supabase.from("checklist_overrides").select("items").eq("day", iso).maybeSingle();
+    const { data } = await supabase.from("checklist_overrides").select("items").eq("city_id", cityId ?? "").eq("day", iso).maybeSingle();
     setChecklistOverride((data?.items as ChecklistItem[] | undefined) ?? null);
   }
   async function loadWeek() {
@@ -419,6 +420,7 @@ export default function PlanningPage() {
     const { data } = await supabase
       .from("collectes")
       .select("scheduled_date,scheduled_time,status,label,sort_order,partners(name),beneficiaries(name)")
+      .eq("city_id", cityId ?? "")
       .gte("scheduled_date", isoDate(monday))
       .lte("scheduled_date", isoDate(sunday))
       .order("scheduled_date")
@@ -611,6 +613,7 @@ export default function PlanningPage() {
     const { data, error } = await supabase
       .from("collectes")
       .select("kind,partner_id,beneficiary_id,label,duration_min,sort_order")
+      .eq("city_id", cityId)
       .eq("scheduled_date", isoDate(prev))
       .in("kind", ["partner", "dropoff", "stock"])
       .order("sort_order");

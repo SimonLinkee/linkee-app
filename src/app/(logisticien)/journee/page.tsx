@@ -55,7 +55,7 @@ type Stop = {
 };
 
 const DENREE_OPTIONS = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
-const DEPOT_ADDRESS = "110 Rue du Companet, 69140 Rillieux-la-Pape";
+const DEFAULT_DEPOT_ADDRESS = "110 Rue du Companet, 69140 Rillieux-la-Pape"; // used when the city has no depot address yet
 
 function one<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
@@ -66,7 +66,7 @@ const ACCESS_KEY_MAP: Record<string, string> = { digicode: "digicode", quai: "qu
 
 
 
-function rowToStop(r: DbStop, all: DbStop[]): Stop {
+function rowToStop(r: DbStop, all: DbStop[], depotAddress: string): Stop {
   const rel = one(r.partners) ?? one(r.beneficiaries);
   const fiche = (rel?.fiche ?? {}) as { access?: Record<string, boolean>; accessNote?: string; denrees?: Record<string, boolean> };
   const kind: Kind = r.kind === "dropoff" ? "dropoff" : r.kind === "stock" ? "stock" : r.kind === "partner" ? "partner" : "exceptionnel";
@@ -84,7 +84,7 @@ function rowToStop(r: DbStop, all: DbStop[]): Stop {
     access: Object.entries(fiche.access ?? {}).filter(([, on]) => on).map(([k]) => ACCESS_KEY_MAP[k] ?? k),
     status,
     kind,
-    address: rel?.address ?? (r.kind === "stock" ? DEPOT_ADDRESS : ""),
+    address: rel?.address ?? (r.kind === "stock" ? depotAddress : ""),
     accessDetails: fiche.accessNote || undefined,
     planned: r.planned_items?.map((p) => ({ id: p.id, name: p.name, colis: p.colis })),
     sitePhoto: one(r.partners)?.photo_url || undefined,
@@ -517,6 +517,7 @@ export default function JourneePage() {
   const [firstName, setFirstName] = useState("");
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [weekRows, setWeekRows] = useState<WeekRow[]>([]);
+  const [depotAddr, setDepotAddr] = useState(DEFAULT_DEPOT_ADDRESS);
   const [vehicle, setVehicle] = useState<{ id: string; name: string; plate: string | null } | null>(null);
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   const [depChecked, setDepChecked] = useState<Set<number>>(new Set());
@@ -620,7 +621,11 @@ export default function JourneePage() {
       if (col.error) showToast("Chargement impossible : " + col.error.message);
       const rows = (col.data ?? []) as unknown as DbStop[];
       const presets = ((stock.data ?? []) as { id: string; name: string; category: string | null; colis: number; upc: number; grammage: number | string }[]).map((s) => ({ id: s.id, name: s.name, category: s.category ?? "", colis: s.colis, upc: s.upc, grammage: Number(s.grammage) }));
-      setStops(rows.map((r) => rowToStop(r, rows)).map((s) => (s.kind === "stock" ? { ...s, presetItems: presets } : s)));
+      // the depot (start of the tour, stock pick-up) is set per city
+      const cityRow = prof.data?.city_id ? await supabase.from("cities").select("depot_address").eq("id", prof.data.city_id).maybeSingle() : null;
+      const depotAddr = (cityRow?.data as { depot_address?: string | null } | null)?.depot_address || DEFAULT_DEPOT_ADDRESS;
+      setDepotAddr(depotAddr);
+      setStops(rows.map((r) => rowToStop(r, rows, depotAddr)).map((s) => (s.kind === "stock" ? { ...s, presetItems: presets } : s)));
       setChecklist((ovr.data?.items ?? tpl.data?.items ?? []) as ChecklistItem[]);
       setVehicle((veh.data as { id: string; name: string; plate: string | null } | null) ?? null);
       setWeekRows((wk.data ?? []) as unknown as WeekRow[]);
@@ -794,7 +799,7 @@ export default function JourneePage() {
     let cancelled = false;
     (async () => {
       const hex: Record<Kind, string> = { partner: "#0a1a3f", stock: "#b97600", dropoff: "#1a8f68", exceptionnel: "#1f93a8" };
-      const depot = await geocode(DEPOT_ADDRESS);
+      const depot = await geocode(depotAddr);
       const found: { s: Stop; i: number; g: { lat: number; lng: number } }[] = [];
       for (let i = 0; i < stops.length; i++) {
         if (stops[i].status === "annule") continue;

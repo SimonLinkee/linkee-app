@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useCity } from "@/components/admin/CityContext";
 
 type AccessKey = "digicode" | "quai" | "camion" | "etage" | "horaire";
 type AccessFlags = Record<AccessKey, boolean>;
@@ -200,7 +201,7 @@ export default function PartenairesPage() {
   const [partners, setPartners] = useState<PartnerEntity[]>([]);
   const [beneficiaires, setBeneficiaires] = useState<BeneficiaireEntity[]>([]);
   const [loading, setLoading] = useState(true);
-  const [cityId, setCityId] = useState<string | null>(null);
+  const { cityId } = useCity(); // the page remounts when the city changes
   const saveTimers = useRef<Record<string, number>>({});
   const [tab, setTab] = useState<"partner" | "beneficiaire">("partner");
   const [currentId, setCurrentId] = useState("");
@@ -228,14 +229,12 @@ export default function PartenairesPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data: auth } = await supabase.auth.getUser();
-      const [prof, ps, bs] = await Promise.all([
-        supabase.from("profiles").select("city_id").eq("id", auth.user?.id ?? "").maybeSingle(),
-        supabase.from("partners").select(SELECT_COLS + ",logo_url").order("name"),
-        supabase.from("beneficiaries").select(SELECT_COLS).order("name"),
+      // only the selected city's partners and beneficiaries (see the city selector in the menu)
+      const [ps, bs] = await Promise.all([
+        supabase.from("partners").select(SELECT_COLS + ",logo_url").eq("city_id", cityId ?? "").order("name"),
+        supabase.from("beneficiaries").select(SELECT_COLS).eq("city_id", cityId ?? "").order("name"),
       ]);
       if (cancelled) return;
-      setCityId(prof.data?.city_id ?? null);
       const p = ((ps.data ?? []) as unknown as Row[]).map((r) => rowToEntity("partner", r) as PartnerEntity);
       const b = ((bs.data ?? []) as Row[]).map((r) => rowToEntity("beneficiaire", r) as BeneficiaireEntity);
       setPartners(p);

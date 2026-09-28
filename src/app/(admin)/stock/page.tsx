@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useCity } from "@/components/admin/CityContext";
 
 type StockItem = {
   id: string;
@@ -54,7 +55,7 @@ export default function StockPage() {
   const supabase = useMemo(() => createClient(), []);
   const [stock, setStock] = useState<StockItem[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [cityId, setCityId] = useState<string | null>(null);
+  const { cityId, city, depotAddress } = useCity(); // the page remounts when the city changes
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [destinations, setDestinations] = useState<Dest[]>([{ id: null, name: "Autre bénéficiaire / à préciser" }]);
@@ -64,6 +65,7 @@ export default function StockPage() {
     const { data } = await supabase
       .from("collectes")
       .select("id,label,scheduled_date,planned_items")
+      .eq("city_id", cityId ?? "")
       .eq("kind", "stock")
       .eq("status", "todo")
       .not("planned_items", "is", null)
@@ -104,8 +106,8 @@ export default function StockPage() {
 
   async function reload() {
     const [s, m] = await Promise.all([
-      supabase.from("stock_items").select(STOCK_COLS).order("name"),
-      supabase.from("stock_movements").select("id,type,day,time,destination,items").order("created_at", { ascending: false }).limit(300),
+      supabase.from("stock_items").select(STOCK_COLS).eq("city_id", cityId ?? "").order("name"),
+      supabase.from("stock_movements").select("id,type,day,time,destination,items").eq("city_id", cityId ?? "").order("created_at", { ascending: false }).limit(300),
     ]);
     if (s.error) showToast("Chargement impossible : " + s.error.message);
     const items = ((s.data ?? []) as unknown as DbStock[]).map(toItem);
@@ -118,9 +120,7 @@ export default function StockPage() {
     (async () => {
       const { data: auth } = await supabase.auth.getUser();
       setUserId(auth.user?.id ?? null);
-      const { data: prof } = await supabase.from("profiles").select("city_id").eq("id", auth.user?.id ?? "").maybeSingle();
-      setCityId(prof?.city_id ?? null);
-      const { data: bs } = await supabase.from("beneficiaries").select("id,name").eq("active", true).order("name");
+      const { data: bs } = await supabase.from("beneficiaries").select("id,name").eq("city_id", cityId ?? "").eq("active", true).order("name");
       const dest: Dest[] = [...((bs ?? []) as Dest[]), { id: null, name: "Autre bénéficiaire / à préciser" }];
       setDestinations(dest);
       setOutDestination(dest[0].name);
@@ -303,7 +303,7 @@ export default function StockPage() {
   return (
     <div>
       <h1 className="font-display text-[32px] leading-none font-black">Stock</h1>
-      <p className="mb-[18px] text-[13.5px] text-[var(--slate)]">Entrepôt Linkee — 110 Rue du Companet, 69140 Rillieux-la-Pape.</p>
+      <p className="mb-[18px] text-[13.5px] text-[var(--slate)]">Entrepôt Linkee {city ? `de ${city.name}` : ""} — {depotAddress}.</p>
 
       <div className="mb-[18px] flex flex-wrap gap-3.5">
         <div className="min-w-[130px] rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-[18px] py-3 shadow-[var(--shadow)]">

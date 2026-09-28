@@ -14,6 +14,7 @@ const DENREE_TO_KEY: Record<string, CatKey> = Object.fromEntries(CAT_KEYS.map((k
 
 type Rel = { name: string; category: string | null };
 export type StatRow = {
+  city_id?: string;
   scheduled_date: string;
   kind: string;
   status: string;
@@ -22,7 +23,7 @@ export type StatRow = {
   partners: Rel | Rel[] | null;
   collecte_items: { denree: string | null; kg: number | string }[] | null;
 };
-export const STAT_SELECT = "scheduled_date,kind,status,motif,partner_id,partners(name,category),collecte_items!collecte_id(denree,kg)";
+export const STAT_SELECT = "city_id,scheduled_date,kind,status,motif,partner_id,partners(name,category),collecte_items!collecte_id(denree,kg)";
 
 export type Summary = {
   volume: number;

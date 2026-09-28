@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useCity } from "@/components/admin/CityContext";
 import { CAT_KEYS, CAT_LABELS, STAT_SELECT, buildEvo, isoOf, summarize, type CatKey, type StatRow, type Summary } from "@/lib/stats";
 
 type Gran = "jour" | "semaine" | "mois" | "custom";
@@ -171,17 +172,17 @@ export default function DashboardPage() {
   const [work, setWork] = useState<{ secs: number; days: number }>({ secs: 0, days: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { cityId, city, isAll, cities } = useCity(); // cityId is null in the national view; the page remounts when the city changes
+  const [byCity, setByCity] = useState<{ id: string; name: string; color: string; volume: number; ok: number; collectes: number }[]>([]);
 
   const range = useMemo(() => periodRange(gran, anchor, dateFrom, dateTo), [gran, anchor, dateFrom, dateTo]);
   const fromKey = range.from.getTime();
   const toKey = range.to.getTime();
 
   useEffect(() => {
-    supabase
-      .from("partners")
-      .select("id,name,category")
-      .order("name")
-      .then(({ data }) => setPartnerOpts(((data ?? []) as { id: string; name: string; category: string | null }[]).map((p) => ({ id: p.id, name: p.name, cat: p.category ?? "" }))));
+    let pq = supabase.from("partners").select("id,name,category").order("name");
+    if (cityId) pq = pq.eq("city_id", cityId);
+    pq.then(({ data }) => setPartnerOpts(((data ?? []) as { id: string; name: string; category: string | null }[]).map((p) => ({ id: p.id, name: p.name, cat: p.category ?? "" }))));
   }, [supabase]);
 
   useEffect(() => {
@@ -199,16 +200,24 @@ export default function DashboardPage() {
       const start = prevFrom < evoFrom ? prevFrom : evoFrom;
 
       let q = supabase.from("collectes").select(STAT_SELECT).gte("scheduled_date", isoOf(start)).lte("scheduled_date", isoOf(to)).limit(5000);
+      if (cityId) q = q.eq("city_id", cityId); // one city, or every city in the national view
       if (activePartnerId) q = q.eq("partner_id", activePartnerId);
+      let sq = supabase.from("day_sessions").select("started_at,closed_at").gte("day", isoOf(from)).lte("day", isoOf(to)).not("closed_at", "is", null);
+      if (cityId) sq = sq.eq("city_id", cityId);
       const [{ data, error: err }, ses] = await Promise.all([
         q,
-        activePartnerId
-          ? Promise.resolve({ data: [] as { started_at: string | null; closed_at: string | null }[] })
-          : supabase.from("day_sessions").select("started_at,closed_at").gte("day", isoOf(from)).lte("day", isoOf(to)).not("closed_at", "is", null),
+        activePartnerId ? Promise.resolve({ data: [] as { started_at: string | null; closed_at: string | null }[] }) : sq,
       ]);
       if (cancelled) return;
       if (err) setError(err.message);
       const rows = (data ?? []) as unknown as StatRow[];
+      // national view: volume and collections per city
+      if (!cityId) {
+        const fk0 = isoOf(from);
+        const tk0 = isoOf(to);
+        const cur0 = rows.filter((r) => r.scheduled_date >= fk0 && r.scheduled_date <= tk0);
+        setByCity(cities.map((c) => ({ id: c.id, name: c.name, color: c.color, ...(() => { const s = summarize(cur0.filter((r) => r.city_id === c.id)); return { volume: s.volume, ok: s.ok, collectes: s.collectes }; })() })));
+      }
       const fk = isoOf(from);
       const pk = isoOf(prevFrom);
       setCur(summarize(rows.filter((r) => r.scheduled_date >= fk && r.scheduled_date <= isoOf(to))));
@@ -250,7 +259,7 @@ export default function DashboardPage() {
       <div className="mb-6 flex flex-wrap items-start justify-between gap-5">
         <div>
           <h1 className="font-display text-[34px] leading-none font-black">Tableau de bord</h1>
-          <p className="mt-1.5 text-sm text-[var(--slate)]">Vue d&apos;ensemble de l&apos;activité de collecte — zone Lyon.</p>
+          <p className="mt-1.5 text-sm text-[var(--slate)]">{isAll ? "Vue nationale — toutes les villes cumulées." : `Vue d'ensemble de l'activité de collecte — ${city?.name ?? ""}.`}</p>
         </div>
         <div className="flex flex-col items-end gap-2.5">
           <div className="flex rounded-[40px] border border-[var(--border)] bg-[var(--card)] p-[3px]">
@@ -391,6 +400,33 @@ export default function DashboardPage() {
             </div>
           </div>
         </section>
+
+        {isAll && (
+          <section className="mb-4 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)]">
+            <h3 className="mb-0.5 font-display text-[17px] font-extrabold text-[var(--navy)]">Répartition par ville</h3>
+            <p className="mb-4 text-[12.5px] text-[var(--slate)]">Volume collecté et collectes réalisées, ville par ville, sur la période</p>
+            <div className="flex flex-col gap-3">
+              {byCity.map((c) => {
+                const max = Math.max(...byCity.map((x) => x.volume), 1);
+                return (
+                  <div key={c.id} className="grid grid-cols-[140px_1fr_150px] items-center gap-3">
+                    <span className="flex items-center gap-2 text-[13px] font-bold text-[var(--navy)]">
+                      <span className="h-3 w-3 flex-none rounded-full" style={{ background: c.color }} />
+                      {c.name}
+                    </span>
+                    <span className="h-3 overflow-hidden rounded-md bg-[var(--track)]">
+                      <span className="block h-full rounded-md" style={{ width: `${Math.round((c.volume / max) * 100)}%`, background: c.color }} />
+                    </span>
+                    <span className="text-right text-[12.5px] font-semibold text-[var(--slate)] tabular-nums">
+                      {fmt(c.volume)} kg · {c.ok} collecte{c.ok > 1 ? "s" : ""}
+                    </span>
+                  </div>
+                );
+              })}
+              {byCity.length === 0 && <p className="text-[13px] text-[var(--slate)]">Aucune ville.</p>}
+            </div>
+          </section>
+        )}
 
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div className="rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)]">

@@ -6,6 +6,15 @@ import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { AVATAR_DEFS, critterSvg, type AvatarKey } from "@/lib/avatars";
 import NotificationBell from "@/components/NotificationBell";
+import { useCity } from "@/components/admin/CityContext";
+
+/** readable text colour (white or dark navy) on top of a hex background */
+function textOn(hex: string) {
+  const h = hex.replace("#", "");
+  const n = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h, 16);
+  const lum = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return lum > 0.62 ? "#04162e" : "#ffffff";
+}
 
 const NAV_ITEMS = [
   {
@@ -92,6 +101,11 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [me, setMe] = useState<{ name: string; role: string; avatar: string | null }>({ name: "", role: "", avatar: null });
+  const { ready, cities, city, isAll, canSwitch, select } = useCity();
+  const [cityMenu, setCityMenu] = useState(false);
+  const NATIONAL_BG = "linear-gradient(120deg,#2a78d6,#7C5CD9 45%,#eb6834)";
+  // only Dashboard and Fleet exist in the national view (all cities)
+  const visibleNav = isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/flotte", "/profil"].includes(n.href)) : NAV_ITEMS;
 
   useEffect(() => {
     (async () => {
@@ -124,8 +138,82 @@ export function Sidebar() {
           </div>
           <NotificationBell dark />
         </div>
+
+        {/* big city selector: solid colour of the city you are browsing */}
+        {ready && (
+          <div className="relative mb-5">
+            <button
+              type="button"
+              disabled={!canSwitch}
+              onClick={() => setCityMenu((v) => !v)}
+              className="flex w-full items-center gap-3 rounded-2xl px-3.5 py-3 text-left shadow-[0_10px_24px_-12px_rgba(0,0,0,0.7)] disabled:cursor-default"
+              style={{ background: isAll ? NATIONAL_BG : (city?.color ?? "var(--slate)"), color: isAll ? "#fff" : textOn(city?.color ?? "#4D5C7A") }}
+            >
+              <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-white/25">
+                {isAll ? (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                    <circle cx="12" cy="12" r="8.5" />
+                    <path d="M3.5 12 H20.5 M12 3.5 C 8 8, 8 16, 12 20.5 C 16 16, 16 8, 12 3.5" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                    <path d="M12 21 C 8 16.5, 5 13, 5 9.5 A7 7 0 0 1 19 9.5 C 19 13, 16 16.5, 12 21 Z" />
+                    <circle cx="12" cy="9.5" r="2.3" />
+                  </svg>
+                )}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[9.5px] font-bold tracking-[0.08em] uppercase opacity-80">{isAll ? "Vue nationale" : "Ville affichée"}</span>
+                <span className="block truncate font-display text-[21px] leading-tight font-black">{isAll ? "Toutes les villes" : (city?.name ?? "—")}</span>
+              </span>
+              {canSwitch && (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 flex-none transition-transform ${cityMenu ? "rotate-180" : ""}`}>
+                  <path d="M6 9 L12 15 L18 9" />
+                </svg>
+              )}
+            </button>
+            {cityMenu && canSwitch && (
+              <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] text-[var(--navy)] shadow-[0_18px_40px_-12px_rgba(0,0,0,0.5)]">
+                {cities.map((c) => {
+                  const on = !isAll && city?.id === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        select(c.id);
+                        setCityMenu(false);
+                      }}
+                      className={`flex w-full items-center gap-2.5 px-3.5 py-3 text-left text-[14px] font-bold hover:bg-[var(--input-bg)] ${on ? "bg-[var(--track)]" : ""}`}
+                    >
+                      <span className="h-3.5 w-3.5 flex-none rounded-full" style={{ background: c.color }} />
+                      <span className="flex-1">{c.name}</span>
+                      {on && <span className="text-[var(--good)]">✓</span>}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => {
+                    select("all");
+                    setCityMenu(false);
+                  }}
+                  className={`flex w-full items-center gap-2.5 border-t border-[var(--border)] px-3.5 py-3 text-left text-[14px] font-bold hover:bg-[var(--input-bg)] ${isAll ? "bg-[var(--track)]" : ""}`}
+                >
+                  <span className="h-3.5 w-3.5 flex-none rounded-full" style={{ background: NATIONAL_BG }} />
+                  <span className="flex-1">
+                    Toutes les villes
+                    <span className="block text-[10.5px] font-medium text-[var(--slate)]">Stats nationales · tableau de bord et flotte</span>
+                  </span>
+                  {isAll && <span className="text-[var(--good)]">✓</span>}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         <nav className="flex flex-col gap-[3px]">
-          {NAV_ITEMS.map((item) => {
+          {visibleNav.map((item) => {
             const active = pathname === item.href;
             return (
               <Link
