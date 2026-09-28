@@ -34,6 +34,10 @@
   --stock-accent-bg: rgba(237, 161, 0, 0.16);
   --exc-accent: #1f93a8;
   --exc-accent-bg: rgba(79, 193, 214, 0.18);
+  --shadow: 0 1px 2px rgba(0, 22, 65, 0.05), 0 6px 18px rgba(0, 22, 65, 0.06);
+  --todo-bg: #f1e9df;
+  --dropoff: #1a8f68;
+  --dropoff-bg: rgba(26, 143, 104, 0.14);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -69,6 +73,10 @@
     --stock-accent-bg: rgba(224, 166, 60, 0.18);
     --exc-accent: #5fd3e6;
     --exc-accent-bg: rgba(95, 211, 230, 0.18);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.25);
+    --todo-bg: #223055;
+    --dropoff: #4ed1a1;
+    --dropoff-bg: rgba(78, 209, 161, 0.16);
   }
 }
 
@@ -104,6 +112,10 @@
   --stock-accent-bg: rgba(224, 166, 60, 0.18);
   --exc-accent: #5fd3e6;
   --exc-accent-bg: rgba(95, 211, 230, 0.18);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 18px rgba(0, 0, 0, 0.25);
+  --todo-bg: #223055;
+  --dropoff: #4ed1a1;
+  --dropoff-bg: rgba(78, 209, 161, 0.16);
 }
 
 @theme inline {
