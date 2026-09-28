@@ -961,6 +961,8 @@ export default function JourneePage() {
               })}
             </div>
             {doneMissions.length > 0 && <p className="mt-2.5 text-center text-[11.5px] text-[var(--slate)]">{doneMissions.length} mission{doneMissions.length > 1 ? "s" : ""} terminée{doneMissions.length > 1 ? "s" : ""}.</p>}
+            </div>
+            )}
           </div>
 
           {dayState === "closed" && (
