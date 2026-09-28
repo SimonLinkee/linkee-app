@@ -45,8 +45,14 @@ export async function updateSession(request: NextRequest) {
   }
 
   // Signed in: the profile (readable by its owner through RLS) tells us the role.
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
-  const role = profile?.role ?? 'en_attente'
+  let { data: profile, error: profileError } = await supabase.from('profiles').select('role,active').eq('id', user.id).maybeSingle()
+  if (profileError) {
+    // "active" column not created yet (migration 005): fall back to the role alone
+    const retry = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
+    profile = retry.data ? { ...retry.data, active: true } : null
+  }
+  // a deactivated account behaves like an account without a role
+  const role = profile && profile.active !== false ? (profile.role ?? 'en_attente') : 'en_attente'
   const home = homeForRole(role)
 
   if (path === '/' || path === '/login') return redirectTo(home)

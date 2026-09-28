@@ -1,66 +1,115 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
-type Role = "admin_principal" | "admin_local" | "logisticien";
-type City = { id: string; name: string; status: "active" | "setup"; since: string };
-type Account = { id: number; name: string; email: string; role: Role; city: string | null; active: boolean };
+type Role = "en_attente" | "admin_principal" | "admin_local" | "logisticien" | "partenaire" | "beneficiaire";
+type City = { id: string; name: string };
+type PartnerLite = { id: string; name: string; city_id: string };
+type Account = { id: string; name: string; email: string; role: Role; city: string | null; active: boolean; partnerIds: string[] };
+type ProfileRow = {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+  role: Role;
+  city_id: string | null;
+  active?: boolean;
+  partner_users: { partner_id: string }[] | null;
+};
 
-const ROLE_LABELS: Record<Role, string> = { admin_principal: "Admin principal", admin_local: "Admin local", logisticien: "Logisticien" };
+const ROLE_LABELS: Record<Role, string> = {
+  admin_principal: "Admin principal",
+  admin_local: "Admin local",
+  logisticien: "Logisticien",
+  partenaire: "Partenaire",
+  beneficiaire: "Bénéficiaire",
+  en_attente: "En attente",
+};
+const ROLE_ORDER: Role[] = ["admin_principal", "admin_local", "logisticien", "partenaire", "beneficiaire", "en_attente"];
 
-const INITIAL_CITIES: City[] = [
-  { id: "lyon", name: "Lyon", status: "active", since: "Active depuis janvier 2024" },
-  { id: "marseille", name: "Marseille", status: "setup", since: "En cours de paramétrage" },
-];
+const inputCls = "w-full rounded-[7px] border-[1.5px] border-[var(--turquoise)] bg-[var(--input-bg)] px-2 py-1.5 text-xs text-[var(--navy)] outline-none";
+const formInputCls = "w-full rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-3 py-2.5 text-[13px] font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]";
+const labelCls = "mb-1 block text-[11px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase";
 
-const INITIAL_ACCOUNTS: Account[] = [
-  { id: 1, name: "Simon", email: "simon@linkee.org", role: "admin_principal", city: null, active: true },
-  { id: 2, name: "Akram", email: "akram@linkee.org", role: "logisticien", city: "lyon", active: true },
-  { id: 3, name: "Léa Bonnard", email: "lea.bonnard@linkee.org", role: "admin_local", city: "lyon", active: true },
-  { id: 4, name: "Mehdi Salah", email: "mehdi.salah@linkee.org", role: "logisticien", city: "marseille", active: false },
-];
-
-function countPartners(cityId: string) {
-  return cityId === "lyon" ? 7 : 0;
-}
-function countBenef(cityId: string) {
-  return cityId === "lyon" ? 4 : 0;
+function randomPassword() {
+  const chars = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = new Uint32Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => chars[b % chars.length]).join("");
 }
 
 export default function VillesComptesPage() {
-  const [cities, setCities] = useState<City[]>(INITIAL_CITIES);
-  const [accounts, setAccounts] = useState<Account[]>(INITIAL_ACCOUNTS);
+  const supabase = useMemo(() => createClient(), []);
+  const [cities, setCities] = useState<City[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [partners, setPartners] = useState<PartnerLite[]>([]);
+  const [benefByCity, setBenefByCity] = useState<Record<string, number>>({});
+  const [me, setMe] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [addingCity, setAddingCity] = useState(false);
   const [newCityName, setNewCityName] = useState("");
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Account | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  let nextId = Math.max(...accounts.map((a) => a.id)) + 1;
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({ email: "", full_name: "", role: "logisticien" as Role, city_id: "", password: "", partner_ids: [] as string[] });
+  const [busy, setBusy] = useState(false);
+  const [credentials, setCredentials] = useState<{ email: string; password: string; note: string } | null>(null);
 
   function showToast(msg: string) {
     setToast(msg);
-    window.setTimeout(() => setToast(null), 2800);
+    window.setTimeout(() => setToast(null), 3200);
   }
 
-  function cityName(id: string | null) {
-    return cities.find((c) => c.id === id)?.name || "—";
+  async function load() {
+    const { data: auth } = await supabase.auth.getUser();
+    setMe(auth.user?.id ?? null);
+    const [c, p, b] = await Promise.all([
+      supabase.from("cities").select("id,name").order("name"),
+      supabase.from("partners").select("id,name,city_id").order("name"),
+      supabase.from("beneficiaries").select("id,city_id"),
+    ]);
+    const first = await supabase.from("profiles").select("id,email,full_name,role,city_id,active,partner_users(partner_id)").order("created_at");
+    const prof: { data: unknown; error: { message: string } | null } = first.error
+      ? await supabase.from("profiles").select("id,email,full_name,role,city_id,partner_users(partner_id)").order("created_at") // before migration 005
+      : first;
+    if (prof.error) showToast("Chargement impossible : " + prof.error.message);
+    setCities((c.data ?? []) as City[]);
+    setPartners((p.data ?? []) as PartnerLite[]);
+    const counts: Record<string, number> = {};
+    ((b.data ?? []) as { city_id: string }[]).forEach((x) => (counts[x.city_id] = (counts[x.city_id] ?? 0) + 1));
+    setBenefByCity(counts);
+    setAccounts(
+      ((prof.data ?? []) as unknown as ProfileRow[]).map((r) => ({
+        id: r.id,
+        name: r.full_name ?? "",
+        email: r.email ?? "",
+        role: r.role,
+        city: r.city_id,
+        active: r.active !== false,
+        partnerIds: (r.partner_users ?? []).map((x) => x.partner_id),
+      })),
+    );
+    setLoading(false);
   }
-  function countByCity(cityId: string, role: Role) {
-    return accounts.filter((a) => a.city === cityId && a.role === role).length;
-  }
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  function addCity() {
+  const cityName = (id: string | null) => cities.find((c) => c.id === id)?.name || "—";
+  const countByCity = (cityId: string, role: Role) => accounts.filter((a) => a.city === cityId && a.role === role).length;
+  const partnersInCity = (cityId: string) => partners.filter((p) => p.city_id === cityId);
+
+  async function addCity() {
     const name = newCityName.trim();
     if (!name) return;
-    const id = name
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[̀-ͯ]/g, "")
-      .replace(/[^a-z0-9]/g, "");
-    setCities((prev) => [...prev, { id, name, status: "setup", since: "Ajoutée aujourd'hui" }]);
+    const { error } = await supabase.from("cities").insert({ name });
+    if (error) return showToast("Ville non créée : " + error.message);
     setAddingCity(false);
     setNewCityName("");
     showToast(`Ville « ${name} » ajoutée — reste à y rattacher des comptes et des partenaires.`);
+    load();
   }
 
   function startEdit(a: Account) {
@@ -68,26 +117,92 @@ export default function VillesComptesPage() {
     setDraft({ ...a });
   }
 
-  function saveEdit() {
+  async function saveEdit() {
     if (!draft) return;
-    const finalDraft = draft.role === "admin_principal" ? { ...draft, city: null } : draft;
-    setAccounts((prev) => prev.map((a) => (a.id === finalDraft.id ? finalDraft : a)));
+    const original = accounts.find((a) => a.id === draft.id);
+    if (draft.id === me && (draft.role !== "admin_principal" || !draft.active)) {
+      return showToast("Tu ne peux pas retirer ton propre accès administrateur principal.");
+    }
+    let res = await supabase.from("profiles").update({ full_name: draft.name.trim() || null, role: draft.role, city_id: draft.city, active: draft.active }).eq("id", draft.id);
+    if (res.error && /active/i.test(res.error.message)) {
+      res = await supabase.from("profiles").update({ full_name: draft.name.trim() || null, role: draft.role, city_id: draft.city }).eq("id", draft.id); // before migration 005
+    }
+    if (res.error) return showToast("Compte non mis à jour : " + res.error.message);
+    // partner links (only meaningful for the "partenaire" role)
+    const wanted = draft.role === "partenaire" ? draft.partnerIds : [];
+    if (JSON.stringify([...wanted].sort()) !== JSON.stringify([...(original?.partnerIds ?? [])].sort())) {
+      const del = await supabase.from("partner_users").delete().eq("profile_id", draft.id);
+      if (del.error) return showToast("Sites non mis à jour : " + del.error.message);
+      if (wanted.length) {
+        const ins = await supabase.from("partner_users").insert(wanted.map((partner_id) => ({ profile_id: draft.id, partner_id })));
+        if (ins.error) return showToast("Sites non mis à jour : " + ins.error.message);
+      }
+    }
+    setAccounts((prev) => prev.map((a) => (a.id === draft.id ? { ...draft, partnerIds: wanted } : a)));
     setEditingId(null);
     setDraft(null);
     showToast("Compte mis à jour.");
   }
 
-  function addAccount() {
-    const a: Account = { id: nextId, name: "Nouveau compte", email: "", role: "logisticien", city: cities[0]?.id || null, active: true };
-    nextId += 1;
-    setAccounts((prev) => [...prev, a]);
-    startEdit(a);
+  async function callApi(method: "POST" | "PATCH", payload: object) {
+    const res = await fetch("/api/admin/accounts", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const json = (await res.json().catch(() => ({}))) as { error?: string; id?: string };
+    if (!res.ok) throw new Error(json.error ?? "Erreur inconnue");
+    return json;
   }
+
+  async function createAccount() {
+    if (!form.email.trim()) return showToast("Renseigne l'adresse email.");
+    if (form.password.length < 8) return showToast("Mot de passe : 8 caractères minimum (utilise « Générer »).");
+    if (form.role !== "admin_principal" && !form.city_id && form.role !== "partenaire") return showToast("Choisis une ville pour ce compte.");
+    setBusy(true);
+    try {
+      await callApi("POST", { ...form, city_id: form.city_id || null });
+      setCredentials({ email: form.email.trim().toLowerCase(), password: form.password, note: "Compte créé." });
+      setCreating(false);
+      setForm({ email: "", full_name: "", role: "logisticien", city_id: cities[0]?.id ?? "", password: "", partner_ids: [] });
+      await load();
+    } catch (e) {
+      showToast((e as Error).message);
+    }
+    setBusy(false);
+  }
+
+  async function resetPassword(a: Account) {
+    const password = randomPassword();
+    setBusy(true);
+    try {
+      await callApi("PATCH", { id: a.id, password });
+      setCredentials({ email: a.email, password, note: "Nouveau mot de passe défini." });
+    } catch (e) {
+      showToast((e as Error).message);
+    }
+    setBusy(false);
+  }
+
+  function openCreate() {
+    setForm({ email: "", full_name: "", role: "logisticien", city_id: cities[0]?.id ?? "", password: randomPassword(), partner_ids: [] });
+    setCreating(true);
+  }
+
+  const partnerChoices = (cityId: string | null, selected: string[], onToggle: (id: string) => void) => (
+    <div className="flex flex-wrap gap-2">
+      {partners.filter((p) => !cityId || p.city_id === cityId).length === 0 && <span className="text-[11.5px] text-[var(--slate)]">Aucun partenaire dans cette ville pour l&apos;instant.</span>}
+      {partners
+        .filter((p) => !cityId || p.city_id === cityId)
+        .map((p) => (
+          <label key={p.id} className={`inline-flex cursor-pointer items-center gap-1.5 rounded-[40px] border-[1.5px] px-3 py-1.5 text-[11.5px] font-semibold ${selected.includes(p.id) ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)]"}`}>
+            <input type="checkbox" className="hidden" checked={selected.includes(p.id)} onChange={() => onToggle(p.id)} />
+            {p.name}
+          </label>
+        ))}
+    </div>
+  );
 
   return (
     <div>
       <h1 className="font-display text-[32px] leading-none font-black">Villes &amp; comptes</h1>
-      <p className="mb-[18px] text-[13.5px] text-[var(--slate)]">Pilotage multi-villes de Linkee.</p>
+      <p className="mb-[18px] text-[13.5px] text-[var(--slate)]">Pilotage multi-villes de Linkee : qui a accès à quoi.</p>
 
       <div className="mb-[22px] flex items-center gap-2.5 rounded-[14px] bg-[var(--navy-deep)] px-4 py-[11px] text-[12.5px] font-semibold text-[var(--panel-fg)]">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-[17px] w-[17px] flex-none text-[var(--turquoise)]">
@@ -99,16 +214,24 @@ export default function VillesComptesPage() {
         </span>
       </div>
 
+      {credentials && (
+        <div className="mb-5 rounded-[16px] border-[1.5px] border-[var(--good)] bg-[var(--good-bg)] p-4 text-[13px] text-[var(--navy)]">
+          <strong className="text-[var(--good)]">{credentials.note}</strong> Transmets ces identifiants à la personne — le mot de passe ne sera plus affiché après.
+          <div className="mt-2 rounded-[10px] bg-[var(--card)] px-3.5 py-2.5 font-mono text-[13px]">
+            {credentials.email} <span className="text-[var(--muted)]">/</span> <strong>{credentials.password}</strong>
+          </div>
+          <button type="button" onClick={() => setCredentials(null)} className="mt-2.5 rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-1.5 font-display text-[12.5px] font-bold text-[var(--slate)]">
+            J&apos;ai noté, masquer
+          </button>
+        </div>
+      )}
+
       <div className="mb-3.5 flex flex-wrap items-center justify-between gap-2.5">
         <div>
           <h2 className="font-display text-[22px] font-black">Villes</h2>
-          <p className="mt-0.5 text-[12.5px] text-[var(--slate)]">Chaque ville est une base de données séparée : partenaires, bénéficiaires, planning, stock, flotte.</p>
+          <p className="mt-0.5 text-[12.5px] text-[var(--slate)]">Chaque ville a ses propres partenaires, bénéficiaires, planning, stock et flotte.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setAddingCity(true)}
-          className="flex items-center gap-1.5 rounded-[40px] bg-[var(--navy-deep)] px-[17px] py-[9px] font-display text-[13px] font-bold text-[var(--panel-fg)]"
-        >
+        <button type="button" onClick={() => setAddingCity(true)} className="flex items-center gap-1.5 rounded-[40px] bg-[var(--navy-deep)] px-[17px] py-[9px] font-display text-[13px] font-bold text-[var(--panel-fg)]">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
             <path d="M12 5 V19 M5 12 H19" />
           </svg>
@@ -117,50 +240,35 @@ export default function VillesComptesPage() {
       </div>
 
       <div className="mb-[34px] grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-4">
-        {cities.map((c) => (
-          <div key={c.id} className="rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="font-display text-[19px] font-extrabold text-[var(--navy)]">{c.name}</span>
-              <span
-                className={`rounded-[40px] px-[9px] py-1 text-[9.5px] font-bold uppercase ${
-                  c.status === "active" ? "bg-[var(--good-bg)] text-[var(--good)]" : "bg-[var(--warn-bg)] text-[var(--warn)]"
-                }`}
-              >
-                {c.status === "active" ? "Active" : "À paramétrer"}
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-              <div className="text-[11px] text-[var(--slate)]">
-                Partenaires
-                <strong className="block font-display text-[17px] font-extrabold text-[var(--navy)]">{countPartners(c.id)}</strong>
+        {cities.map((c) => {
+          const nPartners = partnersInCity(c.id).length;
+          return (
+            <div key={c.id} className="rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="font-display text-[19px] font-extrabold text-[var(--navy)]">{c.name}</span>
+                <span className={`rounded-[40px] px-[9px] py-1 text-[9.5px] font-bold uppercase ${nPartners > 0 ? "bg-[var(--good-bg)] text-[var(--good)]" : "bg-[var(--warn-bg)] text-[var(--warn)]"}`}>{nPartners > 0 ? "Active" : "À paramétrer"}</span>
               </div>
-              <div className="text-[11px] text-[var(--slate)]">
-                Bénéficiaires
-                <strong className="block font-display text-[17px] font-extrabold text-[var(--navy)]">{countBenef(c.id)}</strong>
-              </div>
-              <div className="text-[11px] text-[var(--slate)]">
-                Logisticiens
-                <strong className="block font-display text-[17px] font-extrabold text-[var(--navy)]">{countByCity(c.id, "logisticien")}</strong>
-              </div>
-              <div className="text-[11px] text-[var(--slate)]">
-                Admins locaux
-                <strong className="block font-display text-[17px] font-extrabold text-[var(--navy)]">{countByCity(c.id, "admin_local")}</strong>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                {[
+                  ["Partenaires", nPartners],
+                  ["Bénéficiaires", benefByCity[c.id] ?? 0],
+                  ["Logisticiens", countByCity(c.id, "logisticien")],
+                  ["Admins locaux", countByCity(c.id, "admin_local")],
+                ].map(([label, n]) => (
+                  <div key={label as string} className="text-[11px] text-[var(--slate)]">
+                    {label}
+                    <strong className="block font-display text-[17px] font-extrabold text-[var(--navy)]">{n}</strong>
+                  </div>
+                ))}
               </div>
             </div>
-            <div className="mt-3 text-[10.5px] text-[var(--muted)]">{c.since}</div>
-          </div>
-        ))}
+          );
+        })}
 
         <div className="flex min-h-[150px] items-center justify-center rounded-[18px] border-[1.5px] border-dashed border-[var(--border)] p-5">
           {addingCity ? (
             <div className="flex flex-col items-center gap-2.5">
-              <input
-                autoFocus
-                value={newCityName}
-                onChange={(e) => setNewCityName(e.target.value)}
-                placeholder="Nom de la ville"
-                className="w-40 rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-3 py-2.5 text-center text-sm outline-none focus:border-[var(--turquoise)]"
-              />
+              <input autoFocus value={newCityName} onChange={(e) => setNewCityName(e.target.value)} placeholder="Nom de la ville" className="w-40 rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-3 py-2.5 text-center text-sm outline-none focus:border-[var(--turquoise)]" />
               <div className="flex gap-2">
                 <button type="button" onClick={addCity} className="rounded-[40px] bg-[var(--navy-deep)] px-3.5 py-2 font-display text-[13px] font-bold text-[var(--panel-fg)]">
                   Ajouter
@@ -191,151 +299,198 @@ export default function VillesComptesPage() {
       <div className="mb-3.5 flex flex-wrap items-center justify-between gap-2.5">
         <div>
           <h2 className="font-display text-[22px] font-black">Comptes</h2>
-          <p className="mt-0.5 text-[12.5px] text-[var(--slate)]">Rôle et ville de rattachement de chaque administrateur ou logisticien.</p>
+          <p className="mt-0.5 text-[12.5px] text-[var(--slate)]">Rôle, ville et sites de chaque personne qui se connecte : admins, logisticiens, partenaires, bénéficiaires.</p>
         </div>
-        <button
-          type="button"
-          onClick={addAccount}
-          className="flex items-center gap-1.5 rounded-[40px] bg-[var(--navy-deep)] px-[17px] py-[9px] font-display text-[13px] font-bold text-[var(--panel-fg)]"
-        >
+        <button type="button" onClick={openCreate} className="flex items-center gap-1.5 rounded-[40px] bg-[var(--navy-deep)] px-[17px] py-[9px] font-display text-[13px] font-bold text-[var(--panel-fg)]">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
             <path d="M12 5 V19 M5 12 H19" />
           </svg>
-          Ajouter un compte
+          Créer un compte
         </button>
       </div>
 
+      {creating && (
+        <div className="mb-4 rounded-[18px] border-[1.5px] border-[var(--turquoise)] bg-[var(--card)] p-5 shadow-[var(--shadow)]">
+          <h3 className="mb-3 font-display text-[16px] font-extrabold">Nouveau compte</h3>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <label className={labelCls}>Email de connexion</label>
+              <input className={formInputCls} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="prenom@exemple.fr" />
+            </div>
+            <div>
+              <label className={labelCls}>Nom affiché</label>
+              <input className={formInputCls} value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} placeholder="Akram" />
+            </div>
+            <div>
+              <label className={labelCls}>Rôle</label>
+              <select className={formInputCls} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })}>
+                {ROLE_ORDER.map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABELS[r]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Ville</label>
+              <select className={formInputCls} value={form.city_id} onChange={(e) => setForm({ ...form, city_id: e.target.value })}>
+                {cities.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="sm:col-span-1 lg:col-span-2">
+              <label className={labelCls}>Mot de passe initial (8 caractères min.)</label>
+              <div className="flex gap-2">
+                <input className={`${formInputCls} font-mono`} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+                <button type="button" onClick={() => setForm({ ...form, password: randomPassword() })} className="flex-none rounded-[10px] border-[1.5px] border-[var(--border)] px-3 text-[12px] font-bold text-[var(--slate)]">
+                  Générer
+                </button>
+              </div>
+            </div>
+          </div>
+          {form.role === "partenaire" && (
+            <div className="mt-3">
+              <label className={labelCls}>Sites auxquels ce compte donne accès</label>
+              {partnerChoices(form.city_id || null, form.partner_ids, (id) =>
+                setForm({ ...form, partner_ids: form.partner_ids.includes(id) ? form.partner_ids.filter((x) => x !== id) : [...form.partner_ids, id] }),
+              )}
+            </div>
+          )}
+          <div className="mt-4 flex gap-2.5">
+            <button type="button" disabled={busy} onClick={createAccount} className="rounded-[40px] bg-[var(--navy-deep)] px-[18px] py-2.5 font-display text-[13.5px] font-bold text-[var(--panel-fg)] disabled:opacity-60">
+              {busy ? "Création…" : "Créer le compte"}
+            </button>
+            <button type="button" onClick={() => setCreating(false)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-2.5 font-display text-[13.5px] font-bold text-[var(--slate)]">
+              Annuler
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-[18px] border border-[var(--border)] bg-[var(--card)] shadow-[var(--shadow)]">
-        <table className="w-full min-w-[680px] border-collapse text-[12.5px]">
+        <table className="w-full min-w-[720px] border-collapse text-[12.5px]">
           <thead>
             <tr>
               {["Nom", "Email", "Rôle", "Ville", "Statut", ""].map((h) => (
-                <th key={h} className="border-b border-[var(--border)] px-3 py-3 text-left text-[10px] font-bold tracking-[0.03em] text-[var(--muted)] uppercase whitespace-nowrap">
+                <th key={h} className="border-b border-[var(--border)] px-3 py-3 text-left text-[10px] font-bold tracking-[0.03em] whitespace-nowrap text-[var(--muted)] uppercase">
                   {h}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
+            {loading && (
+              <tr>
+                <td colSpan={6} className="px-3 py-6 text-center text-[var(--slate)]">
+                  Chargement…
+                </td>
+              </tr>
+            )}
             {accounts.map((a) => {
               const isEditing = editingId === a.id && draft;
               if (isEditing && draft) {
                 return (
-                  <tr key={a.id}>
-                    <td className="border-b border-[var(--border)] px-3 py-2.5">
-                      <input
-                        value={draft.name}
-                        onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                        className="w-full rounded-[7px] border-[1.5px] border-[var(--turquoise)] bg-[var(--input-bg)] px-2 py-1.5 text-xs text-[var(--navy)]"
-                      />
-                    </td>
-                    <td className="border-b border-[var(--border)] px-3 py-2.5">
-                      <input
-                        value={draft.email}
-                        onChange={(e) => setDraft({ ...draft, email: e.target.value })}
-                        className="w-full rounded-[7px] border-[1.5px] border-[var(--turquoise)] bg-[var(--input-bg)] px-2 py-1.5 text-xs text-[var(--navy)]"
-                      />
-                    </td>
-                    <td className="border-b border-[var(--border)] px-3 py-2.5">
-                      <select
-                        value={draft.role}
-                        onChange={(e) => setDraft({ ...draft, role: e.target.value as Role })}
-                        className="w-full rounded-[7px] border-[1.5px] border-[var(--turquoise)] bg-[var(--input-bg)] px-2 py-1.5 text-xs text-[var(--navy)]"
-                      >
-                        {(Object.keys(ROLE_LABELS) as Role[]).map((r) => (
-                          <option key={r} value={r}>
-                            {ROLE_LABELS[r]}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="border-b border-[var(--border)] px-3 py-2.5">
-                      <select
-                        value={draft.city || cities[0]?.id || ""}
-                        disabled={draft.role === "admin_principal"}
-                        onChange={(e) => setDraft({ ...draft, city: e.target.value })}
-                        className="w-full rounded-[7px] border-[1.5px] border-[var(--turquoise)] bg-[var(--input-bg)] px-2 py-1.5 text-xs text-[var(--navy)] disabled:opacity-50"
-                      >
-                        {cities.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="border-b border-[var(--border)] px-3 py-2.5">
-                      <select
-                        value={draft.active ? "1" : "0"}
-                        onChange={(e) => setDraft({ ...draft, active: e.target.value === "1" })}
-                        className="w-full rounded-[7px] border-[1.5px] border-[var(--turquoise)] bg-[var(--input-bg)] px-2 py-1.5 text-xs text-[var(--navy)]"
-                      >
-                        <option value="1">Actif</option>
-                        <option value="0">Inactif</option>
-                      </select>
-                    </td>
-                    <td className="border-b border-[var(--border)] px-3 py-2.5">
-                      <div className="flex gap-1.5">
-                        <button
-                          type="button"
-                          onClick={saveEdit}
-                          className="flex h-[26px] w-[26px] items-center justify-center rounded-full border-[1.5px] border-[var(--good)] bg-[var(--good-bg)] text-[var(--good)]"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
-                            <path d="M20 6 L9 17 L4 12" />
-                          </svg>
+                  <Fragment key={a.id}>
+                    <tr>
+                      <td className="border-b border-[var(--border)] px-3 py-2.5">
+                        <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className={inputCls} placeholder="Nom" />
+                      </td>
+                      <td className="border-b border-[var(--border)] px-3 py-2.5 text-[var(--slate)]">{draft.email}</td>
+                      <td className="border-b border-[var(--border)] px-3 py-2.5">
+                        <select value={draft.role} onChange={(e) => setDraft({ ...draft, role: e.target.value as Role })} className={inputCls}>
+                          {ROLE_ORDER.map((r) => (
+                            <option key={r} value={r}>
+                              {ROLE_LABELS[r]}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="border-b border-[var(--border)] px-3 py-2.5">
+                        <select value={draft.city ?? ""} onChange={(e) => setDraft({ ...draft, city: e.target.value || null })} className={inputCls}>
+                          <option value="">—</option>
+                          {cities.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="border-b border-[var(--border)] px-3 py-2.5">
+                        <select value={draft.active ? "1" : "0"} onChange={(e) => setDraft({ ...draft, active: e.target.value === "1" })} className={inputCls}>
+                          <option value="1">Actif</option>
+                          <option value="0">Inactif</option>
+                        </select>
+                      </td>
+                      <td className="border-b border-[var(--border)] px-3 py-2.5">
+                        <div className="flex gap-1.5">
+                          <button type="button" onClick={saveEdit} title="Enregistrer" className="flex h-[26px] w-[26px] items-center justify-center rounded-full border-[1.5px] border-[var(--good)] bg-[var(--good-bg)] text-[var(--good)]">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                              <path d="M20 6 L9 17 L4 12" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            title="Annuler"
+                            onClick={() => {
+                              setEditingId(null);
+                              setDraft(null);
+                            }}
+                            className="flex h-[26px] w-[26px] items-center justify-center rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)]"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                              <path d="M6 6 L18 18 M18 6 L6 18" />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td colSpan={6} className="border-b border-[var(--border)] bg-[var(--input-bg)] px-3 py-3">
+                        {draft.role === "partenaire" && (
+                          <div className="mb-3">
+                            <div className={labelCls}>Sites auxquels ce compte donne accès</div>
+                            {partnerChoices(draft.city, draft.partnerIds, (id) =>
+                              setDraft({ ...draft, partnerIds: draft.partnerIds.includes(id) ? draft.partnerIds.filter((x) => x !== id) : [...draft.partnerIds, id] }),
+                            )}
+                          </div>
+                        )}
+                        <button type="button" disabled={busy} onClick={() => resetPassword(a)} className="rounded-[40px] border-[1.5px] border-[var(--border)] bg-[var(--card)] px-3.5 py-1.5 font-display text-[12.5px] font-bold text-[var(--slate)] disabled:opacity-60">
+                          Générer un nouveau mot de passe
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingId(null);
-                            setDraft(null);
-                          }}
-                          className="flex h-[26px] w-[26px] items-center justify-center rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)]"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
-                            <path d="M6 6 L18 18 M18 6 L6 18" />
-                          </svg>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                    </tr>
+                  </Fragment>
                 );
               }
               return (
                 <tr key={a.id} className="hover:[&>td]:bg-[var(--input-bg)]">
-                  <td className="border-b border-[var(--border)] px-3 py-2.5 text-[var(--navy)]">{a.name}</td>
+                  <td className="border-b border-[var(--border)] px-3 py-2.5 text-[var(--navy)]">
+                    {a.name || <span className="text-[var(--muted)] italic">Sans nom</span>}
+                    {a.id === me && <span className="ml-1.5 rounded-[40px] bg-[var(--track)] px-1.5 py-0.5 text-[9px] font-bold text-[var(--slate)] uppercase">Toi</span>}
+                  </td>
                   <td className="border-b border-[var(--border)] px-3 py-2.5 text-[var(--navy)]">{a.email}</td>
                   <td className="border-b border-[var(--border)] px-3 py-2.5">
                     <span
                       className={`rounded-[40px] px-2.5 py-1 text-[10.5px] font-bold whitespace-nowrap ${
-                        a.role === "admin_principal"
-                          ? "bg-[var(--navy-deep)] text-[var(--panel-fg)]"
-                          : a.role === "admin_local"
-                            ? "bg-[var(--turquoise)] text-[#04262e]"
-                            : "bg-[var(--track)] text-[var(--slate)]"
+                        a.role === "admin_principal" ? "bg-[var(--navy-deep)] text-[var(--panel-fg)]" : a.role === "admin_local" ? "bg-[var(--turquoise)] text-[#04262e]" : a.role === "en_attente" ? "bg-[var(--warn-bg)] text-[var(--warn)]" : "bg-[var(--track)] text-[var(--slate)]"
                       }`}
                     >
                       {ROLE_LABELS[a.role]}
                     </span>
+                    {a.role === "partenaire" && <span className="ml-1.5 text-[11px] text-[var(--slate)]">{a.partnerIds.length} site(s)</span>}
                   </td>
                   <td className="border-b border-[var(--border)] px-3 py-2.5">
-                    {a.role === "admin_principal" ? (
-                      <span className="text-[11px] font-semibold text-[var(--muted)] italic">Toutes les villes</span>
-                    ) : (
-                      <span className="text-[11px] font-semibold text-[var(--slate)]">{cityName(a.city)}</span>
-                    )}
+                    <span className="text-[11px] font-semibold text-[var(--slate)]">{a.role === "admin_principal" && a.city ? `${cityName(a.city)} (ville de travail · accès à toutes)` : cityName(a.city)}</span>
                   </td>
                   <td className="border-b border-[var(--border)] px-3 py-2.5 text-[var(--navy)]">
                     <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${a.active ? "bg-[var(--good)]" : "bg-[var(--muted)]"}`} />
                     {a.active ? "Actif" : "Inactif"}
                   </td>
                   <td className="border-b border-[var(--border)] px-3 py-2.5">
-                    <button
-                      type="button"
-                      onClick={() => startEdit(a)}
-                      title="Modifier"
-                      className="flex h-[26px] w-[26px] items-center justify-center rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]"
-                    >
+                    <button type="button" onClick={() => startEdit(a)} title="Modifier" className="flex h-[26px] w-[26px] items-center justify-center rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
                         <path d="M4 20 L4.8 16.5 L16 5.3 C16.8 4.5,18 4.5,18.8 5.3 L18.7 5.2 C19.5 6,19.5 7.2,18.7 8 L7.5 19.2 Z M14 7 L17 10" />
                       </svg>
@@ -349,17 +504,13 @@ export default function VillesComptesPage() {
       </div>
 
       <div className="mt-[26px] rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card)] px-5 py-4 text-xs leading-[1.6] text-[var(--slate)]">
-        <strong className="text-[var(--navy)]">Comment ça fonctionne :</strong> un <strong className="text-[var(--navy)]">Admin principal</strong> n&apos;a pas de ville associée — il voit tout,
-        partout, comme aujourd&apos;hui. Un <strong className="text-[var(--navy)]">Admin local</strong> ou un <strong className="text-[var(--navy)]">Logisticien</strong> est rattaché à exactement
-        une ville ; le reste de l&apos;application (Tableau de bord, Partenaires, Planning, Stock, Flotte) se filtre automatiquement sur cette ville pour lui, sans sélecteur — il n&apos;a tout
-        simplement pas la possibilité de voir les autres. Seul l&apos;Admin principal voit apparaître le sélecteur de ville (démonstration sur le Tableau de bord).
+        <strong className="text-[var(--navy)]">Comment ça fonctionne :</strong> l&apos;<strong className="text-[var(--navy)]">Admin principal</strong> accède à toutes les villes ; sa « ville de travail » sert seulement à créer
+        les nouveaux éléments. Un <strong className="text-[var(--navy)]">Admin local</strong> ou un <strong className="text-[var(--navy)]">Logisticien</strong> est rattaché à une seule ville et ne voit
+        que celle-ci. Un <strong className="text-[var(--navy)]">Partenaire</strong> voit uniquement les sites cochés. Un compte <strong className="text-[var(--navy)]">En attente</strong> ou <strong className="text-[var(--navy)]">Inactif</strong>{" "}
+        ne donne accès à rien.
       </div>
 
-      {toast && (
-        <div className="fixed bottom-[26px] left-1/2 z-[999] max-w-[380px] -translate-x-1/2 rounded-[14px] bg-[var(--navy-deep)] px-[18px] py-3 text-center text-[13px] font-semibold text-[var(--panel-fg)] shadow-[var(--shadow)]">
-          {toast}
-        </div>
-      )}
+      {toast && <div className="fixed bottom-[26px] left-1/2 z-[999] max-w-[420px] -translate-x-1/2 rounded-[14px] bg-[var(--navy-deep)] px-[18px] py-3 text-center text-[13px] font-semibold text-[var(--panel-fg)] shadow-[var(--shadow)]">{toast}</div>}
     </div>
   );
 }
