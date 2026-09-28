@@ -4,6 +4,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
 import { PASSAGE_ITEMS, PassageIcon, type Passage } from "@/components/PassageIcons";
+import PartnerDocuments from "@/components/partner/PartnerDocuments";
+import PartnerValuation from "@/components/partner/PartnerValuation";
+import PartnerCollectes from "@/components/partner/PartnerCollectes";
+
+type FicheTab = "fiche" | "documents" | "valorisation" | "collectes";
 
 type AccessKey = "digicode" | "quai" | "camion" | "etage" | "horaire";
 type AccessFlags = Record<AccessKey, boolean>;
@@ -206,6 +211,7 @@ export default function PartenairesPage() {
   const { cityId } = useCity(); // the page remounts when the city changes
   const saveTimers = useRef<Record<string, number>>({});
   const [tab, setTab] = useState<"partner" | "beneficiaire">("partner");
+  const [ficheTab, setFicheTab] = useState<FicheTab>("fiche");
   const [currentId, setCurrentId] = useState("");
   const [search, setSearch] = useState("");
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(["identite"]));
@@ -526,6 +532,33 @@ export default function PartenairesPage() {
                 Modifications enregistrées
               </div>
 
+              {current.kind === "partner" && (
+                <div className="mb-4 flex flex-wrap gap-1.5 rounded-[40px] border border-[var(--border)] bg-[var(--card)] p-1">
+                  {(
+                    [
+                      ["fiche", "Fiche"],
+                      ["documents", "Mes documents"],
+                      ["valorisation", "Valorisation RSE"],
+                      ["collectes", "Collectes"],
+                    ] as [FicheTab, string][]
+                  ).map(([k, l]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setFicheTab(k)}
+                      className={`flex-1 rounded-[40px] px-4 py-2 font-display text-[13.5px] font-bold whitespace-nowrap ${ficheTab === k ? "bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "text-[var(--slate)] hover:text-[var(--navy)]"}`}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {current.kind === "partner" && ficheTab === "documents" && <PartnerDocuments key={current.id} partnerId={current.id} role="admin" />}
+              {current.kind === "partner" && ficheTab === "valorisation" && <PartnerValuation key={current.id} partnerId={current.id} />}
+              {current.kind === "partner" && ficheTab === "collectes" && <PartnerCollectes key={current.id} partnerId={current.id} cityId={cityId} />}
+
+              {(current.kind !== "partner" || ficheTab === "fiche") && (
+              <>
               <AccordionSection title="Adresse & accès" sectionKey="identite" open={openSections.has("identite")} onToggle={toggleSection}>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="sm:col-span-2">
@@ -759,44 +792,6 @@ export default function PartenairesPage() {
                 </AccordionSection>
               )}
 
-              {current.kind === "partner" && (
-                <AccordionSection title="Historique des collectes" sectionKey="history" open={openSections.has("history")} onToggle={toggleSection}>
-                  <p className="mb-3 text-[11.5px] text-[var(--slate)]">Quantités collectées, modifiables à tout moment (ex : correction après une saisie du logisticien).</p>
-                  {current.history.length === 0 ? (
-                    <p className="text-xs text-[var(--slate)]">Aucune collecte enregistrée pour l&apos;instant.</p>
-                  ) : (
-                    current.history.map((h, idx) => (
-                      <div key={idx} className="grid grid-cols-[90px_1fr_120px] items-center gap-2.5 border-b border-[var(--border)] py-2.5 last:border-none">
-                        <span className="text-xs font-bold text-[var(--navy)]">{fmtDateFR(h.date)}</span>
-                        <span className="text-xs text-[var(--slate)]">{h.denree}</span>
-                        {h.status === "annulee" ? (
-                          <span className="justify-self-end rounded-[40px] bg-[var(--critical-bg)] px-2.5 py-1 text-[10px] font-bold text-[var(--critical)] uppercase">Annulée</span>
-                        ) : (
-                          <span className="flex items-center justify-self-end gap-1.5">
-                            <input
-                              type="number"
-                              min={0}
-                              step={0.1}
-                              value={h.kg}
-                              onChange={(e) =>
-                                updateEntity((entity) => {
-                                  if (entity.kind !== "partner") return entity;
-                                  const history = entity.history.map((row, i) => (i === idx ? { ...row, kg: parseFloat(e.target.value) || 0 } : row));
-                                  return { ...entity, history };
-                                })
-                              }
-                              onBlur={() => showToast("Volume corrigé — visible immédiatement dans les statistiques du partenaire.")}
-                              className="w-16 rounded-lg border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2 py-[5px] text-right text-[12.5px] font-bold text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
-                            />
-                            <span className="text-[11px] text-[var(--slate)]">kg</span>
-                          </span>
-                        )}
-                      </div>
-                    ))
-                  )}
-                </AccordionSection>
-              )}
-
               <AccordionSection title="Contacts" sectionKey="contacts" open={openSections.has("contacts")} onToggle={toggleSection}>
                 <div className="mb-2.5 flex flex-col gap-2.5">
                   {current.contacts.map((c, idx) => (
@@ -910,6 +905,8 @@ export default function PartenairesPage() {
                     </div>
                   </div>
                 </AccordionSection>
+              )}
+              </>
               )}
             </>
           )}

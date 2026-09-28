@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode 
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { compressImage } from "@/lib/photos";
-import { CAT_LABELS, buildEvo, isCollectKind, isoOf, rse, summarize, type CatKey, type StatRow } from "@/lib/stats";
+import { CAT_LABELS, DEFAULT_EUR_PER_KG, SUBCAT_SELECT, buildEvo, isCollectKind, isoOf, rse, subMap, summarize, type CatKey, type StatRow, type SubCat } from "@/lib/stats";
+import PartnerDocuments from "@/components/partner/PartnerDocuments";
+import PartnerValuation from "@/components/partner/PartnerValuation";
 
 /* ---------------- types ---------------- */
 type Contact = { type: string; nom: string; tel: string; mail: string };
@@ -32,6 +34,8 @@ type Site = {
 type DashPeriod = {
   periodLabel: string;
   volume: number;
+  don: number;
+  customShare: number;
   collectes: number;
   ok: number;
   annulees: number;
@@ -39,9 +43,7 @@ type DashPeriod = {
   evo: { l: string; v: number }[];
 };
 type Request = { id?: string; site: string; date: string; time: string; denree: string; volume: string; comment: string; status?: string };
-type Doc = { id: string; path: string; name: string; size: string; type: "pdf" | "xlsx" | "img" | "doc"; date: string };
 type DbReq = { id: string; partner_id: string; wished_date: string; wished_time: string | null; denree: string | null; volume_kg: number | null; comment: string | null; status: string };
-type DbDoc = { id: string; partner_id: string; name: string; storage_path: string; size_bytes: number | null; created_at: string };
 
 const DEFAULT_HOURS: Record<string, Hours> = {
   lun: { open: "09:00", close: "18:00" }, mar: { open: "09:00", close: "18:00" }, mer: { open: "09:00", close: "18:00" },
@@ -109,18 +111,6 @@ function fmtDateShort(iso: string) {
   const d = new Date(iso + "T00:00:00");
   return { dow: d.toLocaleDateString("fr-FR", { weekday: "short" }), dom: d.getDate(), full: d.toLocaleDateString("fr-FR", { day: "2-digit", month: "long" }) };
 }
-function fmtSize(b: number) {
-  if (b < 1024) return b + " o";
-  if (b < 1024 * 1024) return Math.round(b / 1024) + " Ko";
-  return (b / 1024 / 1024).toFixed(1) + " Mo";
-}
-function docType(name: string): Doc["type"] {
-  const ext = (name.split(".").pop() || "").toLowerCase();
-  if (ext === "pdf") return "pdf";
-  if (["xlsx", "xls", "csv"].includes(ext)) return "xlsx";
-  if (["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) return "img";
-  return "doc";
-}
 
 const fieldCls = "w-full rounded-[13px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-3.5 py-[11px] text-sm font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]";
 const labelCls = "mb-1.5 block text-[12.5px] font-semibold text-[var(--navy)]";
@@ -140,12 +130,6 @@ const GRID = <><rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.5" /><rect x
 const CLOCK = <><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5 V12 L15 14" /></>;
 const STORE = <><path d="M4 8 L8 4 H16 L20 8" /><rect x="4" y="8" width="16" height="11" rx="1.5" /><path d="M4 8 H20" /></>;
 const DOC = <><path d="M7 3 H14 L19 8 V21 H7 Z" /><path d="M14 3 V8 H19" /></>;
-const DOC_ICONS: Record<Doc["type"], ReactNode> = {
-  pdf: DOC,
-  xlsx: <><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M8 8 L16 16 M16 8 L8 16" /></>,
-  img: <><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="1.8" /><path d="M21 15 L15 9 L5 19" /></>,
-  doc: <><path d="M7 3 H14 L19 8 V21 H7 Z" /><path d="M14 3 V8 H19" /><path d="M9 13 H15 M9 16.5 H15" /></>,
-};
 
 function Wordmark({ size = "text-[22px]", color = "text-[var(--panel-fg)]" }: { size?: string; color?: string }) {
   return (
@@ -368,7 +352,7 @@ function EvoChart({ data }: { data: { l: string; v: number }[] }) {
 
 /* ---------------- page ---------------- */
 type Mode = "choice" | "desktop" | "mobile";
-type Tab = "activite" | "fiche" | "dashboard" | "documents";
+type Tab = "activite" | "fiche" | "dashboard" | "documents" | "valorisation";
 
 export default function EspacePartenairePage() {
   const router = useRouter();
@@ -379,8 +363,7 @@ export default function EspacePartenairePage() {
   const [partnerRows, setPartnerRows] = useState<PartnerRow[]>([]);
   const [colRows, setColRows] = useState<CollecteRow[]>([]);
   const [reqRows, setReqRows] = useState<DbReq[]>([]);
-  const [docRows, setDocRows] = useState<DbDoc[]>([]);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [subList, setSubList] = useState<SubCat[]>([]);
   const [siteKey, setSiteKey] = useState("");
   const [gran, setGran] = useState<"semaine" | "mois" | "tout">("semaine");
   const [granM, setGranM] = useState<"semaine" | "mois" | "annee">("semaine");
@@ -393,14 +376,11 @@ export default function EspacePartenairePage() {
   const ficheT = useRef<number | null>(null);
   const logoInput = useRef<HTMLInputElement>(null);
   const sitePhotoInput = useRef<HTMLInputElement>(null);
-  const docInput = useRef<HTMLInputElement>(null);
   const [isSmall, setIsSmall] = useState(false);
   useEffect(() => setIsSmall(window.innerWidth <= 640), []);
 
   useEffect(() => {
     (async () => {
-      const { data: auth } = await supabase.auth.getUser();
-      setUserId(auth.user?.id ?? null);
       const { data: ps, error } = await supabase.from("partners").select("id,name,site_label,category,address,logo_url,photo_url,fiche").eq("active", true).order("name");
       if (error) showToast("Chargement impossible : " + error.message);
       const partners = (ps ?? []) as PartnerRow[];
@@ -408,14 +388,14 @@ export default function EspacePartenairePage() {
       if (partners[0]) setSiteKey(partners[0].id);
       if (partners.length) {
         const ids = partners.map((p) => p.id);
-        const [col, rq, dc] = await Promise.all([
-          supabase.from("collectes").select("scheduled_date,scheduled_time,kind,status,motif,partner_id,partners(name,category),collecte_items!collecte_id(denree,kg)").in("partner_id", ids).order("scheduled_date").limit(5000),
+        const [col, rq, sb] = await Promise.all([
+          supabase.from("collectes").select("scheduled_date,scheduled_time,kind,status,motif,source,partner_id,partners(name,category),collecte_items!collecte_id(denree,kg,subcategory_id,quantity,unit)").in("partner_id", ids).order("scheduled_date").limit(5000),
           supabase.from("exceptional_requests").select("id,partner_id,wished_date,wished_time,denree,volume_kg,comment,status").in("partner_id", ids).order("created_at"),
-          supabase.from("documents").select("id,partner_id,name,storage_path,size_bytes,created_at").in("partner_id", ids).order("created_at", { ascending: false }),
+          supabase.from("partner_subcategories").select(SUBCAT_SELECT).in("partner_id", ids),
         ]);
         setColRows((col.data ?? []) as unknown as CollecteRow[]);
         setReqRows((rq.data ?? []) as DbReq[]);
-        setDocRows((dc.data ?? []) as DbDoc[]);
+        setSubList(((sb.data ?? []) as unknown as SubCat[]).map((s) => ({ ...s, unit_price: s.unit_price == null ? null : Number(s.unit_price), unit_weight_kg: s.unit_weight_kg == null ? null : Number(s.unit_weight_kg) })));
       }
       setLoading(false);
     })();
@@ -439,7 +419,7 @@ export default function EspacePartenairePage() {
           return {
             date: r.scheduled_date,
             time: r.scheduled_time ? r.scheduled_time.slice(0, 5) : "—",
-            denree: Array.from(new Set(items.map((i) => i.denree).filter(Boolean))).join(", ") || "—",
+            denree: (Array.from(new Set(items.map((i) => i.denree).filter(Boolean))).join(", ") || "—") + (r.source === "manual" ? " · saisie manuelle" : ""),
             kg: Math.round(items.reduce((s, i) => s + (Number(i.kg) || 0), 0) * 10) / 10,
             status: r.status === "annule" ? "annulee" : "ok",
           };
@@ -453,9 +433,7 @@ export default function EspacePartenairePage() {
   const requests: Request[] = reqRows
     .filter((r) => r.status === "en_attente")
     .map((r) => ({ id: r.id, site: r.partner_id, date: r.wished_date, time: r.wished_time?.slice(0, 5) ?? "—", denree: r.denree ?? "", volume: r.volume_kg ? String(r.volume_kg) : "", comment: r.comment ?? "", status: r.status }));
-  const docs: Doc[] = docRows
-    .filter((d) => d.partner_id === siteKey)
-    .map((d) => ({ id: d.id, path: d.storage_path, name: d.name, size: fmtSize(d.size_bytes ?? 0), type: docType(d.name), date: new Date(d.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "long" }) }));
+  const subs = useMemo(() => subMap(subList.filter((s) => s.partner_id === siteKey)), [subList, siteKey]);
 
   /* ---- statistics (real data) ---- */
   const siteRows = useMemo(() => colRows.filter((r) => r.partner_id === siteKey), [colRows, siteKey]);
@@ -486,10 +464,12 @@ export default function EspacePartenairePage() {
     }
     const fk = isoOf(f);
     const tk = isoOf(t);
-    const s = summarize(siteRows.filter((r) => r.scheduled_date >= fk && r.scheduled_date <= tk));
+    const s = summarize(siteRows.filter((r) => r.scheduled_date >= fk && r.scheduled_date <= tk), subs);
     return {
       periodLabel: label,
       volume: s.volume,
+      don: s.don,
+      customShare: s.customShare,
       collectes: s.collectes,
       ok: s.ok,
       annulees: s.annulees,
@@ -499,7 +479,7 @@ export default function EspacePartenairePage() {
   }
   const dash = periodStats(gran);
   const dashM = periodStats(granM);
-  const rseSum = summarize(siteRows.filter((r) => r.scheduled_date >= from && r.scheduled_date <= to));
+  const rseSum = summarize(siteRows.filter((r) => r.scheduled_date >= from && r.scheduled_date <= to), subs);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -584,43 +564,6 @@ export default function EspacePartenairePage() {
     setPartnerRows((prev) => prev.map((r) => (r.id === siteKey ? { ...r, photo_url: url } : r)));
     autosave();
     showToast("Photo enregistrée — le logisticien la verra sous l'adresse.");
-  }
-  async function onDocs(e: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = "";
-    let added = 0;
-    for (const f of files) {
-      const safe = f.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const path = `${siteKey}/${Date.now()}-${safe}`;
-      const up = await supabase.storage.from("documents").upload(path, f, { contentType: f.type || undefined });
-      if (up.error) {
-        showToast(`${f.name} : ${up.error.message}`);
-        continue;
-      }
-      const { data, error } = await supabase
-        .from("documents")
-        .insert({ partner_id: siteKey, name: f.name, storage_path: path, size_bytes: f.size, uploaded_by: userId })
-        .select("id,partner_id,name,storage_path,size_bytes,created_at")
-        .single();
-      if (error || !data) {
-        showToast(`${f.name} : ${error?.message ?? "erreur"}`);
-        continue;
-      }
-      setDocRows((prev) => [data as DbDoc, ...prev]);
-      added++;
-    }
-    if (added) showToast("Document(s) ajouté(s) à votre porte-documents.");
-  }
-  async function removeDoc(d: Doc) {
-    await supabase.storage.from("documents").remove([d.path]);
-    const { error } = await supabase.from("documents").delete().eq("id", d.id);
-    if (error) return showToast("Suppression impossible : " + error.message);
-    setDocRows((prev) => prev.filter((x) => x.id !== d.id));
-  }
-  async function openDoc(d: Doc) {
-    const { data, error } = await supabase.storage.from("documents").createSignedUrl(d.path, 60);
-    if (error || !data) return showToast("Ouverture impossible : " + (error?.message ?? "erreur"));
-    window.open(data.signedUrl, "_blank", "noopener");
   }
 
   const siteSwitch = (
@@ -741,7 +684,8 @@ export default function EspacePartenairePage() {
   }
 
   /* ---- Desktop (complete) ---- */
-  const R = rse(rseSum.volume); // RSE report figures for the chosen period
+  const R = rse(rseSum.volume, rseSum.don); // RSE report figures for the chosen period
+  const dashR = rse(dash.volume, dash.don);
   const kg = R.kg;
   const donValue = R.don;
   const tabs: { k: Tab; l: string; icon: ReactNode }[] = [
@@ -749,6 +693,7 @@ export default function EspacePartenairePage() {
     { k: "fiche", l: "Ma fiche", icon: STORE },
     { k: "dashboard", l: "Tableau de bord", icon: GRID },
     { k: "documents", l: "Mes documents", icon: DOC },
+    { k: "valorisation", l: "Valorisation RSE", icon: GRID },
   ];
   const maxPct = Math.max(...dash.denrees.map((x) => x.pct), 1);
 
@@ -910,6 +855,21 @@ export default function EspacePartenairePage() {
                   </div>
                 </Card>
               </div>
+              <div className="mt-8 mb-3.5 flex items-center gap-3.5">
+                <h2 className="font-display text-[20px] font-black whitespace-nowrap text-[var(--navy)]">Valorisation RSE</h2>
+                <span className="h-px flex-1 bg-[var(--border)]" />
+              </div>
+              <p className="mb-3 text-[12px] text-[var(--slate)]">
+                Mise à jour à chaque collecte validée ({dash.periodLabel.toLowerCase()}).{dash.customShare > 0 ? ` ${dash.customShare} % du volume est valorisé avec vos prix unitaires, le reste à ${DEFAULT_EUR_PER_KG} €/kg.` : ` Valeur calculée à ${DEFAULT_EUR_PER_KG} €/kg — renseignez vos prix dans l'onglet « Valorisation ».`}
+              </p>
+              <div className="mb-4 grid grid-cols-2 gap-3.5 lg:grid-cols-3">
+                <Tile label="Valeur des dons" value={`${fmtNum(dashR.don)} €`} />
+                <Tile label="Défiscalisation (60 %)" value={`${fmtNum(dashR.defisc)} €`} />
+                <Tile label="Valeur sociale (×2)" value={`${fmtNum(dashR.social)} €`} />
+                <Tile label="Repas distribués" value={fmtNum(dashR.repas)} />
+                <Tile label="CO₂ évité" value={`${dashR.co2.toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} t`} />
+                <Tile label="Déchets évités" value={`${fmtNum(dashR.dechets)} kg`} />
+              </div>
               <Card title="Bilan RSE" note="Génère votre bilan d'impact RSE officiel Linkee (poids sauvé, valeur du don, défiscalisation, impact social et environnemental) — utilisez « Enregistrer en PDF » dans la fenêtre d'impression de votre navigateur.">
                 <div className="flex flex-wrap items-center gap-3">
                   <label className="text-xs text-[var(--slate)]">Du</label>
@@ -927,26 +887,15 @@ export default function EspacePartenairePage() {
 
           {tab === "documents" && (
             <div>
-              <PanelHead title="Mes documents" sub="Un porte-documents partagé avec Linkee : listings de produits, fiches techniques, conventions…" />
-              <Card title="">
-                <div className="mb-3.5 flex flex-col gap-2">
-                  {docs.length ? docs.map((doc, idx) => (
-                    <div key={idx} className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--input-bg)] px-[13px] py-[11px]">
-                      <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[10px] bg-[var(--track)] text-[var(--slate)]"><Icon className="h-4 w-4" sw={1.7}>{DOC_ICONS[doc.type]}</Icon></span>
-                      <button type="button" onClick={() => openDoc(doc)} className="min-w-0 flex-1 text-left" title="Ouvrir">
-                        <div className="truncate text-[13px] font-semibold">{doc.name}</div>
-                        <div className="text-[11px] text-[var(--slate)]">{doc.size} · ajouté le {doc.date}</div>
-                      </button>
-                      <button type="button" title="Retirer" onClick={() => removeDoc(doc)} className="h-[26px] w-[26px] flex-none rounded-full border-[1.5px] border-[var(--border)] bg-[var(--card)] text-[var(--slate)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]">×</button>
-                    </div>
-                  )) : <p className="text-[11.5px] text-[var(--slate)]">Aucun document pour l&apos;instant.</p>}
-                </div>
-                <input ref={docInput} type="file" multiple hidden onChange={onDocs} />
-                <button type="button" onClick={() => docInput.current?.click()} className="inline-flex items-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-[var(--border)] bg-[var(--input-bg)] px-[18px] py-[13px] text-[13.5px] font-bold hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]">
-                  <Icon><path d="M12 4 V15 M7 9 L12 4 L17 9" /><path d="M4 19 H20" /></Icon>
-                  Importer un document
-                </button>
-              </Card>
+              <PanelHead title="Mes documents" sub="Un porte-documents partagé avec Linkee : listing détaillé de vos produits, fiches techniques, conventions…" />
+              {siteKey && <PartnerDocuments key={siteKey} partnerId={siteKey} role="partenaire" />}
+            </div>
+          )}
+
+          {tab === "valorisation" && (
+            <div>
+              <PanelHead title="Valorisation RSE" sub="Vos sous-catégories de produits et leur valeur unitaire : elles servent à calculer la valeur de vos dons." />
+              {siteKey && <PartnerValuation key={siteKey} partnerId={siteKey} />}
             </div>
           )}
         </div>

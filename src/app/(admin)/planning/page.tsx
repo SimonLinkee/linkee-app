@@ -6,6 +6,7 @@ import { geocode, toKm, type LatLng } from "@/lib/geocode";
 import { signedUrls } from "@/lib/photos";
 import { useCity } from "@/components/admin/CityContext";
 import { PassageBadges, type Passage } from "@/components/PassageIcons";
+import AdminStopModal from "@/components/planning/AdminStopModal";
 import dynamic from "next/dynamic";
 import type { MapPoint } from "@/components/RouteMap";
 
@@ -237,6 +238,7 @@ export default function PlanningPage() {
   const [checklistNewItem, setChecklistNewItem] = useState("");
 
   const [pendingReqs, setPendingReqs] = useState<PartnerReq[]>([]);
+  const [resultStop, setResultStop] = useState<Stop | null>(null);
   const [gallery, setGallery] = useState<{ name: string; urls: string[] } | null>(null);
   async function openGallery(s: Stop) {
     const urls = await signedUrls(supabase, s.photoPaths);
@@ -363,7 +365,7 @@ export default function PlanningPage() {
   async function loadDay() {
     setLoadingDay(true);
     dirty.current = false;
-    const { data, error } = await supabase.from("collectes").select(SELECT_DAY).eq("city_id", cityId ?? "").eq("scheduled_date", iso).order("sort_order");
+    const { data, error } = await supabase.from("collectes").select(SELECT_DAY).eq("city_id", cityId ?? "").eq("scheduled_date", iso).eq("source", "planning").order("sort_order");
     if (error) fail("Chargement impossible", error.message);
     const list = ((data ?? []) as unknown as DbCollecte[]).map((r) => rowToStop(r, depotAddress));
     setStops(list);
@@ -424,6 +426,7 @@ export default function PlanningPage() {
       .from("collectes")
       .select("scheduled_date,scheduled_time,status,label,sort_order,partners(name),beneficiaries(name)")
       .eq("city_id", cityId ?? "")
+      .eq("source", "planning")
       .gte("scheduled_date", isoDate(monday))
       .lte("scheduled_date", isoDate(sunday))
       .order("scheduled_date")
@@ -618,6 +621,7 @@ export default function PlanningPage() {
       .from("collectes")
       .select("kind,partner_id,beneficiary_id,label,duration_min,sort_order")
       .eq("city_id", cityId)
+      .eq("source", "planning")
       .eq("scheduled_date", isoDate(prev))
       .in("kind", ["partner", "dropoff", "stock"])
       .order("sort_order");
@@ -1031,6 +1035,22 @@ export default function PlanningPage() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
+                            setResultStop(s);
+                          }}
+                          title="Renseigner l'arrêt : collecté (denrées, poids) ou annulé (motif)"
+                          className="flex h-[26px] flex-none items-center gap-1 rounded-full border-[1.5px] border-[var(--good)] bg-[var(--good-bg)] px-2.5 text-[11px] font-bold whitespace-nowrap text-[var(--good)] hover:brightness-95"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                            <path d="M20 6 L9 17 L4 12" />
+                          </svg>
+                          Renseigner
+                        </button>
+                      )}
+                      {!done && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
                             toggleCancel(s.id);
                           }}
                           title={cancelled ? "Réactiver ce point" : "Marquer comme annulé"}
@@ -1173,6 +1193,22 @@ export default function PlanningPage() {
               );
             })}
         </div>
+      )}
+
+      {resultStop && cityId && (
+        <AdminStopModal
+          stop={{ id: resultStop.id, name: resultStop.name, kind: resultStop.kind, partnerId: resultStop.partnerId, cat: resultStop.cat }}
+          cityId={cityId}
+          date={iso}
+          onClose={() => setResultStop(null)}
+          onSaved={(r) => {
+            const id = resultStop.id;
+            setStops((prev) => prev.map((s) => (s.id === id ? { ...s, status: r.status === "annule" ? "annule" : "planifie", dbStatus: r.status, photoPaths: r.photoPaths } : s)));
+            setResultStop(null);
+            loadWeek();
+            showToast(r.status === "annule" ? "Arrêt marqué comme annulé." : "Arrêt enregistré comme réalisé — visible dans les statistiques.");
+          }}
+        />
       )}
 
       {gallery && (

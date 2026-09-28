@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { signedUrls, uploadPrivatePhoto } from "@/lib/photos";
 import { geocode } from "@/lib/geocode";
+import { SUBCAT_SELECT, UNIT_LABEL, kgFromQuantity, type SubCat } from "@/lib/stats";
 import NotificationBell from "@/components/NotificationBell";
 import { PASSAGE_ITEMS, PassageBadges, PassageIcon, type Passage } from "@/components/PassageIcons";
 import { IMPORTANCE_COLOR, ImportanceDots, deadlineInfo, type MissionStatus } from "@/components/MissionBits";
@@ -17,13 +18,14 @@ const RouteMap = dynamic(() => import("@/components/RouteMap"), {
 });
 
 type Kind = "partner" | "dropoff" | "stock" | "exceptionnel";
-type ResultItem = { denree?: string; name?: string; kg: number; from?: string; sourceId?: string; stockId?: string; colis?: number };
+type ResultItem = { denree?: string; name?: string; kg: number; from?: string; sourceId?: string; stockId?: string; colis?: number; subcategoryId?: string; quantity?: number; unit?: string };
 type StopResult = { items?: ResultItem[]; totalKg?: number; photos?: number; photoPaths?: string[]; motif?: string };
 type ChecklistItem = { id: string; label: string };
 type Rel = { name: string; category: string | null; address: string | null; fiche: Record<string, unknown> | null; photo_url?: string | null };
 type DbItem = { denree: string | null; name: string | null; kg: number; source_collecte_id: string | null };
 type DbStop = {
   id: string;
+  partner_id: string | null;
   kind: string;
   label: string | null;
   comment: string | null;
@@ -47,6 +49,7 @@ type Stop = {
   status: "todo" | "collecte" | "annule";
   kind: Kind;
   address: string;
+  partnerId?: string;
   accessDetails?: string;
   sitePhoto?: string;
   comment?: string;
@@ -88,6 +91,7 @@ function rowToStop(r: DbStop, all: DbStop[], depotAddress: string): Stop {
     status,
     kind,
     address: rel?.address ?? (r.kind === "stock" ? depotAddress : ""),
+    partnerId: r.partner_id ?? undefined,
     accessDetails: fiche.accessNote || undefined,
     planned: r.planned_items?.map((p) => ({ id: p.id, name: p.name, colis: p.colis })),
     passage: ((one(r.partners)?.fiche ?? {}) as { passage?: Passage }).passage,
@@ -227,10 +231,17 @@ function PhotoField({ previews, busy, onPick }: { previews: string[]; busy: bool
   );
 }
 
-function StopPanel({ stops, index, onDone, onUpload }: { stops: Stop[]; index: number; onDone: (r: StopResult, status: "collecte" | "annule") => void; onUpload: (stopId: string, file: File) => Promise<string | null> }) {
+function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; index: number; subs: SubCat[]; onDone: (r: StopResult, status: "collecte" | "annule") => void; onUpload: (stopId: string, file: File) => Promise<string | null> }) {
   const s = stops[index];
   const [pick, setPick] = useState<"collecte" | "annule" | null>(null);
-  const [rows, setRows] = useState<{ denree: string; kg: string }[]>([{ denree: "", kg: "" }]);
+  // kg holds the typed quantity: kg, or the sub-category's unit (unité / litre) when one is chosen
+  const [rows, setRows] = useState<{ denree: string; kg: string; sub: string }[]>([{ denree: "", kg: "", sub: "" }]);
+  const subOf = (r: { sub: string }) => subs.find((x) => x.id === r.sub);
+  const rowKg = (r: { kg: string; sub: string }): number => {
+    const q = parseFloat(r.kg) || 0;
+    const sc = subOf(r);
+    return sc ? (kgFromQuantity(q, sc.unit, sc.unit_weight_kg) ?? 0) : q;
+  };
   const [photoPaths, setPhotoPaths] = useState<string[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -272,7 +283,12 @@ function StopPanel({ stops, index, onDone, onUpload }: { stops: Stop[]; index: n
       if (dropped.length < 1 || photos < 1) return setErrCollecte("Cochez au moins un produit à laisser ici, et ajoutez une photo.");
       onDone({ items: dropped, totalKg: Math.round(dropped.reduce((sum, it) => sum + it.kg, 0) * 10) / 10, photos, photoPaths }, "collecte");
     } else {
-      const items = rows.filter((r) => r.denree && r.kg).map((r) => ({ denree: r.denree, kg: parseFloat(r.kg) }));
+      const missingUnitWeight = rows.find((r) => r.denree && r.kg && subOf(r)?.unit === "unite" && !subOf(r)?.unit_weight_kg);
+      if (missingUnitWeight) return setErrCollecte("Le poids d'une unité n'est pas défini pour cette sous-catégorie : demandez à l'admin de le renseigner, ou choisissez « Sans sous-catégorie ».");
+      const items: ResultItem[] = rows.filter((r) => r.denree && r.kg).map((r) => {
+        const sc = subOf(r);
+        return { denree: r.denree, kg: rowKg(r), ...(sc ? { subcategoryId: sc.id, quantity: parseFloat(r.kg) || 0, unit: sc.unit } : {}) };
+      });
       if (rows.some((r) => (r.denree && !r.kg) || (!r.denree && r.kg))) return setErrCollecte("Pour chaque denrée, choisissez le type ET indiquez le poids.");
       if (items.length < 1) return setErrCollecte("Choisissez au moins un type de denrée et son poids (étape 1).");
       if (photos < 1) return setErrCollecte("Ajoutez une photo (étape 2).");
@@ -323,7 +339,7 @@ function StopPanel({ stops, index, onDone, onUpload }: { stops: Stop[]; index: n
                           <button
                             key={d}
                             type="button"
-                            onClick={() => setRows(rows.map((r, i) => (i === idx ? { ...r, denree: d } : r)))}
+                            onClick={() => setRows(rows.map((r, i) => (i === idx ? { ...r, denree: d, sub: r.denree === d ? r.sub : "" } : r)))}
                             className={`flex min-h-[48px] items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-[13px] leading-tight font-bold ${k === DENREE_OPTIONS.length - 1 ? "col-span-2" : ""} ${on ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "border-[var(--border)] bg-[var(--card)] text-[var(--navy)]"}`}
                           >
                             <span className="h-3 w-3 flex-none rounded-full" style={{ background: `var(--cat-${k + 1})` }} />
@@ -333,7 +349,22 @@ function StopPanel({ stops, index, onDone, onUpload }: { stops: Stop[]; index: n
                         );
                       })}
                     </div>
-                    <div className="mb-1.5 text-[12px] font-bold text-[var(--navy)]">Poids</div>
+                    {row.denree && subs.some((x) => x.category === row.denree) && (
+                      <div className="mb-3.5">
+                        <div className="mb-1.5 text-[12px] font-bold text-[var(--navy)]">Sous-catégorie <span className="font-medium text-[var(--slate)]">(facultatif)</span></div>
+                        <div className="flex flex-wrap gap-2">
+                          {[{ id: "", name: "Sans sous-catégorie" }, ...subs.filter((x) => x.category === row.denree)].map((x) => {
+                            const on = row.sub === x.id;
+                            return (
+                              <button key={x.id || "none"} type="button" onClick={() => setRows(rows.map((r, i) => (i === idx ? { ...r, sub: x.id } : r)))} className={`min-h-[40px] rounded-xl border-2 px-3 py-2 text-[12.5px] font-bold ${on ? "border-[var(--turquoise)] bg-[var(--turquoise)] text-[#04262e]" : "border-[var(--border)] bg-[var(--card)] text-[var(--navy)]"}`}>
+                                {x.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    <div className="mb-1.5 text-[12px] font-bold text-[var(--navy)]">{subOf(row) && subOf(row)!.unit !== "kg" ? `Quantité (en ${UNIT_LABEL[subOf(row)!.unit]}s)` : "Poids"}</div>
                     <div className="flex items-center gap-2">
                       <button type="button" aria-label="Moins 1 kg" onClick={() => setRows(rows.map((r, i) => (i === idx ? { ...r, kg: String(Math.max(0, (parseFloat(r.kg) || 0) - 1)) } : r)))} className="flex h-12 w-12 flex-none items-center justify-center rounded-xl border-2 border-[var(--border)] bg-[var(--card)] text-2xl font-bold text-[var(--navy)]">
                         –
@@ -349,21 +380,27 @@ function StopPanel({ stops, index, onDone, onUpload }: { stops: Stop[]; index: n
                           onChange={(e) => setRows(rows.map((r, i) => (i === idx ? { ...r, kg: e.target.value } : r)))}
                           className="w-full rounded-xl border-2 border-[var(--border)] bg-[var(--card)] py-2.5 pr-11 pl-3 text-center font-display text-[26px] font-black text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
                         />
-                        <span className="pointer-events-none absolute top-1/2 right-3.5 -translate-y-1/2 text-sm font-bold text-[var(--slate)]">kg</span>
+                        <span className="pointer-events-none absolute top-1/2 right-3.5 -translate-y-1/2 text-sm font-bold text-[var(--slate)]">{subOf(row) ? UNIT_LABEL[subOf(row)!.unit] : "kg"}</span>
                       </div>
                       <button type="button" aria-label="Plus 1 kg" onClick={() => setRows(rows.map((r, i) => (i === idx ? { ...r, kg: String((parseFloat(r.kg) || 0) + 1) } : r)))} className="flex h-12 w-12 flex-none items-center justify-center rounded-xl border-2 border-[var(--border)] bg-[var(--card)] text-2xl font-bold text-[var(--navy)]">
                         +
                       </button>
                     </div>
+                    {subOf(row) && subOf(row)!.unit !== "kg" && (
+                      <p className={`mt-2 text-[12px] font-semibold ${subOf(row)!.unit === "unite" && !subOf(row)!.unit_weight_kg ? "text-[var(--critical)]" : "text-[var(--slate)]"}`}>
+                        {subOf(row)!.unit === "unite" ? (subOf(row)!.unit_weight_kg ? `1 unité = ${subOf(row)!.unit_weight_kg} kg` : "Poids d'une unité non défini pour cette sous-catégorie") : "1 litre = 1 kg"}
+                        {row.kg && rowKg(row) > 0 ? ` → ${Math.round(rowKg(row) * 100) / 100} kg` : ""}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
-              <button type="button" onClick={() => setRows([...rows, { denree: "", kg: "" }])} className="mt-3 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[var(--turquoise)] bg-[var(--input-bg)] p-2.5 text-[14px] font-bold text-[var(--navy)]">
+              <button type="button" onClick={() => setRows([...rows, { denree: "", kg: "", sub: "" }])} className="mt-3 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[var(--turquoise)] bg-[var(--input-bg)] p-2.5 text-[14px] font-bold text-[var(--navy)]">
                 <span className="text-lg leading-none text-[var(--turquoise)]">+</span> Ajouter une autre denrée
               </button>
               <div className="mt-3 flex items-center justify-between rounded-xl bg-[var(--track)] px-4 py-2.5">
                 <span className="text-[12.5px] font-bold text-[var(--slate)]">Total collecté</span>
-                <span className="font-display text-[20px] font-black text-[var(--navy)]">{Math.round(rows.reduce((sum, r) => sum + (parseFloat(r.kg) || 0), 0) * 10) / 10} kg</span>
+                <span className="font-display text-[20px] font-black text-[var(--navy)]">{Math.round(rows.reduce((sum, r) => sum + rowKg(r), 0) * 10) / 10} kg</span>
               </div>
             </div>
           ) : s.kind === "stock" ? (
@@ -516,6 +553,7 @@ export default function JourneePage() {
   const [dayState, setDayState] = useState<"idle" | "running" | "closed">("idle");
   const supabase = useMemo(() => createClient(), []);
   const [stops, setStops] = useState<Stop[]>([]);
+  const [subList, setSubList] = useState<SubCat[]>([]); // partners' sub-categories (valuation), optional when weighing
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [cityId, setCityId] = useState<string | null>(null);
@@ -661,12 +699,14 @@ export default function JourneePage() {
       monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
       const sunday = new Date(monday);
       sunday.setDate(monday.getDate() + 6);
+      supabase.from("partner_subcategories").select(SUBCAT_SELECT).limit(2000).then(({ data }) => setSubList(((data ?? []) as unknown as SubCat[]).map((x) => ({ ...x, unit_price: x.unit_price == null ? null : Number(x.unit_price), unit_weight_kg: x.unit_weight_kg == null ? null : Number(x.unit_weight_kg) }))));
       const [prof, col, tpl, ovr, stock, veh, ses, wk] = await Promise.all([
         supabase.from("profiles").select("city_id,full_name,email").eq("id", uid).maybeSingle(),
         supabase
           .from("collectes")
-          .select("id,kind,label,comment,status,motif,photos_count,photo_paths,planned_items,scheduled_time,partners(name,category,address,fiche,photo_url),beneficiaries(name,category,address,fiche),collecte_items!collecte_id(denree,name,kg,source_collecte_id)")
+          .select("id,partner_id,kind,label,comment,status,motif,photos_count,photo_paths,planned_items,scheduled_time,partners(name,category,address,fiche,photo_url),beneficiaries(name,category,address,fiche),collecte_items!collecte_id(denree,name,kg,source_collecte_id)")
           .eq("scheduled_date", iso)
+          .eq("source", "planning")
           .order("sort_order"),
         supabase.from("checklist_templates").select("items").eq("weekday", dbWeekday(now)).maybeSingle(),
         supabase.from("checklist_overrides").select("items").eq("day", iso).maybeSingle(),
@@ -676,6 +716,7 @@ export default function JourneePage() {
         supabase
           .from("collectes")
           .select("scheduled_date,scheduled_time,status,label,partners(name,category),beneficiaries(name,category)")
+          .eq("source", "planning")
           .gte("scheduled_date", isoDate(monday))
           .lte("scheduled_date", isoDate(sunday))
           .order("scheduled_date")
@@ -844,7 +885,7 @@ export default function JourneePage() {
     if (error) return showToast("Enregistrement impossible : " + error.message);
     if (status === "collecte" && result.items?.length) {
       const { error: e2 } = await supabase.from("collecte_items").insert(
-        result.items.map((it) => ({ collecte_id: s.id, denree: it.denree ?? null, name: it.name ?? null, kg: it.kg, source_collecte_id: it.sourceId ?? null })),
+        result.items.map((it) => ({ collecte_id: s.id, denree: it.denree ?? null, name: it.name ?? null, kg: it.kg, source_collecte_id: it.sourceId ?? null, subcategory_id: it.subcategoryId ?? null, quantity: it.quantity ?? null, unit: it.unit ?? null })),
       );
       if (e2) return showToast("Poids non enregistrés : " + e2.message);
     }
@@ -1169,7 +1210,7 @@ export default function JourneePage() {
                     {s.status === "collecte" && <div className="mt-2 border-t border-[var(--border)] pt-2 text-xs text-[var(--slate)]">{summary(s)}</div>}
                     {s.status === "annule" && <div className="mt-2 border-t border-[var(--border)] pt-2 text-xs text-[var(--slate)]">Motif : <strong className="text-[var(--navy)]">{s.result?.motif || "annulé depuis le planning"}</strong></div>}
 
-                    {!done && dayState === "running" && openIdx === i && <StopPanel stops={stops} index={i} onDone={(r, st) => finishStop(i, r, st)} onUpload={uploadStopPhoto} />}
+                    {!done && dayState === "running" && openIdx === i && <StopPanel stops={stops} index={i} subs={subList.filter((x) => x.partner_id === s.partnerId)} onDone={(r, st) => finishStop(i, r, st)} onUpload={uploadStopPhoto} />}
                   </div>
                 </div>
               );

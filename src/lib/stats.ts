@@ -12,6 +12,33 @@ export const CAT_LABELS: Record<CatKey, string> = {
 };
 const DENREE_TO_KEY: Record<string, CatKey> = Object.fromEntries(CAT_KEYS.map((k) => [CAT_LABELS[k], k])) as Record<string, CatKey>;
 
+// ---- Valuation ("Valorisation RSE"): sub-categories with a unit price, per partner ----
+export type Unit = "kg" | "unite" | "litre";
+export const UNIT_LABEL: Record<Unit, string> = { kg: "kg", unite: "unité", litre: "litre" };
+export type SubCat = { id: string; partner_id: string; category: string; name: string; unit_price: number | null; unit: Unit; unit_weight_kg: number | null };
+export const DEFAULT_EUR_PER_KG = 8; // value of a donation when the partner has no price for the item
+export const SUBCAT_SELECT = "id,partner_id,category,name,unit_price,unit,unit_weight_kg";
+export const subMap = (list: SubCat[]) => new Map(list.map((s) => [s.id, s]));
+
+type ItemLike = { kg: number | string; subcategory_id?: string | null; quantity?: number | string | null };
+
+/** Value in € of one weighed line: the partner's price when known, else 8 €/kg. */
+export function itemValue(it: ItemLike, subs: Map<string, SubCat>): { value: number; custom: boolean } {
+  const kg = Number(it.kg) || 0;
+  const sub = it.subcategory_id ? subs.get(it.subcategory_id) : undefined;
+  if (sub && sub.unit_price != null) {
+    const qty = sub.unit === "kg" ? kg : it.quantity != null && Number(it.quantity) > 0 ? Number(it.quantity) : sub.unit === "litre" ? kg : null;
+    if (qty != null) return { value: qty * Number(sub.unit_price), custom: true };
+  }
+  return { value: kg * DEFAULT_EUR_PER_KG, custom: false };
+}
+
+/** Weight in kg for a quantity typed in the sub-category's unit (1 litre = 1 kg, units use the unit weight). */
+export function kgFromQuantity(qty: number, unit: Unit, unitWeightKg: number | null): number | null {
+  if (unit === "kg" || unit === "litre") return qty;
+  return unitWeightKg && unitWeightKg > 0 ? Math.round(qty * unitWeightKg * 1000) / 1000 : null;
+}
+
 type Rel = { name: string; category: string | null };
 export type StatRow = {
   city_id?: string;
@@ -19,14 +46,19 @@ export type StatRow = {
   kind: string;
   status: string;
   motif: string | null;
+  source?: string;
   partner_id: string | null;
   partners: Rel | Rel[] | null;
-  collecte_items: { denree: string | null; kg: number | string }[] | null;
+  collecte_items: { denree: string | null; kg: number | string; subcategory_id?: string | null; quantity?: number | string | null; unit?: string | null }[] | null;
 };
-export const STAT_SELECT = "city_id,scheduled_date,kind,status,motif,partner_id,partners(name,category),collecte_items!collecte_id(denree,kg)";
+export const STAT_SELECT = "city_id,scheduled_date,kind,status,motif,source,partner_id,partners(name,category),collecte_items!collecte_id(denree,kg,subcategory_id,quantity,unit)";
 
 export type Summary = {
   volume: number;
+  /** value of the donations in €: partner prices where known, 8 €/kg otherwise */
+  don: number;
+  /** share (0-100) of the weight valued with the partner's own prices */
+  customShare: number;
   collectes: number;
   ok: number;
   annulees: number;
@@ -42,8 +74,10 @@ export const isCollectKind = (k: string) => k === "partner" || k === "exceptionn
 
 const first = <T,>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? (v[0] ?? null) : (v ?? null));
 
-export function summarize(rows: StatRow[]): Summary {
+export function summarize(rows: StatRow[], subs: Map<string, SubCat> = new Map()): Summary {
   let volume = 0;
+  let don = 0;
+  let customKg = 0;
   let ok = 0;
   let annulees = 0;
   const kgByCat: Record<CatKey, number> = { secs: 0, fl: 0, frais: 0, plats: 0, boulang: 0 };
@@ -68,6 +102,9 @@ export function summarize(rows: StatRow[]): Summary {
       kg += v;
       const key = it.denree ? DENREE_TO_KEY[it.denree] : undefined;
       if (key) kgByCat[key] += v;
+      const val = itemValue(it, subs);
+      don += val.value;
+      if (val.custom) customKg += v;
     }
     volume += kg;
     byDay[r.scheduled_date] = (byDay[r.scheduled_date] ?? 0) + kg;
@@ -81,6 +118,8 @@ export function summarize(rows: StatRow[]): Summary {
   const totalCat = Object.values(kgByCat).reduce((a, b) => a + b, 0);
   return {
     volume: Math.round(volume * 10) / 10,
+    don: Math.round(don * 100) / 100,
+    customShare: volume ? Math.round((customKg / volume) * 100) : 0,
     collectes,
     ok,
     annulees,
@@ -113,8 +152,8 @@ export function buildEvo(byDay: Record<string, number>, from: Date, to: Date, ma
 }
 
 // ---- RSE formulas (same as the Linkee "bilan RSE" slide model) ----
-export function rse(kg: number) {
-  const don = kg * 8;
+export function rse(kg: number, donValue?: number) {
+  const don = donValue ?? kg * DEFAULT_EUR_PER_KG; // partner prices when known
   return {
     kg,
     don,

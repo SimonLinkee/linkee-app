@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
-import { CAT_KEYS, CAT_LABELS, STAT_SELECT, buildEvo, isoOf, summarize, type CatKey, type StatRow, type Summary } from "@/lib/stats";
+import { CAT_KEYS, CAT_LABELS, DEFAULT_EUR_PER_KG, STAT_SELECT, SUBCAT_SELECT, buildEvo, isoOf, rse, subMap, summarize, type CatKey, type StatRow, type SubCat, type Summary } from "@/lib/stats";
 
 type Gran = "jour" | "semaine" | "mois" | "custom";
 type EvoPoint = { l: string; v: number };
@@ -204,12 +204,14 @@ export default function DashboardPage() {
       if (activePartnerId) q = q.eq("partner_id", activePartnerId);
       let sq = supabase.from("day_sessions").select("started_at,closed_at").gte("day", isoOf(from)).lte("day", isoOf(to)).not("closed_at", "is", null);
       if (cityId) sq = sq.eq("city_id", cityId);
-      const [{ data, error: err }, ses] = await Promise.all([
+      const [{ data, error: err }, ses, subRes] = await Promise.all([
         q,
         activePartnerId ? Promise.resolve({ data: [] as { started_at: string | null; closed_at: string | null }[] }) : sq,
+        supabase.from("partner_subcategories").select(SUBCAT_SELECT).limit(5000),
       ]);
       if (cancelled) return;
       if (err) setError(err.message);
+      const subs = subMap(((subRes.data ?? []) as unknown as SubCat[]).map((s) => ({ ...s, unit_price: s.unit_price == null ? null : Number(s.unit_price), unit_weight_kg: s.unit_weight_kg == null ? null : Number(s.unit_weight_kg) })));
       const rows = (data ?? []) as unknown as StatRow[];
       // national view: volume and collections per city
       if (!cityId) {
@@ -220,8 +222,8 @@ export default function DashboardPage() {
       }
       const fk = isoOf(from);
       const pk = isoOf(prevFrom);
-      setCur(summarize(rows.filter((r) => r.scheduled_date >= fk && r.scheduled_date <= isoOf(to))));
-      setPrev(summarize(rows.filter((r) => r.scheduled_date >= pk && r.scheduled_date < fk)));
+      setCur(summarize(rows.filter((r) => r.scheduled_date >= fk && r.scheduled_date <= isoOf(to)), subs));
+      setPrev(summarize(rows.filter((r) => r.scheduled_date >= pk && r.scheduled_date < fk), subs));
       const ek = isoOf(evoFrom);
       setEvo(buildEvo(summarize(rows.filter((r) => r.scheduled_date >= ek)).byDay, evoFrom, to));
       const sessions = (ses.data ?? []) as { started_at: string | null; closed_at: string | null }[];
@@ -245,7 +247,7 @@ export default function DashboardPage() {
   }
 
   const activePartner = partnerOpts.find((p) => p.id === activePartnerId);
-  const c: Summary = cur ?? { volume: 0, collectes: 0, ok: 0, annulees: 0, taux: 0, denrees: CAT_KEYS.map((k) => ({ k, kg: 0, pct: 0 })), partners: [], motifs: [], byDay: {} };
+  const c: Summary = cur ?? { volume: 0, don: 0, customShare: 0, collectes: 0, ok: 0, annulees: 0, taux: 0, denrees: CAT_KEYS.map((k) => ({ k, kg: 0, pct: 0 })), partners: [], motifs: [], byDay: {} };
   const okPct = c.collectes ? Math.round((c.ok / c.collectes) * 100) : 0;
   const delta = prev && prev.volume > 0 ? Math.round(((c.volume - prev.volume) / prev.volume) * 100) : null;
   const ring = 2 * Math.PI * 21;
@@ -459,6 +461,35 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
+        </section>
+
+        <div className="mt-9 mb-4 flex items-center gap-3.5">
+          <h2 className="font-display text-[22px] font-black whitespace-nowrap text-[var(--navy)]">Valorisation RSE</h2>
+          <span className="h-px flex-1 bg-[var(--border)]" />
+        </div>
+        <p className="-mt-2 mb-4 text-[12.5px] text-[var(--slate)]">
+          Recalculé en direct à partir des collectes validées de la période.
+          {c.volume > 0 && c.customShare > 0 ? ` ${c.customShare} % du volume est valorisé au prix propre du partenaire, le reste à ${DEFAULT_EUR_PER_KG} €/kg.` : ` Valeur des dons calculée à ${DEFAULT_EUR_PER_KG} €/kg (aucun prix partenaire renseigné).`}
+        </p>
+        <section className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
+          {(() => {
+            const r = rse(c.volume, c.don);
+            const eur = (n: number) => `${fmt(n)} €`;
+            const tiles: [string, string, string][] = [
+              ["Valeur des dons", eur(r.don), "var(--good)"],
+              ["Défiscalisation (60 %)", eur(r.defisc), "var(--turquoise)"],
+              ["Valeur sociale (×2)", eur(r.social), "var(--client-req)"],
+              ["Repas distribués", fmt(r.repas), "var(--warn)"],
+              ["CO₂ évité", `${r.co2.toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} t`, "var(--cat-2)"],
+              ["Déchets évités", `${fmt(r.dechets)} kg`, "var(--slate)"],
+            ];
+            return tiles.map(([l, v, col]) => (
+              <div key={l} className="flex flex-col gap-2 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]" style={{ borderTop: `4px solid ${col}` }}>
+                <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">{l}</span>
+                <span className="font-display text-[26px] leading-none font-black text-[var(--navy)] tabular-nums">{v}</span>
+              </div>
+            ));
+          })()}
         </section>
       </div>
     </div>
