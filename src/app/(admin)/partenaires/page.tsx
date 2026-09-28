@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 type AccessKey = "digicode" | "quai" | "camion" | "etage" | "horaire";
 type AccessFlags = Record<AccessKey, boolean>;
@@ -77,138 +78,31 @@ function fmtDateFR(iso: string) {
   return `${d}/${m}/${y}`;
 }
 
-const INITIAL_PARTNERS: PartnerEntity[] = [
-  {
-    id: "p1", kind: "partner", name: "Boulangerie des Terreaux", cat: "Boulangerie", active: true, siren: "812 345 678 00019",
-    antenne: "Lyon", address: "12 Rue des Capucins, 69001 Lyon", creneau: "Lundi 08:30–09:00 (hebdomadaire)",
-    denrees: { Secs: true, "Fruits et légumes": false, "Produits frais": false, "Plats préparés": true, Boulangerie: true },
-    conditionnement: "Carton",
-    access: { digicode: true, quai: false, camion: false, etage: false, horaire: false },
-    accessNote: "Digicode 2468B, sonner à l'interphone « Linkee ». Livraison par la porte arrière.",
-    slotDisplay: "Lundi entre 08h30 et 09h00", volumeRange: "20/50kg",
-    partnerComment: "Prévoir un chariot — la porte arrière est un peu étroite en hiver avec la neige.",
-    history: [
-      { date: "2026-09-22", denree: "Plats préparés", kg: 34, status: "ok" },
-      { date: "2026-09-15", denree: "Secs", kg: 29, status: "ok" },
-      { date: "2026-09-08", denree: "Plats préparés", kg: 38, status: "ok" },
-      { date: "2026-09-01", denree: "Secs", kg: 0, status: "annulee" },
-      { date: "2026-08-25", denree: "Plats préparés", kg: 31, status: "ok" },
-    ],
-    contacts: [
-      { type: "Opérationnel", nom: "Camille Roussel", tel: "06 12 34 56 78", mail: "camille.roussel@bakery-terreaux.fr" },
-      { type: "Admin", nom: "Julien Faure", tel: "04 78 00 11 22", mail: "contact@bakery-terreaux.fr" },
-    ],
-  },
-  {
-    id: "p2", kind: "partner", name: "Supermarché Presqu'île", cat: "Supermarché", active: true, siren: "403 210 987 00027",
-    antenne: "Lyon", address: "48 Rue de la République, 69002 Lyon", creneau: "Lundi 09:15–09:45 (hebdomadaire)",
-    denrees: { Secs: true, "Fruits et légumes": true, "Produits frais": true, "Plats préparés": true, Boulangerie: false },
-    conditionnement: "Palette",
-    access: { digicode: false, quai: true, camion: true, etage: true, horaire: false },
-    accessNote: "Quai de livraison à l'arrière (hauteur max. 2,10 m). Demander M. Belkacem à l'accueil.",
-    history: [],
-    contacts: [
-      { type: "Opérationnel", nom: "Nadia Belkacem", tel: "06 22 45 67 89", mail: "n.belkacem@supp-presquile.fr" },
-      { type: "Comptable", nom: "Hugo Marchand", tel: "04 72 11 22 33", mail: "compta@supp-presquile.fr" },
-    ],
-  },
-  {
-    id: "p3", kind: "partner", name: "Traiteur Lumière", cat: "Traiteur", active: true, siren: "521 087 654 00012",
-    antenne: "Lyon", address: "5 Rue Romarin, 69001 Lyon", creneau: "Lundi 10:00–10:30 (hebdomadaire)",
-    denrees: { Secs: false, "Fruits et légumes": false, "Produits frais": true, "Plats préparés": true, Boulangerie: false },
-    conditionnement: "Carton",
-    access: { digicode: true, quai: false, camion: false, etage: true, horaire: false },
-    accessNote: "Digicode 1479A. 2ème étage, ascenseur au fond du couloir à droite.",
-    history: [],
-    contacts: [{ type: "Admin", nom: "Élodie Rambert", tel: "06 33 44 55 66", mail: "elodie@traiteur-lumiere.fr" }],
-  },
-  {
-    id: "p4", kind: "partner", name: "Hôtel des Brotteaux", cat: "Hôtel", active: true, siren: "389 456 210 00045",
-    antenne: "Lyon", address: "1 Place Jules Ferry, 69006 Lyon", creneau: "Lundi 11:30–12:00 (hebdomadaire)",
-    denrees: { Secs: false, "Fruits et légumes": false, "Produits frais": true, "Plats préparés": true, Boulangerie: false },
-    conditionnement: "Autre",
-    access: { digicode: false, quai: true, camion: false, etage: false, horaire: true },
-    accessNote: "Accès par le quai de livraison côté cour. Horaire strict : 11h-12h uniquement.",
-    history: [],
-    contacts: [{ type: "Opérationnel", nom: "Marc Ferreira", tel: "06 44 55 66 77", mail: "chef@hotel-brotteaux.fr" }],
-  },
-  {
-    id: "p5", kind: "partner", name: "Grossiste Rhône Frais", cat: "Grossiste", active: true, siren: "678 901 234 00033",
-    antenne: "Lyon", address: "22 Avenue Jean Mermoz, 69008 Lyon", creneau: "Lundi 14:00–15:00 (hebdomadaire)",
-    denrees: { Secs: true, "Fruits et légumes": true, "Produits frais": false, "Plats préparés": false, Boulangerie: false },
-    conditionnement: "Palette",
-    access: { digicode: false, quai: true, camion: true, etage: false, horaire: true },
-    accessNote: "Quai de livraison n°3. Créneau 13h30-15h obligatoire, badge visiteur à l'accueil.",
-    history: [],
-    contacts: [
-      { type: "Admin", nom: "Karim Belaïd", tel: "06 55 66 77 88", mail: "k.belaid@rhone-frais.fr" },
-      { type: "Opérationnel", nom: "Sonia Petit", tel: "06 66 77 88 99", mail: "quai@rhone-frais.fr" },
-    ],
-  },
-  {
-    id: "p6", kind: "partner", name: "Cantine Léo Lagrange", cat: "Restauration collective", active: true, siren: "112 233 445 00021",
-    antenne: "Lyon", address: "8 Rue Léo Lagrange, 69003 Lyon", creneau: "Mardi 13:00–13:30 (une semaine sur deux)",
-    denrees: { Secs: false, "Fruits et légumes": true, "Produits frais": true, "Plats préparés": true, Boulangerie: false },
-    conditionnement: "Carton",
-    access: { digicode: false, quai: true, camion: false, etage: false, horaire: true },
-    accessNote: "Livraison en cuisine centrale, horaire 13h-13h30 uniquement (pause service).",
-    history: [],
-    contacts: [{ type: "Opérationnel", nom: "Patricia Nguyen", tel: "06 77 88 99 00", mail: "cuisine@leolagrange-cantine.fr" }],
-  },
-  {
-    id: "p7", kind: "partner", name: "Frais Distribution Rhône", cat: "Industriel", active: false, siren: "234 567 890 00018",
-    antenne: "Lyon", address: "Z.I. des Isles, Rue Louise Michel, 69320 Feyzin", creneau: "Suspendu — en cours de renouvellement de convention",
-    denrees: { Secs: false, "Fruits et légumes": false, "Produits frais": true, "Plats préparés": false, Boulangerie: false },
-    conditionnement: "Palette",
-    access: { digicode: false, quai: true, camion: true, etage: false, horaire: false },
-    accessNote: "Quai industriel, chariot élévateur fourni sur place.",
-    history: [],
-    contacts: [{ type: "Admin", nom: "Thierry Aznar", tel: "06 88 99 00 11", mail: "t.aznar@frais-distribution-rhone.fr" }],
-  },
-];
+const NO_DENREES: DenreeFlags = { Secs: false, "Fruits et légumes": false, "Produits frais": false, "Plats préparés": false, Boulangerie: false };
+const NO_ACCESS: AccessFlags = { digicode: false, quai: false, camion: false, etage: false, horaire: false };
 
-const INITIAL_BENEFICIAIRES: BeneficiaireEntity[] = [
-  {
-    id: "b1", kind: "beneficiaire", name: "HEAT", cat: "Distribution Linkee", pinned: true, active: true,
-    address: "70 Quai Perrache, 69002 Lyon", tel: "04 78 00 00 01", mail: "heat@linkee.org",
-    access: { digicode: false, quai: true, camion: true, etage: false, horaire: true },
-    accessNote: "Livraison quai arrière, créneau 17h-18h.",
-    horaires: "Lu-Ve 9h-18h", volumesAcceptes: "Jusqu'à 150 kg / jour",
-    equipement: { cuisine: true, frigo: true, chambreFroide: true }, stockageM2: 40,
-    denrees: { Secs: true, "Fruits et légumes": true, "Produits frais": true, "Plats préparés": true, Boulangerie: true },
-    contacts: [{ type: "Admin", nom: "Sophie N'Diaye", tel: "04 78 00 00 01", mail: "heat@linkee.org" }],
-  },
-  {
-    id: "b2", kind: "beneficiaire", name: "Point de distribution — Rue de Marseille", cat: "Distribution Linkee", pinned: true, active: true,
-    address: "90 bis Rue de Marseille, 69007 Lyon", tel: "04 78 00 00 02", mail: "marseille@linkee.org",
-    access: { digicode: false, quai: false, camion: true, etage: false, horaire: true },
-    accessNote: "Stationnement possible devant, créneau 17h30-18h30.",
-    horaires: "Ma-Sa 14h-19h", volumesAcceptes: "Jusqu'à 120 kg / jour",
-    equipement: { cuisine: false, frigo: true, chambreFroide: false }, stockageM2: 22,
-    denrees: { Secs: true, "Fruits et légumes": true, "Produits frais": true, "Plats préparés": false, Boulangerie: false },
-    contacts: [{ type: "Opérationnel", nom: "Adama Koné", tel: "06 11 22 33 44", mail: "adama@linkee.org" }],
-  },
-  {
-    id: "b3", kind: "beneficiaire", name: "Les Grandes Voisines", cat: "Association partenaire", pinned: false, active: true,
-    address: "40 Av. de la Table de Pierre, 69340 Francheville", tel: "04 78 12 34 56", mail: "contact@grandesvoisines.org",
-    access: { digicode: false, quai: false, camion: false, etage: false, horaire: true },
-    accessNote: "Sonner au portail, dépose directement en cuisine partagée.",
-    horaires: "Lu, Me, Ve 10h-12h", volumesAcceptes: "Jusqu'à 60 kg / passage",
-    equipement: { cuisine: true, frigo: true, chambreFroide: false }, stockageM2: 15,
-    denrees: { Secs: true, "Fruits et légumes": true, "Produits frais": true, "Plats préparés": false, Boulangerie: false },
-    contacts: [{ type: "Admin", nom: "Isabelle Chevrier", tel: "04 78 12 34 56", mail: "contact@grandesvoisines.org" }],
-  },
-  {
-    id: "b4", kind: "beneficiaire", name: "Épicerie Sociale Saint-Camille de Vaise", cat: "Association partenaire", pinned: false, active: true,
-    address: "26 Rue du Bourbonnais, 69009 Lyon", tel: "04 78 65 43 21", mail: "epicerie@saintcamillevaise.org",
-    access: { digicode: false, quai: false, camion: false, etage: false, horaire: false },
-    accessNote: "Sonner à l'accueil, dépose directement au réfectoire.",
-    horaires: "Ma-Je 9h-12h et 14h-17h", volumesAcceptes: "Jusqu'à 80 kg / passage",
-    equipement: { cuisine: false, frigo: true, chambreFroide: true }, stockageM2: 18,
-    denrees: { Secs: false, "Fruits et légumes": false, "Produits frais": true, "Plats préparés": true, Boulangerie: false },
-    contacts: [{ type: "Opérationnel", nom: "Bernard Foulon", tel: "04 78 65 43 21", mail: "epicerie@saintcamillevaise.org" }],
-  },
-];
+const BLANK_PARTNER: Omit<PartnerEntity, "id"> = {
+  kind: "partner", name: "Nouveau partenaire", cat: "Commerce", active: true, siren: "", antenne: "Lyon", address: "", creneau: "",
+  denrees: NO_DENREES, conditionnement: "Carton", access: NO_ACCESS, accessNote: "", history: [], contacts: [],
+};
+const BLANK_BENEFICIAIRE: Omit<BeneficiaireEntity, "id"> = {
+  kind: "beneficiaire", name: "Nouveau bénéficiaire", cat: "Association partenaire", pinned: false, active: true, address: "", tel: "", mail: "",
+  access: NO_ACCESS, accessNote: "", horaires: "", volumesAcceptes: "", equipement: { cuisine: false, frigo: false, chambreFroide: false },
+  stockageM2: 0, denrees: NO_DENREES, contacts: [],
+};
+
+// The full "fiche" lives in a jsonb column; name / category / address / active are also real columns.
+type Row = { id: string; name: string; category: string | null; address: string | null; active: boolean; fiche: Record<string, unknown> | null };
+function rowToEntity(kind: "partner" | "beneficiaire", r: Row): Entity {
+  const base = kind === "partner" ? BLANK_PARTNER : BLANK_BENEFICIAIRE;
+  return { ...base, ...(r.fiche ?? {}), id: r.id, kind, name: r.name, cat: r.category ?? base.cat, address: r.address ?? "", active: r.active } as Entity;
+}
+function entityToRow(e: Entity) {
+  const { id, kind, name, cat, address, active, ...fiche } = e;
+  void id;
+  void kind;
+  return { name, category: cat, address, active, fiche };
+}
 
 function AccessChips({ access, onToggle }: { access: AccessFlags; onToggle: (k: AccessKey) => void }) {
   return (
@@ -299,10 +193,14 @@ const inputCls =
 const labelCls = "mb-[5px] block text-[11.5px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase";
 
 export default function PartenairesPage() {
-  const [partners, setPartners] = useState<PartnerEntity[]>(INITIAL_PARTNERS);
-  const [beneficiaires, setBeneficiaires] = useState<BeneficiaireEntity[]>(INITIAL_BENEFICIAIRES);
+  const supabase = useMemo(() => createClient(), []);
+  const [partners, setPartners] = useState<PartnerEntity[]>([]);
+  const [beneficiaires, setBeneficiaires] = useState<BeneficiaireEntity[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [cityId, setCityId] = useState<string | null>(null);
+  const saveTimers = useRef<Record<string, number>>({});
   const [tab, setTab] = useState<"partner" | "beneficiaire">("partner");
-  const [currentId, setCurrentId] = useState("p1");
+  const [currentId, setCurrentId] = useState("");
   const [search, setSearch] = useState("");
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(["identite"]));
   const [autosaveVisible, setAutosaveVisible] = useState(false);
@@ -322,13 +220,77 @@ export default function PartenairesPage() {
     window.setTimeout(() => setToast(null), 2600);
   }
 
+  const SELECT_COLS = "id,name,category,address,active,fiche";
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      const [prof, ps, bs] = await Promise.all([
+        supabase.from("profiles").select("city_id").eq("id", auth.user?.id ?? "").maybeSingle(),
+        supabase.from("partners").select(SELECT_COLS).order("name"),
+        supabase.from("beneficiaries").select(SELECT_COLS).order("name"),
+      ]);
+      if (cancelled) return;
+      setCityId(prof.data?.city_id ?? null);
+      const p = ((ps.data ?? []) as Row[]).map((r) => rowToEntity("partner", r) as PartnerEntity);
+      const b = ((bs.data ?? []) as Row[]).map((r) => rowToEntity("beneficiaire", r) as BeneficiaireEntity);
+      setPartners(p);
+      setBeneficiaires(b);
+      if (p[0]) setCurrentId(p[0].id);
+      if (ps.error || bs.error) showToast("Chargement impossible : " + (ps.error ?? bs.error)!.message);
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase]);
+
+  // Debounced write of one fiche to Supabase.
+  function persist(e: Entity) {
+    const table = e.kind === "partner" ? "partners" : "beneficiaries";
+    window.clearTimeout(saveTimers.current[e.id]);
+    saveTimers.current[e.id] = window.setTimeout(async () => {
+      const { error } = await supabase.from(table).update(entityToRow(e)).eq("id", e.id);
+      if (error) showToast("Échec de l'enregistrement : " + error.message);
+      else flashAutosave();
+    }, 700);
+  }
+
+  async function createEntity() {
+    if (!cityId) return showToast("Aucune ville n'est associée à ton compte.");
+    const kind = tab;
+    const table = kind === "partner" ? "partners" : "beneficiaries";
+    const blank = (kind === "partner" ? BLANK_PARTNER : BLANK_BENEFICIAIRE) as Entity;
+    const { data, error } = await supabase
+      .from(table)
+      .insert({ city_id: cityId, ...entityToRow(blank) })
+      .select(SELECT_COLS)
+      .single();
+    if (error || !data) return showToast("Création impossible : " + (error?.message ?? "erreur inconnue"));
+    const created = rowToEntity(kind, data as Row);
+    if (kind === "partner") setPartners((prev) => [...prev, created as PartnerEntity]);
+    else setBeneficiaires((prev) => [...prev, created as BeneficiaireEntity]);
+    setSearch("");
+    setCurrentId(created.id);
+    setOpenSections(new Set(["identite"]));
+    showToast("Fiche créée — renseigne le nom et les informations ci-dessous.");
+  }
+
   function updatePartner(id: string, updater: (p: PartnerEntity) => PartnerEntity) {
-    setPartners((prev) => prev.map((p) => (p.id === id ? updater(p) : p)));
-    flashAutosave();
+    const current = partners.find((p) => p.id === id);
+    if (!current) return;
+    const next = updater(current);
+    setPartners((prev) => prev.map((p) => (p.id === id ? next : p)));
+    persist(next);
   }
   function updateBeneficiaire(id: string, updater: (b: BeneficiaireEntity) => BeneficiaireEntity) {
-    setBeneficiaires((prev) => prev.map((b) => (b.id === id ? updater(b) : b)));
-    flashAutosave();
+    const current = beneficiaires.find((b) => b.id === id);
+    if (!current) return;
+    const next = updater(current);
+    setBeneficiaires((prev) => prev.map((b) => (b.id === id ? next : b)));
+    persist(next);
   }
   function updateEntity(updater: (e: Entity) => Entity) {
     if (!current) return;
@@ -427,7 +389,7 @@ export default function PartenairesPage() {
         </div>
         <button
           type="button"
-          onClick={() => showToast("Aperçu uniquement — la création de fiche sera branchée à Supabase.")}
+          onClick={createEntity}
           className="ml-auto flex items-center gap-1.5 rounded-[40px] bg-[var(--navy-deep)] px-[17px] py-[9px] font-display text-[13.5px] font-bold text-[var(--panel-fg)]"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]">
@@ -439,7 +401,12 @@ export default function PartenairesPage() {
 
       <div className="mt-[18px] grid grid-cols-1 items-start gap-[18px] xl:grid-cols-[330px_1fr]">
         <div className="max-h-[calc(100vh-200px)] overflow-y-auto rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-2.5 shadow-[var(--shadow)]">
-          {filteredList.length === 0 && <p className="p-4 text-[13px] text-[var(--slate)]">Aucun résultat.</p>}
+          {loading && <p className="p-4 text-[13px] text-[var(--slate)]">Chargement…</p>}
+          {!loading && filteredList.length === 0 && (
+            <p className="p-4 text-[13px] text-[var(--slate)]">
+              {list.length === 0 ? "Aucune fiche pour l'instant — clique sur « Ajouter » pour créer la première." : "Aucun résultat."}
+            </p>
+          )}
           {pinned.length > 0 && (
             <>
               <div className="px-2.5 pt-2.5 pb-1.5 text-[10.5px] font-bold tracking-[0.05em] text-[var(--muted)] uppercase">Distributions Linkee</div>
