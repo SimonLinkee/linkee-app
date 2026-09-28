@@ -30,6 +30,8 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   const path = request.nextUrl.pathname
+  // Vercel Cron has no user session: /api/cron/* checks its own secret
+  if (path.startsWith('/api/cron/')) return supabaseResponse
   const redirectTo = (to: string) => {
     const url = request.nextUrl.clone()
     url.pathname = to

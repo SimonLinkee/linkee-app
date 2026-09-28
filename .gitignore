@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local database exports made by scripts/db.mjs (contain real data — never commit)
+/backups/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

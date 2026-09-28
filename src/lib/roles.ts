@@ -24,7 +24,7 @@ function under(path: string, base: string) {
 export function isAllowed(role: string, path: string): boolean {
   const isAdmin = role === 'admin_principal' || role === 'admin_local'
   if (under(path, '/api')) return true // API routes check the caller's role themselves
-  if (under(path, '/villes-comptes')) return role === 'admin_principal'
+  if (under(path, '/villes-comptes') || under(path, '/historique')) return role === 'admin_principal'
   if (ADMIN_PATHS.some((p) => under(path, p))) return isAdmin
   if (under(path, '/journee')) return isAdmin || role === 'logisticien'
   if (under(path, '/espace-partenaire')) return isAdmin || role === 'partenaire'

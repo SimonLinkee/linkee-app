@@ -179,6 +179,18 @@ export function Sidebar() {
             </svg>
             <span>{SUPER_ITEM.label}</span>
           </Link>
+          <Link
+            href="/historique"
+            className={`flex items-center gap-[11px] rounded-xl px-3 py-[11px] text-sm font-semibold ${
+              pathname === "/historique" ? "bg-[var(--turquoise)] text-[#04262e]" : "text-[var(--panel-fg-dim)] hover:bg-white/8 hover:text-[var(--panel-fg)]"
+            }`}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px] flex-none">
+              <circle cx="12" cy="12" r="8.5" />
+              <path d="M12 7.5 V12 L15 14" />
+            </svg>
+            <span>Historique &amp; sauvegardes</span>
+          </Link>
             </>
           )}
         </nav>
