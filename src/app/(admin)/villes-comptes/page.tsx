@@ -27,6 +27,19 @@ const ROLE_LABELS: Record<Role, string> = {
 };
 const ROLE_ORDER: Role[] = ["admin_principal", "admin_local", "logisticien", "partenaire", "beneficiaire", "en_attente"];
 
+// One colour per role, used for the badge, the filter chips and the left edge of each row.
+const ROLE_COLOR: Record<Role, { solid: string; soft: string; text: string }> = {
+  admin_principal: { solid: "var(--navy-deep)", soft: "var(--navy-deep)", text: "var(--panel-fg)" },
+  admin_local: { solid: "var(--turquoise)", soft: "var(--turquoise)", text: "#04262e" },
+  logisticien: { solid: "var(--stock-accent)", soft: "var(--stock-accent-bg)", text: "var(--stock-accent)" },
+  partenaire: { solid: "var(--client-req)", soft: "var(--client-req-bg)", text: "var(--client-req)" },
+  beneficiaire: { solid: "var(--dropoff)", soft: "var(--dropoff-bg)", text: "var(--dropoff)" },
+  en_attente: { solid: "var(--muted)", soft: "var(--track)", text: "var(--slate)" },
+};
+
+// accent- and case-insensitive text used by the search box
+const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
 const inputCls = "w-full rounded-[7px] border-[1.5px] border-[var(--turquoise)] bg-[var(--input-bg)] px-2 py-1.5 text-xs text-[var(--navy)] outline-none";
 const formInputCls = "w-full rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-3 py-2.5 text-[13px] font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]";
 const labelCls = "mb-1 block text-[11px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase";
@@ -96,6 +109,18 @@ export default function VillesComptesPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const [roleFilter, setRoleFilter] = useState<Role | "">("");
+  const [search, setSearch] = useState("");
+  const partnerNames = (ids: string[]) => ids.map((id) => partners.find((p) => p.id === id)?.name).filter(Boolean) as string[];
+  const filtered = accounts.filter((a) => {
+    if (roleFilter && a.role !== roleFilter) return false;
+    const q = norm(search).trim();
+    if (!q) return true;
+    // every word typed must be found in at least one column (name, email, role, city, linked partners, status)
+    const haystack = norm([a.name, a.email, ROLE_LABELS[a.role], cities.find((c) => c.id === a.city)?.name ?? "", ...partnerNames(a.partnerIds), a.active ? "actif" : "inactif"].join(" "));
+    return q.split(/\s+/).every((w) => haystack.includes(w));
+  });
 
   const cityName = (id: string | null) => cities.find((c) => c.id === id)?.name || "—";
   const countByCity = (cityId: string, role: Role) => accounts.filter((a) => a.city === cityId && a.role === role).length;
@@ -386,11 +411,50 @@ export default function VillesComptesPage() {
         </div>
       )}
 
+      <div className="mb-3 flex flex-wrap items-center gap-2.5">
+        <div className="relative w-full max-w-[340px]">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="pointer-events-none absolute top-1/2 left-3 h-[15px] w-[15px] -translate-y-1/2 text-[var(--slate)]">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21 L16.5 16.5" />
+          </svg>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Rechercher (nom, email, rôle, ville, partenaire…)"
+            className="w-full rounded-[40px] border border-[var(--border)] bg-[var(--card)] py-[9px] pr-3 pl-[34px] text-[13px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => setRoleFilter("")}
+          className={`rounded-[40px] border-[1.5px] px-3.5 py-1.5 text-[12px] font-bold ${roleFilter === "" ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "border-[var(--border)] bg-[var(--card)] text-[var(--slate)]"}`}
+        >
+          Tous ({accounts.length})
+        </button>
+        {ROLE_ORDER.filter((r) => accounts.some((a) => a.role === r)).map((r) => {
+          const on = roleFilter === r;
+          const c = ROLE_COLOR[r];
+          return (
+            <button
+              key={r}
+              type="button"
+              onClick={() => setRoleFilter(on ? "" : r)}
+              className="flex items-center gap-1.5 rounded-[40px] border-[1.5px] px-3.5 py-1.5 text-[12px] font-bold"
+              style={on ? { background: c.solid, borderColor: c.solid, color: r === "logisticien" || r === "partenaire" || r === "beneficiaire" || r === "en_attente" ? "#fff" : c.text } : { borderColor: "var(--border)", background: "var(--card)", color: "var(--slate)" }}
+            >
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: c.solid }} />
+              {ROLE_LABELS[r]} ({accounts.filter((a) => a.role === r).length})
+            </button>
+          );
+        })}
+      </div>
+
       <div className="overflow-x-auto rounded-[18px] border border-[var(--border)] bg-[var(--card)] shadow-[var(--shadow)]">
-        <table className="w-full min-w-[720px] border-collapse text-[12.5px]">
+        <table className="w-full min-w-[820px] border-collapse text-[12.5px]">
           <thead>
             <tr>
-              {["Nom", "Email", "Rôle", "Ville", "Statut", ""].map((h) => (
+              {["Nom", "Email", "Rôle", "Ville", "Partenaires reliés", "Statut", ""].map((h) => (
                 <th key={h} className="border-b border-[var(--border)] px-3 py-3 text-left text-[10px] font-bold tracking-[0.03em] whitespace-nowrap text-[var(--muted)] uppercase">
                   {h}
                 </th>
@@ -400,12 +464,19 @@ export default function VillesComptesPage() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-[var(--slate)]">
+                <td colSpan={7} className="px-3 py-6 text-center text-[var(--slate)]">
                   Chargement…
                 </td>
               </tr>
             )}
-            {accounts.map((a) => {
+            {!loading && filtered.length === 0 && (
+              <tr>
+                <td colSpan={7} className="px-3 py-6 text-center text-[var(--slate)]">
+                  Aucun compte ne correspond à cette recherche.
+                </td>
+              </tr>
+            )}
+            {filtered.map((a) => {
               const isEditing = editingId === a.id && draft;
               if (isEditing && draft) {
                 return (
@@ -434,6 +505,7 @@ export default function VillesComptesPage() {
                           ))}
                         </select>
                       </td>
+                      <td className="border-b border-[var(--border)] px-3 py-2.5 text-[11px] text-[var(--slate)] italic">{draft.role === "partenaire" ? "à choisir ci-dessous" : "—"}</td>
                       <td className="border-b border-[var(--border)] px-3 py-2.5">
                         <select value={draft.active ? "1" : "0"} onChange={(e) => setDraft({ ...draft, active: e.target.value === "1" })} className={inputCls}>
                           <option value="1">Actif</option>
@@ -464,7 +536,7 @@ export default function VillesComptesPage() {
                       </td>
                     </tr>
                     <tr>
-                      <td colSpan={6} className="border-b border-[var(--border)] bg-[var(--input-bg)] px-3 py-3">
+                      <td colSpan={7} className="border-b border-[var(--border)] bg-[var(--input-bg)] px-3 py-3">
                         {draft.role === "partenaire" && (
                           <div className="mb-3">
                             <div className={labelCls}>Sites auxquels ce compte donne accès</div>
@@ -483,23 +555,35 @@ export default function VillesComptesPage() {
               }
               return (
                 <tr key={a.id} className="hover:[&>td]:bg-[var(--input-bg)]">
-                  <td className="border-b border-[var(--border)] px-3 py-2.5 text-[var(--navy)]">
-                    {a.name || <span className="text-[var(--muted)] italic">Sans nom</span>}
+                  <td className="border-b border-[var(--border)] px-3 py-2.5 text-[var(--navy)]" style={{ boxShadow: `inset 4px 0 0 ${ROLE_COLOR[a.role].solid}` }}>
+                    <span className="pl-1.5 font-semibold">{a.name || <span className="text-[var(--muted)] italic">Sans nom</span>}</span>
                     {a.id === me && <span className="ml-1.5 rounded-[40px] bg-[var(--track)] px-1.5 py-0.5 text-[9px] font-bold text-[var(--slate)] uppercase">Toi</span>}
                   </td>
                   <td className="border-b border-[var(--border)] px-3 py-2.5 text-[var(--navy)]">{a.email}</td>
                   <td className="border-b border-[var(--border)] px-3 py-2.5">
-                    <span
-                      className={`rounded-[40px] px-2.5 py-1 text-[10.5px] font-bold whitespace-nowrap ${
-                        a.role === "admin_principal" ? "bg-[var(--navy-deep)] text-[var(--panel-fg)]" : a.role === "admin_local" ? "bg-[var(--turquoise)] text-[#04262e]" : a.role === "en_attente" ? "bg-[var(--warn-bg)] text-[var(--warn)]" : "bg-[var(--track)] text-[var(--slate)]"
-                      }`}
-                    >
+                    <span className="rounded-[40px] px-2.5 py-1 text-[10.5px] font-bold whitespace-nowrap" style={{ background: ROLE_COLOR[a.role].soft, color: ROLE_COLOR[a.role].text }}>
                       {ROLE_LABELS[a.role]}
                     </span>
-                    {a.role === "partenaire" && <span className="ml-1.5 text-[11px] text-[var(--slate)]">{a.partnerIds.length} site(s)</span>}
                   </td>
                   <td className="border-b border-[var(--border)] px-3 py-2.5">
                     <span className="text-[11px] font-semibold text-[var(--slate)]">{a.role === "admin_principal" && a.city ? `${cityName(a.city)} (ville de travail · accès à toutes)` : cityName(a.city)}</span>
+                  </td>
+                  <td className="border-b border-[var(--border)] px-3 py-2.5">
+                    {a.role === "partenaire" ? (
+                      partnerNames(a.partnerIds).length > 0 ? (
+                        <div className="flex max-w-[260px] flex-wrap gap-1">
+                          {partnerNames(a.partnerIds).map((n) => (
+                            <span key={n} className="rounded-[40px] px-2 py-[3px] text-[10.5px] font-semibold" style={{ background: ROLE_COLOR.partenaire.soft, color: ROLE_COLOR.partenaire.text }}>
+                              {n}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-[11px] font-semibold text-[var(--critical)]">Aucun site relié</span>
+                      )
+                    ) : (
+                      <span className="text-[var(--muted)]">—</span>
+                    )}
                   </td>
                   <td className="border-b border-[var(--border)] px-3 py-2.5 text-[var(--navy)]">
                     <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${a.active ? "bg-[var(--good)]" : "bg-[var(--muted)]"}`} />
