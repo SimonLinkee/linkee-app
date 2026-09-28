@@ -422,9 +422,15 @@ export default function DistributionsPage() {
           <h1 className="font-display text-[32px] leading-none font-black">Distributions Linkee</h1>
           <p className="mt-1 text-[13.5px] text-[var(--slate)]">Suivi des distributions de {city?.name ?? "la ville"} : inscrits, paniers, produits distribués. Les livraisons du planning apparaissent ici automatiquement.</p>
         </div>
-        <button type="button" onClick={() => setNewOpen((v) => !v)} className="flex items-center gap-1.5 rounded-[40px] bg-[var(--navy-deep)] px-[17px] py-[9px] font-display text-[13.5px] font-bold text-[var(--panel-fg)]">
-          + Nouvelle distribution
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/saisie-mobile" className="flex items-center gap-1.5 rounded-[40px] border-[1.5px] border-[#2a78d6] px-4 py-[8px] font-display text-[13.5px] font-bold text-[#2a78d6]">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><rect x="6" y="2.5" width="12" height="19" rx="2.5" /><path d="M10.5 18.5 H13.5" /></svg>
+            Version mobile
+          </Link>
+          <button type="button" onClick={() => setNewOpen((v) => !v)} className="flex items-center gap-1.5 rounded-[40px] bg-[var(--navy-deep)] px-[17px] py-[9px] font-display text-[13.5px] font-bold text-[var(--panel-fg)]">
+            + Nouvelle distribution
+          </button>
+        </div>
       </div>
 
       <DistribTabs />

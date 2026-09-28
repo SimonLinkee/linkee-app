@@ -4,9 +4,10 @@ export type Role = 'en_attente' | 'admin_principal' | 'admin_local' | 'resp_dist
 //   admin_principal   = Superadmin              : everything
 //   admin_local       = Responsable d'antenne   : Distribution + Stock (edit), Planning (read only)
 //   resp_distribution = Resp. Distribution      : Distribution only
+// After sign-in the last two roles land on /version: full PC version or quick mobile entry (/saisie-mobile).
 const SUPER_ONLY = ['/dashboard', '/partenaires', '/beneficiaires', '/flotte', '/todo', '/villes-comptes', '/historique', '/journee', '/espace-partenaire']
-const ANTENNE_PATHS = ['/distributions', '/stock', '/planning', '/profil']
-const DISTRIB_PATHS = ['/distributions', '/profil']
+const ANTENNE_PATHS = ['/distributions', '/stock', '/planning', '/profil', '/version', '/saisie-mobile']
+const DISTRIB_PATHS = ['/distributions', '/profil', '/version', '/saisie-mobile']
 
 export const ROLE_LABEL: Record<string, string> = {
   admin_principal: 'Superadmin',
@@ -24,7 +25,7 @@ export function homeForRole(role: string): string {
       return '/dashboard'
     case 'admin_local':
     case 'resp_distribution':
-      return '/distributions'
+      return '/version' // choice between the PC version and the quick mobile entry
     case 'logisticien':
       return '/journee'
     case 'partenaire':
