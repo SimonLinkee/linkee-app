@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 type Kind = "partner" | "dropoff" | "stock" | "exceptionnel";
-type ResultItem = { denree?: string; name?: string; kg: number; from?: string; sourceId?: string };
+type ResultItem = { denree?: string; name?: string; kg: number; from?: string; sourceId?: string; stockId?: string; colis?: number };
 type StopResult = { items?: ResultItem[]; totalKg?: number; photos?: number; motif?: string };
 type ChecklistItem = { id: string; label: string };
 type Rel = { name: string; category: string | null; address: string | null; fiche: Record<string, unknown> | null };
@@ -36,7 +36,7 @@ type Stop = {
   accessDetails?: string;
   comment?: string;
   allowedTypes?: string[];
-  presetItems?: { name: string; kg: number }[];
+  presetItems?: { id: string; name: string; colis: number; upc: number; grammage: number }[];
   result?: StopResult;
 };
 
@@ -59,9 +59,6 @@ function mapPoint(i: number) {
   return { x, y: 40 + row * 62 };
 }
 
-function stockPresets(items: { name: string; kg: number }[]) {
-  return items.filter((it) => it.kg > 0);
-}
 
 function rowToStop(r: DbStop, all: DbStop[]): Stop {
   const rel = one(r.partners) ?? one(r.beneficiaries);
@@ -185,7 +182,7 @@ function StopPanel({ stops, index, onDone }: { stops: Stop[]; index: number; onD
   const [pick, setPick] = useState<"collecte" | "annule" | null>(null);
   const [rows, setRows] = useState<{ denree: string; kg: string }[]>([{ denree: "", kg: "" }]);
   const [photos, setPhotos] = useState(0);
-  const [stockChecked, setStockChecked] = useState<Set<number>>(new Set());
+  const [stockCounts, setStockCounts] = useState<Record<string, number>>({});
   const [dropChecked, setDropChecked] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [motif, setMotif] = useState("");
@@ -198,9 +195,10 @@ function StopPanel({ stops, index, onDone }: { stops: Stop[]; index: number; onD
 
   function validateCollecte() {
     if (s.kind === "stock") {
-      const taken = s.presetItems!.filter((_, j) => stockChecked.has(j));
-      if (taken.length < 1 || photos < 1) return setErrCollecte("Cochez au moins un item pris en stock et ajoutez une photo.");
-      onDone({ items: taken, totalKg: taken.reduce((sum, it) => sum + it.kg, 0), photos }, "collecte");
+      const taken = (s.presetItems ?? []).filter((it) => (stockCounts[it.id] ?? 0) > 0);
+      if (taken.length < 1 || photos < 1) return setErrCollecte("Indiquez au moins un produit pris en stock (nombre de colis) et ajoutez une photo.");
+      const items: ResultItem[] = taken.map((it) => ({ name: it.name, kg: Math.round(((stockCounts[it.id] ?? 0) * it.upc * it.grammage) / 10) / 100, stockId: it.id, colis: stockCounts[it.id] }));
+      onDone({ items, totalKg: Math.round(items.reduce((sum, it) => sum + it.kg, 0) * 100) / 100, photos }, "collecte");
     } else if (s.kind === "dropoff") {
       const dropped: ResultItem[] = [];
       dropChecked.forEach((key) => {
@@ -255,14 +253,24 @@ function StopPanel({ stops, index, onDone }: { stops: Stop[]; index: number; onD
             </div>
           ) : s.kind === "stock" ? (
             <div>
-              <label className="mb-1.5 block text-xs font-bold text-[var(--navy)]">Items préconfigurés par l&apos;admin — cochez ce que vous avez pris</label>
+              <label className="mb-1.5 block text-xs font-bold text-[var(--navy)]">Produits du stock — indiquez le nombre de colis pris</label>
+              {(s.presetItems ?? []).length === 0 && <p className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--input-bg)] px-3.5 py-3 text-[12.5px] text-[var(--slate)]">Le stock est vide : rien à prendre ici.</p>}
               <div className="flex flex-col gap-2">
-                {s.presetItems!.map((it, j) => (
-                  <label key={j} className="flex cursor-pointer items-center gap-2.5 rounded-xl border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-[13px] py-[11px]">
-                    <input type="checkbox" checked={stockChecked.has(j)} onChange={() => setStockChecked((prev) => { const n = new Set(prev); if (n.has(j)) n.delete(j); else n.add(j); return n; })} className="h-[19px] w-[19px] accent-[var(--good)]" />
-                    <span className="flex-1 text-[13.5px] font-semibold text-[var(--navy)]">{it.name}</span>
-                    <span className="text-[12.5px] font-bold text-[var(--slate)] tabular-nums">{it.kg} kg</span>
-                  </label>
+                {(s.presetItems ?? []).map((it) => (
+                  <div key={it.id} className="flex items-center gap-2.5 rounded-xl border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-[13px] py-[9px]">
+                    <span className="min-w-0 flex-1">
+                      <div className="truncate text-[13.5px] font-semibold text-[var(--navy)]">{it.name}</div>
+                      <div className="text-[11px] text-[var(--slate)]">{it.colis} colis dispo · {it.upc} u/colis</div>
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={it.colis}
+                      value={stockCounts[it.id] ?? 0}
+                      onChange={(e) => setStockCounts((prev) => ({ ...prev, [it.id]: Math.min(it.colis, Math.max(0, parseInt(e.target.value, 10) || 0)) }))}
+                      className="w-16 rounded-lg border-[1.5px] border-[var(--border)] bg-[var(--card)] px-2 py-1.5 text-center text-[13px] font-bold text-[var(--navy)]"
+                    />
+                  </div>
                 ))}
               </div>
             </div>
@@ -469,7 +477,7 @@ export default function JourneePage() {
           .order("sort_order"),
         supabase.from("checklist_templates").select("items").eq("weekday", dbWeekday(now)).maybeSingle(),
         supabase.from("checklist_overrides").select("items").eq("day", iso).maybeSingle(),
-        supabase.from("stock_items").select("name,kg").order("name"),
+        supabase.from("stock_items").select("id,name,colis,upc,grammage").gt("colis", 0).order("name"),
         supabase.from("vehicles").select("name,plate").limit(1).maybeSingle(),
         supabase.from("day_sessions").select("started_at,closed_at").eq("logisticien_id", uid).eq("day", iso).maybeSingle(),
         supabase
@@ -484,7 +492,7 @@ export default function JourneePage() {
       setFirstName(((prof.data?.full_name || prof.data?.email?.split("@")[0] || "") as string).split(" ")[0]);
       if (col.error) showToast("Chargement impossible : " + col.error.message);
       const rows = (col.data ?? []) as unknown as DbStop[];
-      const presets = stockPresets(((stock.data ?? []) as { name: string; kg: number }[]).map((s) => ({ name: s.name, kg: Number(s.kg) })));
+      const presets = ((stock.data ?? []) as { id: string; name: string; colis: number; upc: number; grammage: number | string }[]).map((s) => ({ id: s.id, name: s.name, colis: s.colis, upc: s.upc, grammage: Number(s.grammage) }));
       setStops(rows.map((r) => rowToStop(r, rows)).map((s) => (s.kind === "stock" ? { ...s, presetItems: presets } : s)));
       setChecklist((ovr.data?.items ?? tpl.data?.items ?? []) as ChecklistItem[]);
       setVehicle((veh.data as { name: string; plate: string | null } | null) ?? null);
@@ -529,6 +537,16 @@ export default function JourneePage() {
   }
   async function finishStop(i: number, result: StopResult, status: "collecte" | "annule") {
     const s = stops[i];
+    if (s.kind === "stock" && status === "collecte" && result.items?.length) {
+      // atomic stock decrement + movement history (migration 006)
+      const take = await supabase.rpc("take_stock", {
+        p_items: result.items.map((it) => ({ id: it.stockId, colis: it.colis })),
+        p_destination: `Tournée du ${iso}`,
+        p_day: iso,
+        p_time: null,
+      });
+      if (take.error) return showToast("Stock non mis à jour : " + take.error.message);
+    }
     const { error } = await supabase
       .from("collectes")
       .update({ status, motif: result.motif ?? null, photos_count: result.photos ?? 0, done_at: new Date().toISOString(), logisticien_id: userId })

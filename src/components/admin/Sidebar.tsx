@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { AVATAR_DEFS, critterSvg, type AvatarKey } from "@/lib/avatars";
 
 const NAV_ITEMS = [
   {
@@ -19,20 +21,13 @@ const NAV_ITEMS = [
   },
   {
     href: "/partenaires",
-    label: "Partenaires",
+    label: "Partenaires & bénéficiaires",
     icon: (
       <>
         <path d="M4 8 L8 4 H16 L20 8" />
         <rect x="4" y="8" width="16" height="11" rx="1.5" />
         <path d="M4 8 H20" />
       </>
-    ),
-  },
-  {
-    href: "/beneficiaires",
-    label: "Bénéficiaires",
-    icon: (
-      <path d="M12 20 C 6 15.5, 3 12.3, 3 8.8 C 3 6.1, 5.1 4 7.7 4 C 9.4 4, 11 5, 12 6.5 C 13 5, 14.6 4, 16.3 4 C 18.9 4, 21 6.1, 21 8.8 C 21 12.3, 18 15.5, 12 20 Z" />
     ),
   },
   {
@@ -90,9 +85,24 @@ const SUPER_ITEM = {
   ),
 };
 
+const ROLE_SHORT: Record<string, string> = { admin_principal: "Admin principal", admin_local: "Admin local", logisticien: "Logisticien" };
+
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [me, setMe] = useState<{ name: string; role: string; avatar: string | null }>({ name: "", role: "", avatar: null });
+
+  useEffect(() => {
+    (async () => {
+      const supabase = createClient();
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth.user) return;
+      let res = await supabase.from("profiles").select("full_name,email,role,avatar_key").eq("id", auth.user.id).maybeSingle();
+      if (res.error) res = (await supabase.from("profiles").select("full_name,email,role").eq("id", auth.user.id).maybeSingle()) as typeof res; // before migration 006
+      const p = res.data as { full_name: string | null; email: string | null; role: string; avatar_key?: string | null } | null;
+      if (p) setMe({ name: p.full_name || p.email?.split("@")[0] || "", role: p.role, avatar: p.avatar_key && p.avatar_key in AVATAR_DEFS ? p.avatar_key : null });
+    })();
+  }, []);
 
   async function handleLogout() {
     const supabase = createClient();
@@ -138,6 +148,8 @@ export function Sidebar() {
               </Link>
             );
           })}
+          {me.role === "admin_principal" && (
+            <>
           <div className="my-2.5 h-px bg-white/12" />
           <div className="px-3 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--panel-fg-dim)]">
             Admin principal
@@ -163,16 +175,22 @@ export function Sidebar() {
             </svg>
             <span>{SUPER_ITEM.label}</span>
           </Link>
+            </>
+          )}
         </nav>
       </div>
       <div className="flex flex-col gap-3.5">
         <div className="flex items-center gap-2.5 rounded-xl px-2.5 py-2">
-          <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full bg-[var(--turquoise)] font-display text-sm font-bold text-[#04262e]">
-            S
-          </span>
+          {me.avatar ? (
+            <span className="flex h-[34px] w-[34px] flex-none overflow-hidden rounded-full" dangerouslySetInnerHTML={{ __html: critterSvg(me.avatar as AvatarKey) }} />
+          ) : (
+            <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full bg-[var(--turquoise)] font-display text-sm font-bold text-[#04262e]">
+              {(me.name || "?").charAt(0).toUpperCase()}
+            </span>
+          )}
           <span className="min-w-0 leading-tight">
-            <span className="block text-[13.5px] font-bold text-[var(--panel-fg)]">Simon</span>
-            <span className="block text-[11.5px] text-[var(--panel-fg-dim)]">Admin principal</span>
+            <span className="block truncate text-[13.5px] font-bold text-[var(--panel-fg)]">{me.name || "…"}</span>
+            <span className="block text-[11.5px] text-[var(--panel-fg-dim)]">{ROLE_SHORT[me.role] ?? ""}</span>
           </span>
         </div>
         <button

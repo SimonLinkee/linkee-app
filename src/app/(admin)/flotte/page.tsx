@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 type CheckItem = { key: string; label: string; intervalDays: number; lastDate: string };
 type Invoice = { date: string; fournisseur: string; montant: number; statut: "Payé" | "À payer"; motif: string };
@@ -16,51 +17,34 @@ type Vehicle = {
   invoices: Invoice[];
 };
 
-const TODAY = new Date("2026-09-15");
-const LOGISTICIENS = [
-  { id: "", name: "Non assigné" },
-  { id: "akram", name: "Akram" },
+const TODAY = new Date();
+const todayIso = () => new Date().toISOString().slice(0, 10);
+
+const defaultChecks = (): CheckItem[] => [
+  { key: "huile", label: "Niveau d'huile moteur", intervalDays: 30, lastDate: todayIso() },
+  { key: "liquide", label: "Liquide de refroidissement", intervalDays: 30, lastDate: todayIso() },
+  { key: "pneus", label: "Pression des pneus", intervalDays: 14, lastDate: todayIso() },
+  { key: "laveglace", label: "Niveau de lave-glace", intervalDays: 14, lastDate: todayIso() },
+  { key: "eclairage", label: "Éclairage / clignotants", intervalDays: 30, lastDate: todayIso() },
+];
+const defaultRevisions = (): CheckItem[] => [
+  { key: "rev1m", label: "Révision 1 mois (garage)", intervalDays: 30, lastDate: todayIso() },
+  { key: "rev3m", label: "Révision 3 mois (garage)", intervalDays: 90, lastDate: todayIso() },
+  { key: "karcher", label: "Grand nettoyage (Kärcher + aspirateur)", intervalDays: 15, lastDate: todayIso() },
 ];
 
-const INITIAL_VEHICLES: Vehicle[] = [
-  {
-    id: "v1", name: "Renault Master", plate: "EH-482-QT", type: "Camion principal", assignedTo: "akram", statut: "En service",
-    checks: [
-      { key: "huile", label: "Niveau d'huile moteur", intervalDays: 30, lastDate: "2026-07-28" },
-      { key: "liquide", label: "Liquide de refroidissement", intervalDays: 30, lastDate: "2026-08-25" },
-      { key: "pneus", label: "Pression des pneus", intervalDays: 14, lastDate: "2026-09-08" },
-      { key: "laveglace", label: "Niveau de lave-glace", intervalDays: 14, lastDate: "2026-09-01" },
-      { key: "eclairage", label: "Éclairage / clignotants", intervalDays: 30, lastDate: "2026-08-20" },
-    ],
-    revisions: [
-      { key: "rev1m", label: "Révision 1 mois (garage)", intervalDays: 30, lastDate: "2026-08-15" },
-      { key: "rev3m", label: "Révision 3 mois (garage)", intervalDays: 90, lastDate: "2026-06-15" },
-      { key: "karcher", label: "Grand nettoyage (Kärcher + aspirateur)", intervalDays: 15, lastDate: "2026-08-28" },
-    ],
-    invoices: [
-      { date: "2026-09-02", fournisseur: "Garage Mermoz Auto", montant: 184.5, statut: "Payé", motif: "Révision 1 mois" },
-      { date: "2026-09-10", fournisseur: "Total Energies", montant: 96.2, statut: "À payer", motif: "Carburant" },
-      { date: "2026-08-28", fournisseur: "Station Lavage Pro", montant: 35.0, statut: "Payé", motif: "Grand nettoyage" },
-      { date: "2026-09-12", fournisseur: "Point S Vénissieux", montant: 212.0, statut: "À payer", motif: "Pneus avant" },
-    ],
-  },
-  {
-    id: "v2", name: "Kangoo utilitaire", plate: "FL-091-XZ", type: "Véhicule d'appoint", assignedTo: "", statut: "En réserve",
-    checks: [
-      { key: "huile", label: "Niveau d'huile moteur", intervalDays: 30, lastDate: "2026-09-05" },
-      { key: "liquide", label: "Liquide de refroidissement", intervalDays: 30, lastDate: "2026-09-05" },
-      { key: "pneus", label: "Pression des pneus", intervalDays: 14, lastDate: "2026-09-10" },
-      { key: "laveglace", label: "Niveau de lave-glace", intervalDays: 14, lastDate: "2026-09-10" },
-      { key: "eclairage", label: "Éclairage / clignotants", intervalDays: 30, lastDate: "2026-09-05" },
-    ],
-    revisions: [
-      { key: "rev1m", label: "Révision 1 mois (garage)", intervalDays: 30, lastDate: "2026-09-01" },
-      { key: "rev3m", label: "Révision 3 mois (garage)", intervalDays: 90, lastDate: "2026-07-01" },
-      { key: "karcher", label: "Grand nettoyage (Kärcher + aspirateur)", intervalDays: 15, lastDate: "2026-09-06" },
-    ],
-    invoices: [],
-  },
-];
+type VehicleRow = { id: string; name: string; plate: string | null; assigned_to: string | null; fiche: Partial<Vehicle> | null };
+const rowToVehicle = (r: VehicleRow): Vehicle => ({
+  id: r.id,
+  name: r.name,
+  plate: r.plate ?? "",
+  assignedTo: r.assigned_to ?? "",
+  type: r.fiche?.type ?? "Véhicule",
+  statut: r.fiche?.statut ?? "En service",
+  checks: r.fiche?.checks ?? defaultChecks(),
+  revisions: r.fiche?.revisions ?? defaultRevisions(),
+  invoices: r.fiche?.invoices ?? [],
+});
 
 function status(item: CheckItem) {
   const last = new Date(item.lastDate);
@@ -88,18 +72,70 @@ const statusPillCls: Record<string, string> = {
 };
 
 export default function FlottePage() {
-  const [vehicles, setVehicles] = useState<Vehicle[]>(INITIAL_VEHICLES);
-  const [currentId, setCurrentId] = useState("v1");
+  const supabase = useMemo(() => createClient(), []);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [currentId, setCurrentId] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [cityId, setCityId] = useState<string | null>(null);
+  const [logisticiens, setLogisticiens] = useState<{ id: string; name: string }[]>([{ id: "", name: "Non assigné" }]);
+  const [toast, setToast] = useState<string | null>(null);
+  const saveTimer = useRef<number | null>(null);
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(["checks"]));
   const [autosaveVisible, setAutosaveVisible] = useState(false);
   const [docModal, setDocModal] = useState<{ v: Vehicle; inv: Invoice } | null>(null);
 
-  const current = vehicles.find((v) => v.id === currentId)!;
+  const current = vehicles.find((v) => v.id === currentId);
   const totalOverdue = vehicles.reduce((sum, v) => sum + overdueCount(v), 0);
+  const LOGISTICIENS = logisticiens;
 
+  function showToast(msg: string) {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 3200);
+  }
   function flashAutosave() {
     setAutosaveVisible(true);
     window.setTimeout(() => setAutosaveVisible(false), 1600);
+  }
+
+  useEffect(() => {
+    (async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      const { data: prof } = await supabase.from("profiles").select("city_id").eq("id", auth.user?.id ?? "").maybeSingle();
+      setCityId(prof?.city_id ?? null);
+      const [v, l] = await Promise.all([
+        supabase.from("vehicles").select("id,name,plate,assigned_to,fiche").order("created_at"),
+        supabase.from("profiles").select("id,full_name,email").eq("role", "logisticien").order("full_name"),
+      ]);
+      if (v.error) showToast("Chargement impossible : " + v.error.message);
+      const list = ((v.data ?? []) as unknown as VehicleRow[]).map(rowToVehicle);
+      setVehicles(list);
+      if (list[0]) setCurrentId(list[0].id);
+      setLogisticiens([{ id: "", name: "Non assigné" }, ...((l.data ?? []) as { id: string; full_name: string | null; email: string | null }[]).map((p) => ({ id: p.id, name: p.full_name || p.email || "Logisticien" }))]);
+      setLoading(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase]);
+
+  function persist(v: Vehicle) {
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(async () => {
+      const { error } = await supabase
+        .from("vehicles")
+        .update({ name: v.name, plate: v.plate, assigned_to: v.assignedTo || null, fiche: { type: v.type, statut: v.statut, checks: v.checks, revisions: v.revisions, invoices: v.invoices } })
+        .eq("id", v.id);
+      if (error) showToast("Enregistrement impossible : " + error.message);
+      else flashAutosave();
+    }, 700);
+  }
+
+  async function addVehicle() {
+    if (!cityId) return showToast("Aucune ville n'est associée à ton compte.");
+    const fiche = { type: "Véhicule", statut: "En service", checks: defaultChecks(), revisions: defaultRevisions(), invoices: [] };
+    const { data, error } = await supabase.from("vehicles").insert({ city_id: cityId, name: "Nouveau véhicule", plate: "", fiche }).select("id,name,plate,assigned_to,fiche").single();
+    if (error || !data) return showToast("Création impossible : " + (error?.message ?? "erreur"));
+    const v = rowToVehicle(data as unknown as VehicleRow);
+    setVehicles((prev) => [...prev, v]);
+    setCurrentId(v.id);
   }
   function toggleSection(key: string) {
     setOpenSections((prev) => {
@@ -110,13 +146,16 @@ export default function FlottePage() {
     });
   }
   function updateCurrent(updater: (v: Vehicle) => Vehicle) {
-    setVehicles((prev) => prev.map((v) => (v.id === currentId ? updater(v) : v)));
-    flashAutosave();
+    const cur = vehicles.find((v) => v.id === currentId);
+    if (!cur) return;
+    const next = updater(cur);
+    setVehicles((prev) => prev.map((v) => (v.id === currentId ? next : v)));
+    persist(next);
   }
   function markDone(group: "checks" | "revisions", idx: number) {
     updateCurrent((v) => ({
       ...v,
-      [group]: v[group].map((it, i) => (i === idx ? { ...it, lastDate: "2026-09-15" } : it)),
+      [group]: v[group].map((it, i) => (i === idx ? { ...it, lastDate: todayIso() } : it)),
     }));
   }
   function toggleInvoice(idx: number) {
@@ -128,7 +167,7 @@ export default function FlottePage() {
   function addInvoice() {
     updateCurrent((v) => ({
       ...v,
-      invoices: [...v.invoices, { date: "2026-09-15", fournisseur: "Nouveau fournisseur", montant: 0, statut: "À payer", motif: "À préciser" }],
+      invoices: [...v.invoices, { date: todayIso(), fournisseur: "Nouveau fournisseur", montant: 0, statut: "À payer", motif: "À préciser" }],
     }));
     setOpenSections((prev) => new Set(prev).add("invoices"));
   }
@@ -136,7 +175,7 @@ export default function FlottePage() {
   function CheckRows({ group }: { group: "checks" | "revisions" }) {
     return (
       <>
-        {current[group].map((it, idx) => {
+        {(current?.[group] ?? []).map((it, idx) => {
           const s = status(it);
           return (
             <div key={it.key} className="flex items-center gap-3 border-b border-[var(--border)] py-2.5 last:border-none">
@@ -158,6 +197,26 @@ export default function FlottePage() {
           );
         })}
       </>
+    );
+  }
+
+  if (!current) {
+    return (
+      <div>
+        <h1 className="font-display text-[32px] leading-none font-black">Flotte logistique</h1>
+        <p className="mb-[18px] text-[13.5px] text-[var(--slate)]">Véhicules, contrôles d&apos;entretien et suivi devis/factures.</p>
+        <div className="rounded-[18px] border border-dashed border-[var(--border)] bg-[var(--card)] px-6 py-10 text-center text-[13px] text-[var(--slate)]">
+          {loading ? "Chargement…" : "Aucun véhicule pour l'instant."}
+          {!loading && (
+            <div className="mt-3">
+              <button type="button" onClick={addVehicle} className="rounded-[40px] bg-[var(--navy-deep)] px-[18px] py-2.5 font-display text-[13.5px] font-bold text-[var(--panel-fg)]">
+                + Ajouter un véhicule
+              </button>
+            </div>
+          )}
+        </div>
+        {toast && <div className="fixed bottom-[26px] left-1/2 z-[999] max-w-[420px] -translate-x-1/2 rounded-[14px] bg-[var(--navy-deep)] px-[18px] py-3 text-center text-[13px] font-semibold text-[var(--panel-fg)] shadow-[var(--shadow)]">{toast}</div>}
+      </div>
     );
   }
 
@@ -221,6 +280,9 @@ export default function FlottePage() {
               </div>
             );
           })}
+          <button type="button" onClick={addVehicle} className="mt-1 w-full rounded-xl border-[1.5px] border-dashed border-[var(--border)] px-3 py-2.5 text-[12.5px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]">
+            + Ajouter un véhicule
+          </button>
         </div>
 
         <div className="rounded-[20px] border border-[var(--border)] bg-[var(--card)] px-7 pt-[26px] pb-[30px] shadow-[var(--shadow)]">
@@ -482,6 +544,7 @@ export default function FlottePage() {
           </div>
         </div>
       )}
+      {toast && <div className="fixed bottom-[26px] left-1/2 z-[999] max-w-[420px] -translate-x-1/2 rounded-[14px] bg-[var(--navy-deep)] px-[18px] py-3 text-center text-[13px] font-semibold text-[var(--panel-fg)] shadow-[var(--shadow)]">{toast}</div>}
     </div>
   );
 }

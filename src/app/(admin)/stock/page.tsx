@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 type StockItem = {
-  id: number;
+  id: string;
   produit: string;
   categorie: string;
   provenance: string;
@@ -15,33 +16,20 @@ type StockItem = {
   dlc: string;
 };
 type MoveItem = { produit: string; colis: number; unites: number; kg: number };
-type HistoryEntry = { id: number; type: "sortie" | "entree"; date: string; time: string; destination: string; items: MoveItem[] };
-type OutLine = { uid: string; productId: number | null; colisCount: number };
+type HistoryEntry = { id: string; type: "sortie" | "entree"; date: string; time: string; destination: string; items: MoveItem[] };
+type OutLine = { uid: string; productId: string | null; colisCount: number };
+type DbStock = { id: string; name: string; category: string | null; provenance: string | null; grammage: number | string; colis: number; upc: number; kg: number | string; ddm: string | null; dlc: string | null };
+type DbMove = { id: string; type: "sortie" | "entree"; day: string; time: string | null; destination: string | null; items: MoveItem[] };
 
-const TODAY = new Date("2026-09-15");
+const TODAY = new Date();
+const todayIso = () => new Date().toISOString().slice(0, 10);
 const CATEGORIES = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
-const DESTINATIONS = ["HEAT", "Point de distribution — Rue de Marseille", "Les Grandes Voisines", "Épicerie Sociale Saint-Camille de Vaise", "Autre bénéficiaire / à préciser"];
-
-const INITIAL_STOCK: StockItem[] = [
-  { id: 1, produit: "Tablettes chocolat Côte d'Or", categorie: "Secs", provenance: "Collecte Métro Vénissieux", grammage: 400, colis: 190, upc: 9, poids: 684, ddm: "2027-03-15", dlc: "" },
-  { id: 2, produit: "Sauce dessert choco-noisette", categorie: "Secs", provenance: "Collecte Métro Vénissieux", grammage: 750, colis: 17, upc: 6, poids: 76.5, ddm: "2027-02-28", dlc: "" },
-  { id: 3, produit: "Huile d'olive Tramet", categorie: "Secs", provenance: "Don Grossiste Rhône Frais", grammage: 1000, colis: 32, upc: 15, poids: 480, ddm: "2026-09-30", dlc: "" },
-  { id: 4, produit: "Limonade Hamoud", categorie: "Secs", provenance: "Collecte Supermarché Presqu'île", grammage: 1500, colis: 172, upc: 6, poids: 1548, ddm: "2026-12-05", dlc: "" },
-  { id: 5, produit: "Dentifrice Signal", categorie: "Secs", provenance: "Don entreprise", grammage: 75, colis: 34, upc: 24, poids: 61.2, ddm: "", dlc: "" },
-  { id: 6, produit: "Solution micellaire Bioderma", categorie: "Secs", provenance: "Don entreprise", grammage: 1000, colis: 30, upc: 6, poids: 180, ddm: "", dlc: "" },
-  { id: 7, produit: "Brioche Goccioli pépites", categorie: "Boulangerie", provenance: "Boulangerie des Terreaux", grammage: 336, colis: 15, upc: 12, poids: 60.5, ddm: "", dlc: "2026-09-22" },
-  { id: 8, produit: "Choucroute Riesling (conserve)", categorie: "Secs", provenance: "Collecte Métro Vénissieux", grammage: 810, colis: 93, upc: 12, poids: 903.96, ddm: "2028-06-01", dlc: "" },
-  { id: 9, produit: "Pâtes Barilla Fusilli", categorie: "Secs", provenance: "Grossiste Rhône Frais", grammage: 700, colis: 33, upc: 16, poids: 369.6, ddm: "2027-08-01", dlc: "" },
-  { id: 10, produit: "Infusions bio assortiment", categorie: "Secs", provenance: "Don entreprise", grammage: 20, colis: 12, upc: 24, poids: 5.76, ddm: "2027-03-01", dlc: "" },
-  { id: 11, produit: "Croissants surgelés", categorie: "Boulangerie", provenance: "Traiteur Lumière", grammage: 65, colis: 8, upc: 40, poids: 20.8, ddm: "", dlc: "2026-09-18" },
-  { id: 12, produit: "Yaourts nature Danone", categorie: "Produits frais", provenance: "Supermarché Presqu'île", grammage: 125, colis: 4, upc: 24, poids: 12, ddm: "", dlc: "2026-09-10" },
-];
-
-const INITIAL_HISTORY: HistoryEntry[] = [
-  { id: 1, type: "sortie", date: "2026-09-12", time: "15:00", destination: "Les Grandes Voisines", items: [{ produit: "Huile d'olive Tramet", colis: 6, unites: 90, kg: 90 }, { produit: "Infusions bio assortiment", colis: 3, unites: 72, kg: 1.44 }] },
-  { id: 2, type: "sortie", date: "2026-09-10", time: "17:30", destination: "HEAT", items: [{ produit: "Limonade Hamoud", colis: 20, unites: 120, kg: 180 }] },
-  { id: 3, type: "entree", date: "2026-09-08", time: "", destination: "", items: [{ produit: "Pâtes Barilla Fusilli", colis: 33, unites: 528, kg: 369.6 }] },
-];
+const STOCK_COLS = "id,name,category,provenance,grammage,colis,upc,kg,ddm,dlc";
+const toItem = (r: DbStock): StockItem => ({
+  id: r.id, produit: r.name, categorie: r.category ?? CATEGORIES[0], provenance: r.provenance ?? "", grammage: Number(r.grammage), colis: r.colis,
+  upc: r.upc, poids: Number(r.kg), ddm: r.ddm ?? "", dlc: r.dlc ?? "",
+});
+const toMove = (r: DbMove): HistoryEntry => ({ id: r.id, type: r.type, date: r.day, time: r.time ? r.time.slice(0, 5) : "", destination: r.destination ?? "", items: r.items ?? [] });
 
 function fmtDate(iso: string) {
   if (!iso) return "—";
@@ -62,19 +50,23 @@ const inputCls = "w-full rounded-[10px] border-[1.5px] border-[var(--border)] bg
 const labelCls = "mb-[5px] block text-[11px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase";
 
 export default function StockPage() {
-  const [stock, setStock] = useState<StockItem[]>(INITIAL_STOCK);
-  const [history, setHistory] = useState<HistoryEntry[]>(INITIAL_HISTORY);
-  const [nextId, setNextId] = useState(100);
-  const [nextHistId, setNextHistId] = useState(4);
+  const supabase = useMemo(() => createClient(), []);
+  const [stock, setStock] = useState<StockItem[]>([]);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [cityId, setCityId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [destinations, setDestinations] = useState<string[]>(["Autre bénéficiaire / à préciser"]);
+  const [toast, setToast] = useState<string | null>(null);
   const [tab, setTab] = useState<"out" | "in" | "history">("out");
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState("");
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<StockItem | null>(null);
 
-  const [outLines, setOutLines] = useState<OutLine[]>([{ uid: "ol0", productId: INITIAL_STOCK[0]?.id ?? null, colisCount: 1 }]);
-  const [outDestination, setOutDestination] = useState(DESTINATIONS[0]);
-  const [outDate, setOutDate] = useState("2026-09-15");
+  const [outLines, setOutLines] = useState<OutLine[]>([{ uid: "ol0", productId: null, colisCount: 1 }]);
+  const [outDestination, setOutDestination] = useState("Autre bénéficiaire / à préciser");
+  const [outDate, setOutDate] = useState(todayIso());
   const [outTime, setOutTime] = useState("15:30");
   const [outError, setOutError] = useState("");
   const [outConfirm, setOutConfirm] = useState<{ name: string; sub: string; items: MoveItem[] } | null>(null);
@@ -90,7 +82,41 @@ export default function StockPage() {
   const [inPoidsTouched, setInPoidsTouched] = useState(false);
   const [inDdm, setInDdm] = useState("");
   const [inDlc, setInDlc] = useState("");
-  const [inDate, setInDate] = useState("2026-09-15");
+  const [inDate, setInDate] = useState(todayIso());
+
+  function showToast(msg: string) {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 3200);
+  }
+
+  async function reload() {
+    const [s, m] = await Promise.all([
+      supabase.from("stock_items").select(STOCK_COLS).order("name"),
+      supabase.from("stock_movements").select("id,type,day,time,destination,items").order("created_at", { ascending: false }).limit(300),
+    ]);
+    if (s.error) showToast("Chargement impossible : " + s.error.message);
+    const items = ((s.data ?? []) as unknown as DbStock[]).map(toItem);
+    setStock(items);
+    setHistory(((m.data ?? []) as unknown as DbMove[]).map(toMove));
+    setOutLines((prev) => prev.map((l) => (l.productId && items.some((x) => x.id === l.productId) ? l : { ...l, productId: items[0]?.id ?? null })));
+  }
+
+  useEffect(() => {
+    (async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      setUserId(auth.user?.id ?? null);
+      const { data: prof } = await supabase.from("profiles").select("city_id").eq("id", auth.user?.id ?? "").maybeSingle();
+      setCityId(prof?.city_id ?? null);
+      const { data: bs } = await supabase.from("beneficiaries").select("name").eq("active", true).order("name");
+      const names = ((bs ?? []) as { name: string }[]).map((b) => b.name);
+      const dest = [...names, "Autre bénéficiaire / à préciser"];
+      setDestinations(dest);
+      setOutDestination(dest[0]);
+      await reload();
+      setLoading(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase]);
 
   const totalPoids = stock.reduce((s, it) => s + it.poids, 0);
   const totalUnites = stock.reduce((s, it) => s + it.colis * it.upc, 0);
@@ -109,8 +135,16 @@ export default function StockPage() {
     setEditingId(it.id);
     setEditDraft({ ...it });
   }
-  function saveEdit() {
+  async function saveEdit() {
     if (!editDraft) return;
+    const { error } = await supabase
+      .from("stock_items")
+      .update({
+        name: editDraft.produit, category: editDraft.categorie, provenance: editDraft.provenance || null, grammage: editDraft.grammage, colis: editDraft.colis,
+        upc: editDraft.upc, kg: editDraft.poids, ddm: editDraft.ddm || null, dlc: editDraft.dlc || null, updated_at: new Date().toISOString(),
+      })
+      .eq("id", editDraft.id);
+    if (error) return showToast("Modification impossible : " + error.message);
     setStock((prev) => prev.map((it) => (it.id === editDraft.id ? editDraft : it)));
     setEditingId(null);
     setEditDraft(null);
@@ -172,51 +206,45 @@ export default function StockPage() {
     setOutError("");
 
     const dateLabel = outDate ? new Date(outDate + "T00:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "2-digit", month: "long" }) : "";
-    const items: MoveItem[] = [];
-    const nextStock = stock.map((it) => ({ ...it }));
-    validLines.forEach((line) => {
-      const it = nextStock.find((x) => x.id === line.productId)!;
-      const units = line.colisCount * it.upc;
-      const kg = Math.round(units * it.grammage) / 1000;
-      it.colis -= line.colisCount;
-      it.poids = Math.max(0, Math.round((it.poids - kg) * 100) / 100);
-      items.push({ produit: it.produit, colis: line.colisCount, unites: units, kg });
-    });
-    const totalUnits = items.reduce((s, x) => s + x.unites, 0);
-    const totalKg = items.reduce((s, x) => s + x.kg, 0);
-
-    setStock(nextStock);
-    setHistory((prev) => [{ id: nextHistId, type: "sortie", date: outDate, time: outTime, destination: outDestination, items }, ...prev]);
-    setNextHistId((n) => n + 1);
-    setOutConfirm({
-      name: "Sortie de stock — " + outDestination,
-      sub: `${dateLabel} à ${outTime} · ${items.length} produit(s) · ${fmtNum(totalUnits)} unités · ${fmtNum(totalKg)} kg`,
-      items,
-    });
-    setOutLines([{ uid: "ol" + outLineSeq, productId: nextStock[0]?.id ?? null, colisCount: 1 }]);
+    // one atomic call: decrements the stock and writes the movement (see take_stock in migration 006)
+    supabase
+      .rpc("take_stock", { p_items: validLines.map((l) => ({ id: l.productId, colis: l.colisCount })), p_destination: outDestination, p_day: outDate || todayIso(), p_time: outTime || null })
+      .then(async ({ data, error }) => {
+        if (error) return setOutError(error.message);
+        const res = data as { items: MoveItem[]; total_kg: number };
+        const totalUnits = res.items.reduce((s, x) => s + x.unites, 0);
+        setOutConfirm({
+          name: "Sortie de stock — " + outDestination,
+          sub: `${dateLabel} à ${outTime} · ${res.items.length} produit(s) · ${fmtNum(totalUnits)} unités · ${fmtNum(res.total_kg)} kg`,
+          items: res.items,
+        });
+        await reload();
+      });
   }
 
-  function validateIn() {
+  async function validateIn() {
     if (!inProduit.trim()) return;
-    const newItem: StockItem = {
-      id: nextId,
-      produit: inProduit.trim(),
-      categorie: inCategorie,
+    if (!cityId) return showToast("Aucune ville n'est associée à ton compte.");
+    const newItem = {
+      city_id: cityId,
+      name: inProduit.trim(),
+      category: inCategorie,
       provenance: inProvenance.trim() || "Saisie manuelle",
       grammage: parseFloat(inGrammage) || 0,
-      colis: parseFloat(inColis) || 0,
-      upc: parseFloat(inUpc) || 1,
-      poids: parseFloat(computedInPoids()) || 0,
-      ddm: inDdm,
-      dlc: inDlc,
+      colis: parseInt(inColis, 10) || 0,
+      upc: parseInt(inUpc, 10) || 1,
+      kg: parseFloat(computedInPoids()) || 0,
+      ddm: inDdm || null,
+      dlc: inDlc || null,
     };
-    setStock((prev) => [newItem, ...prev]);
-    setNextId((n) => n + 1);
-    setHistory((prev) => [
-      { id: nextHistId, type: "entree", date: inDate || "2026-09-15", time: "", destination: "", items: [{ produit: newItem.produit, colis: newItem.colis, unites: newItem.colis * newItem.upc, kg: newItem.poids }] },
-      ...prev,
-    ]);
-    setNextHistId((n) => n + 1);
+    const ins = await supabase.from("stock_items").insert(newItem).select("id").single();
+    if (ins.error) return showToast("Ajout impossible : " + ins.error.message);
+    const mv = await supabase.from("stock_movements").insert({
+      city_id: cityId, type: "entree", day: inDate || todayIso(), created_by: userId,
+      items: [{ produit: newItem.name, colis: newItem.colis, unites: newItem.colis * newItem.upc, kg: newItem.kg }],
+    });
+    if (mv.error) showToast("Produit ajouté, mais historique non enregistré : " + mv.error.message);
+    await reload();
     setInProduit("");
     setInProvenance("");
     setInGrammage("");
@@ -298,7 +326,7 @@ export default function StockPage() {
               <div key={line.uid} className="mb-2 flex flex-wrap items-center gap-2.5 rounded-xl border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-3 py-2.5">
                 <select
                   value={line.productId ?? ""}
-                  onChange={(e) => updateOutLine(line.uid, { productId: +e.target.value, colisCount: 1 })}
+                  onChange={(e) => updateOutLine(line.uid, { productId: e.target.value, colisCount: 1 })}
                   className="min-w-[170px] flex-1 rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[13px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
                 >
                   {stock.map((x) => (
@@ -378,7 +406,7 @@ export default function StockPage() {
             <div>
               <label className={labelCls}>Destination (bénéficiaire)</label>
               <select value={outDestination} onChange={(e) => setOutDestination(e.target.value)} className={inputCls}>
-                {DESTINATIONS.map((d) => (
+                {destinations.map((d) => (
                   <option key={d}>{d}</option>
                 ))}
               </select>
@@ -403,7 +431,7 @@ export default function StockPage() {
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-[17px] w-[17px]">
                   <path d="M20 6 L9 17 L4 12" />
                 </svg>
-                <span>Collecte exceptionnelle créée dans le Planning</span>
+                <span>Sortie de stock enregistrée — le stock a été mis à jour</span>
               </div>
               <div className="flex items-center gap-3 rounded-2xl border-[1.5px] border-l-4 border-[var(--stock-accent)] bg-[var(--card)] px-3.5 py-3">
                 <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full bg-[var(--stock-accent-bg)] text-[var(--stock-accent)]">
@@ -426,10 +454,7 @@ export default function StockPage() {
                   </label>
                 ))}
               </div>
-              <p className="mt-2.5 text-[11.5px] leading-[1.5] text-[var(--slate)] italic">
-                Aperçu de ce que le logisticien devra confirmer avoir pris, comme pour une dépose association — champ obligatoire avec photo avant de clôturer sa journée. Cet aperçu illustre le lien
-                avec l&apos;écran Planning ; les deux fichiers ne sont pas encore connectés à une base commune.
-              </p>
+              <p className="mt-2.5 text-[11.5px] leading-[1.5] text-[var(--slate)] italic">Le mouvement est visible dans l&apos;onglet Historique.</p>
             </div>
           )}
         </div>
@@ -693,7 +718,10 @@ export default function StockPage() {
             })}
           </tbody>
         </table>
+        {loading && <p className="p-4 text-[13px] text-[var(--slate)]">Chargement…</p>}
+        {!loading && stock.length === 0 && <p className="p-4 text-[13px] text-[var(--slate)]">Aucun produit en stock — utilise l&apos;onglet « Entrée du stock » pour ajouter le premier.</p>}
       </div>
+      {toast && <div className="fixed bottom-[26px] left-1/2 z-[999] max-w-[420px] -translate-x-1/2 rounded-[14px] bg-[var(--navy-deep)] px-[18px] py-3 text-center text-[13px] font-semibold text-[var(--panel-fg)] shadow-[var(--shadow)]">{toast}</div>}
     </div>
   );
 }
