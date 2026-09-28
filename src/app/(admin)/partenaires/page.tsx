@@ -26,6 +26,7 @@ type PartnerEntity = {
   slotDisplay?: string;
   volumeRange?: string;
   partnerComment?: string;
+  logoUrl?: string | null;
   dureeCollecte?: number;
   history: HistoryEntry[];
   contacts: Contact[];
@@ -39,6 +40,7 @@ type BeneficiaireEntity = {
   name: string;
   cat: string;
   pinned?: boolean;
+  logoUrl?: string | null;
   active: boolean;
   address: string;
   tel: string;
@@ -92,15 +94,16 @@ const BLANK_BENEFICIAIRE: Omit<BeneficiaireEntity, "id"> = {
 };
 
 // The full "fiche" lives in a jsonb column; name / category / address / active are also real columns.
-type Row = { id: string; name: string; category: string | null; address: string | null; active: boolean; fiche: Record<string, unknown> | null };
+type Row = { id: string; name: string; category: string | null; address: string | null; active: boolean; fiche: Record<string, unknown> | null; logo_url?: string | null };
 function rowToEntity(kind: "partner" | "beneficiaire", r: Row): Entity {
   const base = kind === "partner" ? BLANK_PARTNER : BLANK_BENEFICIAIRE;
-  return { ...base, ...(r.fiche ?? {}), id: r.id, kind, name: r.name, cat: r.category ?? base.cat, address: r.address ?? "", active: r.active } as Entity;
+  return { ...base, ...(r.fiche ?? {}), id: r.id, kind, name: r.name, cat: r.category ?? base.cat, address: r.address ?? "", active: r.active, logoUrl: r.logo_url ?? null } as Entity;
 }
 function entityToRow(e: Entity) {
-  const { id, kind, name, cat, address, active, ...fiche } = e;
+  const { id, kind, name, cat, address, active, logoUrl, ...fiche } = e;
   void id;
   void kind;
+  void logoUrl; // stored in its own column
   return { name, category: cat, address, active, fiche };
 }
 
@@ -228,12 +231,12 @@ export default function PartenairesPage() {
       const { data: auth } = await supabase.auth.getUser();
       const [prof, ps, bs] = await Promise.all([
         supabase.from("profiles").select("city_id").eq("id", auth.user?.id ?? "").maybeSingle(),
-        supabase.from("partners").select(SELECT_COLS).order("name"),
+        supabase.from("partners").select(SELECT_COLS + ",logo_url").order("name"),
         supabase.from("beneficiaries").select(SELECT_COLS).order("name"),
       ]);
       if (cancelled) return;
       setCityId(prof.data?.city_id ?? null);
-      const p = ((ps.data ?? []) as Row[]).map((r) => rowToEntity("partner", r) as PartnerEntity);
+      const p = ((ps.data ?? []) as unknown as Row[]).map((r) => rowToEntity("partner", r) as PartnerEntity);
       const b = ((bs.data ?? []) as Row[]).map((r) => rowToEntity("beneficiaire", r) as BeneficiaireEntity);
       setPartners(p);
       setBeneficiaires(b);
@@ -256,6 +259,23 @@ export default function PartenairesPage() {
       if (error) showToast("Échec de l'enregistrement : " + error.message);
       else flashAutosave();
     }, 700);
+  }
+
+  const logoInput = useRef<HTMLInputElement>(null);
+  async function uploadLogo(ev: React.ChangeEvent<HTMLInputElement>) {
+    const file = ev.target.files?.[0];
+    ev.target.value = "";
+    if (!file || !current || current.kind !== "partner") return;
+    if (!file.type.startsWith("image/") || file.size > 2 * 1024 * 1024) return showToast("Choisis une image de 2 Mo maximum.");
+    const ext = (file.name.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const path = `${current.id}/logo-${Date.now()}.${ext}`;
+    const up = await supabase.storage.from("logos").upload(path, file, { contentType: file.type, upsert: true });
+    if (up.error) return showToast("Import impossible : " + up.error.message);
+    const url = supabase.storage.from("logos").getPublicUrl(path).data.publicUrl;
+    const { error } = await supabase.from("partners").update({ logo_url: url }).eq("id", current.id);
+    if (error) return showToast("Logo non enregistré : " + error.message);
+    setPartners((prev) => prev.map((p) => (p.id === current.id ? { ...p, logoUrl: url } : p)));
+    showToast("Logo enregistré — il apparaît partout, y compris dans l'espace du partenaire.");
   }
 
   async function createEntity() {
@@ -329,10 +349,15 @@ export default function PartenairesPage() {
         }`}
       >
         <span
-          className="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-full font-display text-sm font-bold text-white"
-          style={{ background: colorFor(e.name) }}
+          className="flex h-[38px] w-[38px] flex-none items-center justify-center overflow-hidden rounded-full font-display text-sm font-bold text-white"
+          style={{ background: e.logoUrl ? "var(--card)" : colorFor(e.name) }}
         >
-          {initials(e.name)}
+          {e.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={e.logoUrl} alt="" className="h-full w-full object-cover" />
+          ) : (
+            initials(e.name)
+          )}
         </span>
         <span className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-bold text-[var(--navy)]">{e.name}</div>
@@ -432,12 +457,18 @@ export default function PartenairesPage() {
             <>
               <div className="mb-2 flex items-start gap-[18px]">
                 <div
-                  onClick={() => showToast("Aperçu uniquement — l'upload de logo sera branché à Supabase Storage.")}
-                  className="group relative flex h-[66px] w-[66px] flex-none cursor-pointer items-center justify-center rounded-[20px] font-display text-[22px] font-extrabold text-white"
-                  style={{ background: colorFor(current.name) }}
+                  onClick={() => (current.kind === "partner" ? logoInput.current?.click() : showToast("Le logo est disponible pour les partenaires."))}
+                  className="group relative flex h-[66px] w-[66px] flex-none cursor-pointer items-center justify-center overflow-hidden rounded-[20px] font-display text-[22px] font-extrabold text-white"
+                  style={{ background: current.logoUrl ? "var(--card)" : colorFor(current.name) }}
                   title="Changer le logo"
                 >
-                  {initials(current.name)}
+                  <input ref={logoInput} type="file" accept="image/*" hidden onChange={uploadLogo} />
+                  {current.logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={current.logoUrl} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    initials(current.name)
+                  )}
                   <span className="absolute inset-0 flex items-center justify-center rounded-[20px] bg-[rgba(0,22,65,0.55)] opacity-0 transition-opacity group-hover:opacity-100">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px] text-white">
                       <path d="M4 8 L7 4 H17 L20 8" />

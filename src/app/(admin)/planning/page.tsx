@@ -40,6 +40,16 @@ type DbCollecte = {
   beneficiaries: DbRel | DbRel[] | null;
 };
 type WeekLine = { date: string; time: string | null; name: string; status: string };
+type PartnerReq = {
+  id: string;
+  partner_id: string;
+  wished_date: string;
+  wished_time: string | null;
+  denree: string | null;
+  volume_kg: number | null;
+  comment: string | null;
+  partners: { name: string } | { name: string }[] | null;
+};
 
 const DAY_START = 9 * 60;
 const LUNCH_START = 12 * 60 + 30;
@@ -187,6 +197,8 @@ export default function PlanningPage() {
   const [checklistOverride, setChecklistOverride] = useState<ChecklistItem[] | null>(null);
   const [checklistNewItem, setChecklistNewItem] = useState("");
 
+  const [pendingReqs, setPendingReqs] = useState<PartnerReq[]>([]);
+
   const dragSrcId = useRef<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const dirty = useRef(false);
@@ -277,6 +289,34 @@ export default function PlanningPage() {
     if ((data ?? []).some((r) => (r as { scheduled_time: string | null }).scheduled_time === null && (r as { status: string }).status !== "annule")) dirty.current = true;
     setLoadingDay(false);
   }
+  async function loadRequests() {
+    const { data } = await supabase
+      .from("exceptional_requests")
+      .select("id,partner_id,wished_date,wished_time,denree,volume_kg,comment,partners(name)")
+      .eq("status", "en_attente")
+      .order("wished_date");
+    setPendingReqs((data ?? []) as unknown as PartnerReq[]);
+  }
+  async function validateRequest(r: PartnerReq) {
+    if (!cityId) return;
+    const { error } = await supabase.from("collectes").insert({
+      city_id: cityId, kind: "demande_client", partner_id: r.partner_id, scheduled_date: r.wished_date, scheduled_time: r.wished_time,
+      sort_order: 99, status: "todo", comment: r.comment, duration_min: 10, denree: r.denree, volume_kg: r.volume_kg,
+    });
+    if (error) return fail("Validation impossible", error.message);
+    const { error: e2 } = await supabase.from("exceptional_requests").update({ status: "validee" }).eq("id", r.id);
+    if (e2) return fail("Validation impossible", e2.message);
+    setPendingReqs((prev) => prev.filter((x) => x.id !== r.id));
+    if (r.wished_date === iso) await loadDay();
+    else setCurrentDate(new Date(r.wished_date + "T00:00:00"));
+    showToast("Demande validée — ajoutée au planning (en violet).");
+  }
+  async function refuseRequest(r: PartnerReq) {
+    const { error } = await supabase.from("exceptional_requests").update({ status: "refusee" }).eq("id", r.id);
+    if (error) return fail("Refus impossible", error.message);
+    setPendingReqs((prev) => prev.filter((x) => x.id !== r.id));
+    showToast("Demande refusée.");
+  }
   async function loadOverride() {
     const { data } = await supabase.from("checklist_overrides").select("items").eq("day", iso).maybeSingle();
     setChecklistOverride((data?.items as ChecklistItem[] | undefined) ?? null);
@@ -307,6 +347,7 @@ export default function PlanningPage() {
     loadDay();
     loadOverride();
     loadWeek();
+    loadRequests();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cityId, iso]);
 
@@ -575,6 +616,34 @@ export default function PlanningPage() {
 
       {view === "jour" ? (
         <div>
+          {pendingReqs.length > 0 && (
+            <div className="mb-3 rounded-2xl border-[1.5px] border-[var(--client-req)] bg-[var(--client-req-bg)] p-4">
+              <h4 className="mb-2.5 font-display text-[15px] font-extrabold text-[var(--client-req)]">Demandes des partenaires en attente ({pendingReqs.length})</h4>
+              <div className="flex flex-col gap-2">
+                {pendingReqs.map((r) => {
+                  const d = new Date(r.wished_date + "T00:00:00");
+                  return (
+                    <div key={r.id} className="flex flex-wrap items-center gap-3 rounded-xl bg-[var(--card)] px-3.5 py-2.5">
+                      <span className="min-w-0 flex-1">
+                        <div className="truncate text-[13.5px] font-bold text-[var(--navy)]">{one(r.partners)?.name ?? "Partenaire"}</div>
+                        <div className="text-[11.5px] text-[var(--slate)]">
+                          {fmtDayLabel(d)} · {r.wished_time ? r.wished_time.slice(0, 5) : "heure libre"} · {r.denree ?? "—"}
+                          {r.volume_kg ? ` · ~${r.volume_kg} kg` : ""}
+                          {r.comment ? ` · « ${r.comment} »` : ""}
+                        </div>
+                      </span>
+                      <button type="button" onClick={() => validateRequest(r)} className="rounded-[40px] bg-[var(--client-req)] px-3.5 py-1.5 font-display text-[13px] font-bold text-white">
+                        Valider
+                      </button>
+                      <button type="button" onClick={() => refuseRequest(r)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-1.5 font-display text-[13px] font-bold text-[var(--slate)]">
+                        Refuser
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <button
             type="button"
             onClick={() => {

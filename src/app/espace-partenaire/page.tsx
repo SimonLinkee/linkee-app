@@ -1,14 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { CAT_LABELS, buildEvo, isCollectKind, isoOf, rse, summarize, type CatKey, type StatRow } from "@/lib/stats";
 
-/* ---------------- types & mock data ---------------- */
+/* ---------------- types ---------------- */
 type Contact = { type: string; nom: string; tel: string; mail: string };
 type Hours = { open: string; close: string } | null;
 type HistoryEntry = { date: string; time: string; denree: string; kg: number; status: "ok" | "annulee" };
+type Fiche = Record<string, unknown>;
+type PartnerRow = { id: string; name: string; site_label: string | null; category: string | null; address: string | null; logo_url: string | null; fiche: Fiche | null };
+type CollecteRow = StatRow & { scheduled_time: string | null };
 type Site = {
+  id: string;
+  fiche: Fiche;
   label: string;
   name: string;
   address: string;
@@ -22,7 +28,6 @@ type Site = {
   upcoming: { date: string; time: string; note: string }[];
   history: HistoryEntry[];
 };
-type CatKey = "secs" | "fl" | "frais" | "plats" | "boulang";
 type DashPeriod = {
   periodLabel: string;
   volume: number;
@@ -32,8 +37,43 @@ type DashPeriod = {
   denrees: { k: CatKey; pct: number; kg: number }[];
   evo: { l: string; v: number }[];
 };
-type Request = { site: string; date: string; time: string; denree: string; volume: string; comment: string };
-type Doc = { name: string; size: string; type: "pdf" | "xlsx" | "img" | "doc"; date: string };
+type Request = { id?: string; site: string; date: string; time: string; denree: string; volume: string; comment: string; status?: string };
+type Doc = { id: string; path: string; name: string; size: string; type: "pdf" | "xlsx" | "img" | "doc"; date: string };
+type DbReq = { id: string; partner_id: string; wished_date: string; wished_time: string | null; denree: string | null; volume_kg: number | null; comment: string | null; status: string };
+type DbDoc = { id: string; partner_id: string; name: string; storage_path: string; size_bytes: number | null; created_at: string };
+
+const DEFAULT_HOURS: Record<string, Hours> = {
+  lun: { open: "09:00", close: "18:00" }, mar: { open: "09:00", close: "18:00" }, mer: { open: "09:00", close: "18:00" },
+  jeu: { open: "09:00", close: "18:00" }, ven: { open: "09:00", close: "18:00" }, sam: null, dim: null,
+};
+const MONTHS_SHORT = ["janv.", "fév.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+
+function siteFromRow(r: PartnerRow, upcoming: Site["upcoming"], history: HistoryEntry[]): Site {
+  const f = (r.fiche ?? {}) as Fiche;
+  const denrees = (f.denrees as Record<string, boolean>) ?? {};
+  return {
+    id: r.id,
+    fiche: f,
+    label: r.site_label || r.name,
+    name: r.name,
+    address: r.address ?? "",
+    contacts: (f.contacts as Contact[]) ?? [],
+    access: (f.access as Record<string, boolean>) ?? {},
+    accessNote: (f.accessNote as string) ?? "",
+    hours: (f.hours as Record<string, Hours>) ?? DEFAULT_HOURS,
+    denrees,
+    logo: r.logo_url,
+    adminInfo: {
+      slot: ((f.slotDisplay || f.creneau) as string) || "Non renseigné",
+      denree: DENREE_OPTIONS_LIST.filter((d) => denrees[d]).join(", ") || "Non renseigné",
+      volumeRange: (f.volumeRange as string) ?? "",
+      comment: (f.partnerComment as string) ?? "",
+    },
+    upcoming,
+    history,
+  };
+}
+const DENREE_OPTIONS_LIST = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
 
 const ACCESS_OPTIONS = [
   { k: "digicode", l: "Digicode" }, { k: "quai", l: "Quai de livraison" }, { k: "camion", l: "Accès camion" },
@@ -46,83 +86,21 @@ const DAYS = [
 ];
 const VOLUME_BUCKETS = ["10/20kg", "20/50kg", "50/100kg", "100/250kg", "250/500kg", "+500kg"];
 
-const INITIAL_SITES: Record<string, Site> = {
-  terreaux: {
-    label: "Presqu'île (siège)", name: "Boulangerie des Terreaux", address: "12 Rue des Capucins, 69001 Lyon",
-    contacts: [
-      { type: "Sur site", nom: "Camille Roussel", tel: "06 12 34 56 78", mail: "camille@bakery-terreaux.fr" },
-      { type: "Administratif", nom: "Julien Faure", tel: "04 78 00 11 22", mail: "contact@bakery-terreaux.fr" },
-    ],
-    access: { digicode: true, quai: false, camion: false, etage: false, horaire: false },
-    accessNote: "Digicode 2468B, sonner à l'interphone « Linkee ». Livraison par la porte arrière.",
-    hours: {
-      lun: { open: "07:30", close: "19:30" }, mar: { open: "07:30", close: "19:30" }, mer: { open: "07:30", close: "19:30" },
-      jeu: { open: "07:30", close: "19:30" }, ven: { open: "07:30", close: "19:30" }, sam: { open: "08:00", close: "13:00" }, dim: null,
-    },
-    denrees: { Secs: true, "Fruits et légumes": false, "Produits frais": false, "Plats préparés": true, Boulangerie: true },
-    logo: "demo",
-    adminInfo: { slot: "Lundi entre 08h30 et 09h00", denree: "Plats préparés, Secs", volumeRange: "20/50kg", comment: "Prévoir un chariot — la porte arrière est un peu étroite en hiver avec la neige." },
-    upcoming: [
-      { date: "2026-09-24", time: "08:30", note: "Créneau hebdomadaire" },
-      { date: "2026-10-01", time: "08:30", note: "Créneau hebdomadaire" },
-    ],
-    history: [
-      { date: "2026-09-22", time: "08:30", denree: "Plats préparés", kg: 34, status: "ok" },
-      { date: "2026-09-15", time: "08:30", denree: "Secs", kg: 29, status: "ok" },
-      { date: "2026-09-08", time: "08:30", denree: "Plats préparés", kg: 38, status: "ok" },
-      { date: "2026-09-01", time: "08:30", denree: "Secs", kg: 0, status: "annulee" },
-      { date: "2026-08-25", time: "08:30", denree: "Plats préparés", kg: 31, status: "ok" },
-    ],
-  },
-  croixrousse: {
-    label: "Croix-Rousse", name: "Boulangerie des Terreaux — Croix-Rousse", address: "8 Boulevard de la Croix-Rousse, 69004 Lyon",
-    contacts: [{ type: "Sur site", nom: "Nadia Ferrand", tel: "06 22 33 44 55", mail: "croixrousse@bakery-terreaux.fr" }],
-    access: { digicode: false, quai: false, camion: false, etage: false, horaire: true },
-    accessNote: "Livraison possible uniquement entre 18h et 19h, en dehors du coup de feu.",
-    hours: {
-      lun: null, mar: { open: "07:00", close: "19:00" }, mer: { open: "07:00", close: "19:00" }, jeu: { open: "07:00", close: "19:00" },
-      ven: { open: "07:00", close: "19:00" }, sam: { open: "07:00", close: "14:00" }, dim: { open: "08:00", close: "13:00" },
-    },
-    denrees: { Secs: true, "Fruits et légumes": false, "Produits frais": false, "Plats préparés": false, Boulangerie: true },
-    logo: null,
-    adminInfo: { slot: "Mardi entre 18h15 et 18h45", denree: "Secs", volumeRange: "10/20kg", comment: "" },
-    upcoming: [{ date: "2026-09-25", time: "18:15", note: "Créneau hebdomadaire" }],
-    history: [
-      { date: "2026-09-15", time: "18:15", denree: "Secs", kg: 12, status: "ok" },
-      { date: "2026-09-08", time: "18:15", denree: "Secs", kg: 15, status: "ok" },
-      { date: "2026-09-01", time: "18:15", denree: "Secs", kg: 10, status: "ok" },
-      { date: "2026-08-25", time: "18:15", denree: "Secs", kg: 14, status: "ok" },
-    ],
-  },
-};
-
-const TOUT: DashPeriod = {
-  periodLabel: "Depuis janvier 2026", volume: 5230, collectes: 148, ok: 139, annulees: 9,
-  denrees: [{ k: "boulang", pct: 42, kg: 2200 }, { k: "plats", pct: 32, kg: 1650 }, { k: "secs", pct: 18, kg: 950 }, { k: "frais", pct: 5, kg: 280 }, { k: "fl", pct: 3, kg: 150 }],
-  evo: [{ l: "Jan", v: 640 }, { l: "Fév", v: 610 }, { l: "Mar", v: 700 }, { l: "Avr", v: 680 }, { l: "Mai", v: 720 }, { l: "Juin", v: 790 }, { l: "Juil", v: 640 }, { l: "Août", v: 560 }, { l: "Sept", v: 842 }],
-};
-const DASH: Record<"semaine" | "mois" | "tout" | "annee", DashPeriod> = {
-  semaine: {
-    periodLabel: "Semaine du 15 au 21 sept. 2026", volume: 196, collectes: 6, ok: 6, annulees: 0,
-    denrees: [{ k: "boulang", pct: 47, kg: 92 }, { k: "plats", pct: 30, kg: 58 }, { k: "secs", pct: 15, kg: 30 }, { k: "frais", pct: 6, kg: 12 }, { k: "fl", pct: 2, kg: 4 }],
-    evo: [{ l: "S36", v: 180 }, { l: "S37", v: 172 }, { l: "S38", v: 190 }, { l: "S39", v: 196 }],
-  },
-  mois: {
-    periodLabel: "Septembre 2026", volume: 842, collectes: 24, ok: 22, annulees: 2,
-    denrees: [{ k: "boulang", pct: 45, kg: 380 }, { k: "plats", pct: 30, kg: 260 }, { k: "secs", pct: 17, kg: 140 }, { k: "frais", pct: 5, kg: 40 }, { k: "fl", pct: 3, kg: 22 }],
-    evo: [{ l: "Mai", v: 720 }, { l: "Juin", v: 790 }, { l: "Juil", v: 640 }, { l: "Août", v: 560 }, { l: "Sept", v: 842 }],
-  },
-  tout: TOUT,
-  annee: { ...TOUT, periodLabel: "Année 2026" },
-};
-const CAT_LABELS: Record<CatKey, string> = { secs: "Secs", fl: "Fruits et légumes", frais: "Produits frais", plats: "Plats préparés", boulang: "Boulangerie" };
 const CAT_COLORS: Record<CatKey, string> = { secs: "var(--cat-1)", fl: "var(--cat-2)", frais: "var(--cat-3)", plats: "var(--cat-4)", boulang: "var(--cat-5)" };
 const CAT_PRINT: Record<CatKey, string> = { secs: "#2a78d6", fl: "#eb6834", frais: "#1baf7a", plats: "#eda100", boulang: "#a9673b" };
 
-const INITIAL_DOCS: Doc[] = [
-  { name: "Listing produits secs — sept 2026.xlsx", size: "42 Ko", type: "xlsx", date: "12 sept. 2026" },
-  { name: "Convention de don Linkee.pdf", size: "186 Ko", type: "pdf", date: "03 janv. 2026" },
-];
+/** One point per month between two dates (for year / since-the-beginning views). */
+function monthlyEvo(byDay: Record<string, number>, from: Date, to: Date) {
+  const out: { l: string; v: number }[] = [];
+  const cur = new Date(from.getFullYear(), from.getMonth(), 1);
+  while (cur <= to) {
+    const prefix = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}`;
+    const v = Object.entries(byDay).reduce((s, [d, kg]) => (d.startsWith(prefix) ? s + kg : s), 0);
+    out.push({ l: MONTHS_SHORT[cur.getMonth()], v: Math.round(v) });
+    cur.setMonth(cur.getMonth() + 1);
+  }
+  return out;
+}
 
 /* ---------------- helpers ---------------- */
 const fmtNum = (n: number) => Math.round(n).toLocaleString("fr-FR");
@@ -278,7 +256,7 @@ function CollectRow({ date, time, note, badge, badgeCls, req }: { date: string; 
   );
 }
 
-function ExcForm({ siteName, onSubmit }: { siteName: string; onSubmit: (r: Omit<Request, "site">) => void }) {
+function ExcForm({ siteName, onSubmit }: { siteName: string; onSubmit: (r: Omit<Request, "site">) => Promise<boolean> }) {
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState<string | null>(null);
   const [date, setDate] = useState("");
@@ -298,9 +276,10 @@ function ExcForm({ siteName, onSubmit }: { siteName: string; onSubmit: (r: Omit<
     }
     setOpen(!open);
   }
-  function submit() {
+  async function submit() {
     if (!date) return setErr("Choisissez une date pour votre demande.");
-    onSubmit({ date, time, denree, volume, comment });
+    const ok = await onSubmit({ date, time, denree, volume, comment });
+    if (!ok) return;
     setConfirm(`${siteName} — ${fmtDateShort(date).full} à ${time} · ${denree}${volume ? ` · ~${volume} kg` : ""}`);
     setOpen(false);
     setVolume("");
@@ -394,26 +373,131 @@ export default function EspacePartenairePage() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("choice");
   const [tab, setTab] = useState<Tab>("activite");
-  const [sites, setSites] = useState(INITIAL_SITES);
-  const [siteKey, setSiteKey] = useState("terreaux");
-  const [requests, setRequests] = useState<Request[]>([]);
+  const supabase = useMemo(() => createClient(), []);
+  const [loading, setLoading] = useState(true);
+  const [partnerRows, setPartnerRows] = useState<PartnerRow[]>([]);
+  const [colRows, setColRows] = useState<CollecteRow[]>([]);
+  const [reqRows, setReqRows] = useState<DbReq[]>([]);
+  const [docRows, setDocRows] = useState<DbDoc[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [siteKey, setSiteKey] = useState("");
   const [gran, setGran] = useState<"semaine" | "mois" | "tout">("semaine");
   const [granM, setGranM] = useState<"semaine" | "mois" | "annee">("semaine");
-  const [from, setFrom] = useState("2026-09-01");
-  const [to, setTo] = useState("2026-09-23");
-  const [docs, setDocs] = useState(INITIAL_DOCS);
+  const [from, setFrom] = useState(() => isoOf(new Date(new Date().getFullYear(), new Date().getMonth(), 1)));
+  const [to, setTo] = useState(() => isoOf(new Date()));
   const [toast, setToast] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const toastT = useRef<number | null>(null);
   const savedT = useRef<number | null>(null);
+  const ficheT = useRef<number | null>(null);
   const logoInput = useRef<HTMLInputElement>(null);
   const docInput = useRef<HTMLInputElement>(null);
-
-  const site = sites[siteKey];
-  const dash = DASH[gran];
-  const dashM = DASH[granM];
   const [isSmall, setIsSmall] = useState(false);
   useEffect(() => setIsSmall(window.innerWidth <= 640), []);
+
+  useEffect(() => {
+    (async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      setUserId(auth.user?.id ?? null);
+      const { data: ps, error } = await supabase.from("partners").select("id,name,site_label,category,address,logo_url,fiche").eq("active", true).order("name");
+      if (error) showToast("Chargement impossible : " + error.message);
+      const partners = (ps ?? []) as PartnerRow[];
+      setPartnerRows(partners);
+      if (partners[0]) setSiteKey(partners[0].id);
+      if (partners.length) {
+        const ids = partners.map((p) => p.id);
+        const [col, rq, dc] = await Promise.all([
+          supabase.from("collectes").select("scheduled_date,scheduled_time,kind,status,motif,partner_id,partners(name,category),collecte_items(denree,kg)").in("partner_id", ids).order("scheduled_date").limit(5000),
+          supabase.from("exceptional_requests").select("id,partner_id,wished_date,wished_time,denree,volume_kg,comment,status").in("partner_id", ids).order("created_at"),
+          supabase.from("documents").select("id,partner_id,name,storage_path,size_bytes,created_at").in("partner_id", ids).order("created_at", { ascending: false }),
+        ]);
+        setColRows((col.data ?? []) as unknown as CollecteRow[]);
+        setReqRows((rq.data ?? []) as DbReq[]);
+        setDocRows((dc.data ?? []) as DbDoc[]);
+      }
+      setLoading(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase]);
+
+  const todayIso = isoOf(new Date());
+  const sites: Record<string, Site> = useMemo(() => {
+    const out: Record<string, Site> = {};
+    for (const p of partnerRows) {
+      const mine = colRows.filter((r) => r.partner_id === p.id && isCollectKind(r.kind));
+      const upcoming = mine
+        .filter((r) => r.scheduled_date >= todayIso && r.status === "todo")
+        .map((r) => ({ date: r.scheduled_date, time: r.scheduled_time ? r.scheduled_time.slice(0, 5) : "—", note: r.kind === "partner" ? "Collecte planifiée" : "Collecte exceptionnelle" }));
+      const history: HistoryEntry[] = mine
+        .filter((r) => r.status === "collecte" || r.status === "annule")
+        .sort((a, b) => b.scheduled_date.localeCompare(a.scheduled_date))
+        .slice(0, 10)
+        .map((r) => {
+          const items = r.collecte_items ?? [];
+          return {
+            date: r.scheduled_date,
+            time: r.scheduled_time ? r.scheduled_time.slice(0, 5) : "—",
+            denree: Array.from(new Set(items.map((i) => i.denree).filter(Boolean))).join(", ") || "—",
+            kg: Math.round(items.reduce((s, i) => s + (Number(i.kg) || 0), 0) * 10) / 10,
+            status: r.status === "annule" ? "annulee" : "ok",
+          };
+        });
+      out[p.id] = siteFromRow(p, upcoming, history);
+    }
+    return out;
+  }, [partnerRows, colRows, todayIso]);
+  const site = sites[siteKey];
+
+  const requests: Request[] = reqRows
+    .filter((r) => r.status === "en_attente")
+    .map((r) => ({ id: r.id, site: r.partner_id, date: r.wished_date, time: r.wished_time?.slice(0, 5) ?? "—", denree: r.denree ?? "", volume: r.volume_kg ? String(r.volume_kg) : "", comment: r.comment ?? "", status: r.status }));
+  const docs: Doc[] = docRows
+    .filter((d) => d.partner_id === siteKey)
+    .map((d) => ({ id: d.id, path: d.storage_path, name: d.name, size: fmtSize(d.size_bytes ?? 0), type: docType(d.name), date: new Date(d.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "long" }) }));
+
+  /* ---- statistics (real data) ---- */
+  const siteRows = useMemo(() => colRows.filter((r) => r.partner_id === siteKey), [colRows, siteKey]);
+  function periodStats(g: "semaine" | "mois" | "annee" | "tout"): DashPeriod {
+    const now = new Date();
+    let f: Date;
+    let t: Date;
+    let label: string;
+    if (g === "semaine") {
+      f = new Date(now);
+      f.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+      t = new Date(f);
+      t.setDate(f.getDate() + 6);
+      label = `Semaine du ${f.getDate()} au ${t.getDate()} ${MONTHS_SHORT[t.getMonth()]} ${t.getFullYear()}`;
+    } else if (g === "mois") {
+      f = new Date(now.getFullYear(), now.getMonth(), 1);
+      t = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      label = `${f.toLocaleDateString("fr-FR", { month: "long", year: "numeric" })}`;
+    } else if (g === "annee") {
+      f = new Date(now.getFullYear(), 0, 1);
+      t = new Date(now.getFullYear(), 11, 31);
+      label = `Année ${now.getFullYear()}`;
+    } else {
+      const first = siteRows[0]?.scheduled_date;
+      f = first ? new Date(first + "T00:00:00") : new Date(now.getFullYear(), 0, 1);
+      t = now;
+      label = `Depuis ${f.toLocaleDateString("fr-FR", { month: "long", year: "numeric" })}`;
+    }
+    const fk = isoOf(f);
+    const tk = isoOf(t);
+    const s = summarize(siteRows.filter((r) => r.scheduled_date >= fk && r.scheduled_date <= tk));
+    return {
+      periodLabel: label,
+      volume: s.volume,
+      collectes: s.collectes,
+      ok: s.ok,
+      annulees: s.annulees,
+      denrees: s.denrees,
+      evo: g === "semaine" || g === "mois" ? buildEvo(s.byDay, f, t) : monthlyEvo(s.byDay, f, t),
+    };
+  }
+  const dash = periodStats(gran);
+  const dashM = periodStats(granM);
+  const rseSum = summarize(siteRows.filter((r) => r.scheduled_date >= from && r.scheduled_date <= to));
 
   function showToast(msg: string) {
     setToast(msg);
@@ -425,9 +509,24 @@ export default function EspacePartenairePage() {
     if (savedT.current) window.clearTimeout(savedT.current);
     savedT.current = window.setTimeout(() => setSaved(false), 1500);
   }
+  // Partner-editable parts of the fiche are saved back into the partners.fiche jsonb column.
   function patch(p: Partial<Site>) {
-    setSites((prev) => ({ ...prev, [siteKey]: { ...prev[siteKey], ...p } }));
-    autosave();
+    const cur = partnerRows.find((r) => r.id === siteKey);
+    if (!cur) return;
+    const f: Fiche = { ...(cur.fiche ?? {}) };
+    if (p.contacts) f.contacts = p.contacts;
+    if (p.access) f.access = p.access;
+    if (p.accessNote !== undefined) f.accessNote = p.accessNote;
+    if (p.hours) f.hours = p.hours;
+    if (p.denrees) f.denrees = p.denrees;
+    setPartnerRows((prev) => prev.map((r) => (r.id === siteKey ? { ...r, fiche: f } : r)));
+    if (ficheT.current) window.clearTimeout(ficheT.current);
+    const id = siteKey;
+    ficheT.current = window.setTimeout(async () => {
+      const { error } = await supabase.from("partners").update({ fiche: f }).eq("id", id);
+      if (error) showToast("Enregistrement impossible : " + error.message);
+      else autosave();
+    }, 700);
   }
   function changeSite(k: string) {
     setSiteKey(k);
@@ -438,27 +537,72 @@ export default function EspacePartenairePage() {
     router.push("/login");
     router.refresh();
   }
-  function addRequest(r: Omit<Request, "site">) {
-    setRequests((prev) => [...prev, { ...r, site: siteKey }]);
+  async function addRequest(r: Omit<Request, "site">): Promise<boolean> {
+    const { data, error } = await supabase
+      .from("exceptional_requests")
+      .insert({ partner_id: siteKey, wished_date: r.date, wished_time: r.time || null, denree: r.denree, volume_kg: r.volume ? +r.volume : null, comment: r.comment || null })
+      .select("id,partner_id,wished_date,wished_time,denree,volume_kg,comment,status")
+      .single();
+    if (error || !data) {
+      showToast("Demande non envoyée : " + (error?.message ?? "erreur inconnue"));
+      return false;
+    }
+    setReqRows((prev) => [...prev, data as DbReq]);
     showToast("Demande envoyée — elle apparaîtra en violet dans le Planning Linkee, en attente de validation.");
+    return true;
   }
-  function onLogo(e: ChangeEvent<HTMLInputElement>) {
+  async function onLogo(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      patch({ logo: reader.result as string });
-      showToast("Logo mis à jour — visible partout dans votre espace (ordinateur et mobile).");
-    };
-    reader.readAsDataURL(file);
+    if (!file.type.startsWith("image/") || file.size > 2 * 1024 * 1024) return showToast("Choisissez une image de 2 Mo maximum.");
+    const ext = (file.name.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const path = `${siteKey}/logo-${Date.now()}.${ext}`;
+    const up = await supabase.storage.from("logos").upload(path, file, { contentType: file.type, upsert: true });
+    if (up.error) return showToast("Import du logo impossible : " + up.error.message);
+    const url = supabase.storage.from("logos").getPublicUrl(path).data.publicUrl;
+    const { error } = await supabase.from("partners").update({ logo_url: url }).eq("id", siteKey);
+    if (error) return showToast("Logo non enregistré : " + error.message);
+    setPartnerRows((prev) => prev.map((r) => (r.id === siteKey ? { ...r, logo_url: url } : r)));
+    autosave();
+    showToast("Logo mis à jour — visible partout dans votre espace (ordinateur et mobile).");
   }
-  function onDocs(e: ChangeEvent<HTMLInputElement>) {
+  async function onDocs(e: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     e.target.value = "";
-    const today = new Date().toLocaleDateString("fr-FR", { day: "2-digit", month: "long" });
-    setDocs((prev) => [...files.map((f) => ({ name: f.name, size: fmtSize(f.size), type: docType(f.name), date: today })), ...prev]);
-    if (files.length) showToast("Document(s) ajouté(s) à votre porte-documents.");
+    let added = 0;
+    for (const f of files) {
+      const safe = f.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `${siteKey}/${Date.now()}-${safe}`;
+      const up = await supabase.storage.from("documents").upload(path, f, { contentType: f.type || undefined });
+      if (up.error) {
+        showToast(`${f.name} : ${up.error.message}`);
+        continue;
+      }
+      const { data, error } = await supabase
+        .from("documents")
+        .insert({ partner_id: siteKey, name: f.name, storage_path: path, size_bytes: f.size, uploaded_by: userId })
+        .select("id,partner_id,name,storage_path,size_bytes,created_at")
+        .single();
+      if (error || !data) {
+        showToast(`${f.name} : ${error?.message ?? "erreur"}`);
+        continue;
+      }
+      setDocRows((prev) => [data as DbDoc, ...prev]);
+      added++;
+    }
+    if (added) showToast("Document(s) ajouté(s) à votre porte-documents.");
+  }
+  async function removeDoc(d: Doc) {
+    await supabase.storage.from("documents").remove([d.path]);
+    const { error } = await supabase.from("documents").delete().eq("id", d.id);
+    if (error) return showToast("Suppression impossible : " + error.message);
+    setDocRows((prev) => prev.filter((x) => x.id !== d.id));
+  }
+  async function openDoc(d: Doc) {
+    const { data, error } = await supabase.storage.from("documents").createSignedUrl(d.path, 60);
+    if (error || !data) return showToast("Ouverture impossible : " + (error?.message ?? "erreur"));
+    window.open(data.signedUrl, "_blank", "noopener");
   }
 
   const siteSwitch = (
@@ -469,6 +613,22 @@ export default function EspacePartenairePage() {
       </select>
     </div>
   );
+
+  if (loading) {
+    return <div className="flex min-h-screen items-center justify-center text-[13px] text-[var(--slate)]">Chargement de votre espace…</div>;
+  }
+  if (!site) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-4">
+        <div className="w-full max-w-[380px] rounded-[28px] bg-[var(--card)] px-7 py-8 text-center shadow-[var(--shadow)]">
+          <span className="font-script text-[32px] leading-none">linkee</span>
+          <h1 className="mt-4 font-display text-[22px] font-black">Aucun site rattaché</h1>
+          <p className="mt-2 text-[13px] leading-relaxed text-[var(--slate)]">Ce compte n&apos;est relié à aucun partenaire pour l&apos;instant. Contactez votre référent Linkee.</p>
+          <button type="button" onClick={logout} className="mt-5 w-full rounded-[40px] bg-[var(--navy-deep)] py-3 font-display text-base font-bold text-[var(--panel-fg)]">Se déconnecter</button>
+        </div>
+      </div>
+    );
+  }
 
   /* ---- Device choice ---- */
   if (mode === "choice") {
@@ -506,7 +666,7 @@ export default function EspacePartenairePage() {
 
   /* ---- Mobile simplified ---- */
   if (mode === "mobile") {
-    const okRate = Math.round((dashM.ok / dashM.collectes) * 100);
+    const okRate = dashM.collectes ? Math.round((dashM.ok / dashM.collectes) * 100) : 0;
     return (
       <div className="min-h-screen">
         <div className="sticky top-0 z-20 flex flex-wrap items-center gap-4 bg-[var(--navy-deep)] px-6 py-3.5 text-[var(--panel-fg)] shadow-[var(--shadow)]">
@@ -563,15 +723,16 @@ export default function EspacePartenairePage() {
   }
 
   /* ---- Desktop (complete) ---- */
-  const kg = dash.volume;
-  const donValue = kg * 8;
+  const R = rse(rseSum.volume); // RSE report figures for the chosen period
+  const kg = R.kg;
+  const donValue = R.don;
   const tabs: { k: Tab; l: string; icon: ReactNode }[] = [
     { k: "activite", l: "Mon activité", icon: CAL },
     { k: "fiche", l: "Ma fiche", icon: STORE },
     { k: "dashboard", l: "Tableau de bord", icon: GRID },
     { k: "documents", l: "Mes documents", icon: DOC },
   ];
-  const maxPct = Math.max(...dash.denrees.map((x) => x.pct));
+  const maxPct = Math.max(...dash.denrees.map((x) => x.pct), 1);
 
   return (
     <div className="min-h-screen">
@@ -647,7 +808,7 @@ export default function EspacePartenairePage() {
                     const small = `${fieldCls} !px-2.5 !py-2 !text-[12.5px]`;
                     return (
                       <div key={idx} className="grid grid-cols-2 items-center gap-2 lg:grid-cols-[120px_1fr_1fr_1fr]">
-                        <select className={small} value={c.type} onChange={(e) => set("type", e.target.value)}>{["Sur site", "Administratif", "Financier"].map((t) => <option key={t}>{t}</option>)}</select>
+                        <select className={small} value={c.type} onChange={(e) => set("type", e.target.value)}>{Array.from(new Set(["Sur site", "Administratif", "Financier", c.type])).map((t) => <option key={t}>{t}</option>)}</select>
                         <input className={small} value={c.nom} placeholder="Nom" onChange={(e) => set("nom", e.target.value)} />
                         <input className={small} value={c.tel} placeholder="Téléphone" onChange={(e) => set("tel", e.target.value)} />
                         <input className={small} value={c.mail} placeholder="Email" onChange={(e) => set("mail", e.target.value)} />
@@ -707,7 +868,7 @@ export default function EspacePartenairePage() {
               <div className="mb-4 grid grid-cols-1 gap-3.5 sm:grid-cols-3">
                 <Tile label="Volume collecté" value={`${fmtNum(dash.volume)} kg`} sub={dash.periodLabel} />
                 <Tile label="Collectes" value={String(dash.collectes)} sub={`${dash.ok} réalisées · ${dash.annulees} annulées`} />
-                <Tile label="Taux de réussite" value={`${Math.round((dash.ok / dash.collectes) * 100)} %`} sub="sur la période" />
+                <Tile label="Taux de réussite" value={`${dash.collectes ? Math.round((dash.ok / dash.collectes) * 100) : 0} %`} sub="sur la période" />
               </div>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr]">
                 <Card title="Évolution du volume collecté" note="Volume collecté par période"><EvoChart data={dash.evo} /></Card>
@@ -746,11 +907,11 @@ export default function EspacePartenairePage() {
                   {docs.length ? docs.map((doc, idx) => (
                     <div key={idx} className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--input-bg)] px-[13px] py-[11px]">
                       <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[10px] bg-[var(--track)] text-[var(--slate)]"><Icon className="h-4 w-4" sw={1.7}>{DOC_ICONS[doc.type]}</Icon></span>
-                      <span className="min-w-0 flex-1">
+                      <button type="button" onClick={() => openDoc(doc)} className="min-w-0 flex-1 text-left" title="Ouvrir">
                         <div className="truncate text-[13px] font-semibold">{doc.name}</div>
                         <div className="text-[11px] text-[var(--slate)]">{doc.size} · ajouté le {doc.date}</div>
-                      </span>
-                      <button type="button" title="Retirer" onClick={() => setDocs(docs.filter((_, i) => i !== idx))} className="h-[26px] w-[26px] flex-none rounded-full border-[1.5px] border-[var(--border)] bg-[var(--card)] text-[var(--slate)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]">×</button>
+                      </button>
+                      <button type="button" title="Retirer" onClick={() => removeDoc(doc)} className="h-[26px] w-[26px] flex-none rounded-full border-[1.5px] border-[var(--border)] bg-[var(--card)] text-[var(--slate)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]">×</button>
                     </div>
                   )) : <p className="text-[11.5px] text-[var(--slate)]">Aucun document pour l&apos;instant.</p>}
                 </div>
@@ -780,7 +941,7 @@ export default function EspacePartenairePage() {
           {[
             { bg: "#FBE3D0", icon: "⚖️", v: `${fmtNum(kg)} kg`, l: "Poids total sauvé" },
             { bg: "#FCEFC2", icon: "🤝", v: `${fmtNum(donValue)} €`, l: "Valeur totale du don" },
-            { bg: "#DCEFDD", icon: "🧾", v: `${fmtNum(donValue * 0.6)} €`, l: "Défiscalisation accessible (60%)" },
+            { bg: "#DCEFDD", icon: "🧾", v: `${fmtNum(R.defisc)} €`, l: "Défiscalisation accessible (60%)" },
           ].map((s) => (
             <div key={s.l} className="rounded-2xl px-4 py-3.5 text-center" style={{ background: s.bg }}>
               <div className="mb-1 text-xl">{s.icon}</div>
@@ -791,8 +952,8 @@ export default function EspacePartenairePage() {
         </div>
         <div className="mb-4 grid grid-cols-2 gap-3">
           {[
-            { icon: "🍽️", l: "Impact social", v: `${Math.round(kg / 2)} repas`, s: "complets distribués à des étudiants précarisés." },
-            { icon: "🚚", l: "Logistique", v: `${dash.collectes} collectes`, s: "solidaires réalisées sur la période par nos équipes." },
+            { icon: "🍽️", l: "Impact social", v: `${R.repas} repas`, s: "complets distribués à des étudiants précarisés." },
+            { icon: "🚚", l: "Logistique", v: `${rseSum.ok} collectes`, s: "solidaires réalisées sur la période par nos équipes." },
           ].map((s) => (
             <div key={s.l} className="flex items-start gap-2.5 rounded-[14px] border border-[#EADFD2] bg-[#FDFBF8] px-3.5 py-3">
               <span className="text-lg">{s.icon}</span>
@@ -807,7 +968,7 @@ export default function EspacePartenairePage() {
         <div className="mb-4 rounded-[14px] border border-[#EADFD2] bg-[#FDFBF8] px-3.5 py-3">
           <div className="mb-2.5 text-center text-[9.5px] font-bold tracking-[0.04em] text-[#4D5C7A] uppercase">Détails de vos dons</div>
           <div className="grid grid-cols-5 gap-2">
-            {dash.denrees.map((x) => (
+            {rseSum.denrees.map((x) => (
               <div key={x.k} className="text-center">
                 <div className="font-display text-base font-black" style={{ color: CAT_PRINT[x.k] }}>{x.pct}%</div>
                 <div className="text-[8px] font-bold text-[#4D5C7A] uppercase">{CAT_LABELS[x.k]}</div>
@@ -818,13 +979,13 @@ export default function EspacePartenairePage() {
         <div className="mb-4 grid grid-cols-2 gap-4">
           <div>
             <div className="mb-2 font-display text-[13px] font-extrabold">Impact social</div>
-            <RseItem v={`${fmtNum(donValue * 2)} €`} l="Valeur sociale créée" n="Estimation de l'augmentation directe générée pour le pouvoir d'achat des étudiants bénéficiaires de vos dons." />
+            <RseItem v={`${fmtNum(R.social)} €`} l="Valeur sociale créée" n="Estimation de l'augmentation directe générée pour le pouvoir d'achat des étudiants bénéficiaires de vos dons." />
             <RseItem v="100%" l="Des dons redistribués" n="Redistribués lors de nos distributions alimentaires à destination des étudiants et personnes en situation de précarité." />
           </div>
           <div>
             <div className="mb-2 font-display text-[13px] font-extrabold">Impact environnemental</div>
-            <RseItem v={`${((kg / 1000) * 1.53).toFixed(2)} T`} l="De CO² évitées" n="Estimation des équivalents CO² évités grâce à la lutte quotidienne contre le gaspillage." />
-            <RseItem v={`${fmtNum(kg * 1.25)} Kg`} l="De déchets évités" n="Estimation du nombre de kg de déchets évités." />
+            <RseItem v={`${R.co2.toFixed(2)} T`} l="De CO² évitées" n="Estimation des équivalents CO² évités grâce à la lutte quotidienne contre le gaspillage." />
+            <RseItem v={`${fmtNum(R.dechets)} Kg`} l="De déchets évités" n="Estimation du nombre de kg de déchets évités." />
           </div>
         </div>
         <div className="rounded-[10px] bg-[#001641] p-[9px] text-center text-[10px] font-semibold text-[#FDF4ED]">Certifié par Linkee · Conforme à la loi AGEC · www.linkee.co</div>
