@@ -944,7 +944,27 @@ export default function PlanningPage() {
                     <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-full bg-[var(--track)] font-display text-xs font-extrabold text-[var(--navy)]">{i + 1}</span>
                     <span className={`w-[52px] flex-none font-display text-[15px] font-extrabold text-[var(--navy)] ${cancelled ? "opacity-60" : ""}`}>{s.scheduledTime || "—"}</span>
                     <span className="min-w-0 flex-1">
-                      <div className={`truncate text-[13.5px] font-bold text-[var(--navy)] ${cancelled ? "line-through" : ""}`}>{s.name}</div>
+                      <div className="flex items-center gap-2">
+                        <span className={`truncate text-[13.5px] font-bold text-[var(--navy)] ${cancelled ? "line-through" : ""}`}>{s.name}</span>
+                        {s.photoPaths.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openGallery(s);
+                            }}
+                            title="Voir les photos prises par le logisticien"
+                            className="flex h-8 flex-none items-center gap-1.5 rounded-full bg-[var(--turquoise)] px-3 text-[12px] font-bold whitespace-nowrap text-[#04262e] shadow-[0_2px_8px_-2px_rgba(79,193,214,0.7)] hover:brightness-95"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                              <path d="M4 8 L7 4 H17 L20 8" />
+                              <rect x="3" y="8" width="18" height="12" rx="2" />
+                              <circle cx="12" cy="14" r="3.2" />
+                            </svg>
+                            {s.photoPaths.length} photo{s.photoPaths.length > 1 ? "s" : ""}
+                          </button>
+                        )}
+                      </div>
                       <div className="text-[11.5px] text-[var(--slate)]">{s.cat}</div>
                     </span>
                     <span className={`flex-none rounded-[40px] px-2 py-[3px] text-[9.5px] font-bold tracking-[0.03em] uppercase ${cancelled ? "bg-[var(--critical-bg)] text-[var(--critical)]" : done ? "bg-[var(--good-bg)] text-[var(--good)]" : KIND_BADGE_CLS[s.kind] || "bg-[var(--track)] text-[var(--slate)]"}`}>
@@ -963,24 +983,6 @@ export default function PlanningPage() {
                       <small className="text-[11px] text-[var(--slate)]">min</small>
                     </span>
                     <span className="flex flex-none gap-1.5">
-                      {s.photoPaths.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openGallery(s);
-                          }}
-                          title="Voir les photos prises par le logisticien"
-                          className="flex h-[26px] flex-none items-center gap-1 rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2 text-[11px] font-bold text-[var(--slate)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
-                            <path d="M4 8 L7 4 H17 L20 8" />
-                            <rect x="3" y="8" width="18" height="12" rx="2" />
-                            <circle cx="12" cy="14" r="3.2" />
-                          </svg>
-                          {s.photoPaths.length}
-                        </button>
-                      )}
                       {!done && (
                         <button
                           type="button"

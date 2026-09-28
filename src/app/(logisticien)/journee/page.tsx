@@ -171,20 +171,37 @@ function summary(s: Stop) {
   return <><strong className="text-[var(--navy)]">{r.totalKg} kg</strong> · {r.items!.length} item(s) ({r.items!.map((i) => i.denree).join(", ")}) · {photos} photo(s)</>;
 }
 
-/** Real camera / gallery picker: thumbnails of the chosen photos + an add button. */
-function PhotoField({ previews, busy, onPick, required = true }: { previews: string[]; busy: boolean; onPick: (file: File) => void; required?: boolean }) {
+/** A clearly delimited step of a form: numbered badge, title, short help text. */
+function StepBlock({ n, title, sub, children }: { n: number; title: string; sub?: string; children: ReactNode }) {
+  return (
+    <section className="rounded-[18px] border-2 border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow)]">
+      <div className="mb-3 flex items-start gap-2.5">
+        <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-[var(--navy-deep)] font-display text-[14px] font-black text-[var(--panel-fg)]">{n}</span>
+        <div className="min-w-0">
+          <h4 className="font-display text-[16px] leading-tight font-extrabold text-[var(--navy)]">{title}</h4>
+          {sub && <p className="mt-0.5 text-[11.5px] leading-[1.4] text-[var(--slate)]">{sub}</p>}
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** Real camera / gallery picker: thumbnails of the chosen photos + a big "take a photo" button. */
+function PhotoField({ previews, busy, onPick }: { previews: string[]; busy: boolean; onPick: (file: File) => void }) {
   return (
     <div>
-      <label className="mb-1.5 block text-xs font-bold text-[var(--navy)]">
-        {required ? <>Photo <span className="text-[var(--critical)]">*</span></> : "Photos"}
-      </label>
-      <div className="flex flex-wrap gap-2">
-        {previews.map((src, k) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img key={k} src={src} alt="" className="h-14 w-14 flex-none rounded-xl object-cover" />
-        ))}
-        <label className={`flex h-14 w-14 flex-none cursor-pointer items-center justify-center rounded-xl border-[1.5px] border-dashed border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)] ${busy ? "opacity-50" : ""}`}>
-          {busy ? <span className="text-[10px] font-bold">…</span> : <CameraIcon />}
+      {previews.length > 0 && (
+        <div className="mb-2.5 flex flex-wrap gap-2">
+          {previews.map((src, k) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img key={k} src={src} alt="" className="h-16 w-16 flex-none rounded-xl object-cover" />
+          ))}
+        </div>
+      )}
+      <div>
+        <label className={`flex min-h-[56px] w-full cursor-pointer items-center justify-center gap-2.5 rounded-2xl border-2 border-dashed border-[var(--turquoise)] bg-[var(--input-bg)] px-4 py-3 text-[14px] font-bold text-[var(--navy)] ${busy ? "opacity-50" : ""}`}>
+          {busy ? <span>Envoi de la photo…</span> : (<><CameraIcon className="h-6 w-6 text-[var(--turquoise)]" />{previews.length ? "Ajouter une autre photo" : "Prendre une photo"}</>)}
           <input
             type="file"
             accept="image/*"
@@ -248,46 +265,98 @@ function StopPanel({ stops, index, onDone, onUpload }: { stops: Stop[]; index: n
       onDone({ items: dropped, totalKg: Math.round(dropped.reduce((sum, it) => sum + it.kg, 0) * 10) / 10, photos, photoPaths }, "collecte");
     } else {
       const items = rows.filter((r) => r.denree && r.kg).map((r) => ({ denree: r.denree, kg: parseFloat(r.kg) }));
-      if (items.length < 1 || photos < 1) return setErrCollecte("Ajoutez au moins un item (type + poids) et une photo.");
+      if (rows.some((r) => (r.denree && !r.kg) || (!r.denree && r.kg))) return setErrCollecte("Pour chaque denrée, choisissez le type ET indiquez le poids.");
+      if (items.length < 1) return setErrCollecte("Choisissez au moins un type de denrée et son poids (étape 1).");
+      if (photos < 1) return setErrCollecte("Ajoutez une photo (étape 2).");
       onDone({ items, totalKg: Math.round(items.reduce((sum, it) => sum + it.kg, 0) * 10) / 10, photos, photoPaths }, "collecte");
     }
   }
 
   return (
     <div className="mt-3.5 border-t border-[var(--border)] pt-3.5">
+      <div className="mb-2 text-[12px] font-bold text-[var(--slate)]">Où en est cet arrêt ?</div>
       <div className="flex gap-2.5">
-        <button type="button" onClick={() => setPick("collecte")} className={`flex flex-1 items-center justify-center gap-[7px] rounded-[14px] border-[1.5px] p-3 text-[13.5px] font-bold ${pick === "collecte" ? "border-[var(--good)] bg-[var(--good-bg)] text-[var(--good)]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--navy)]"}`}>
-          <CheckIcon />
+        <button type="button" onClick={() => setPick("collecte")} className={`flex min-h-[56px] flex-1 items-center justify-center gap-2 rounded-2xl border-2 p-3 text-[15px] font-bold ${pick === "collecte" ? "border-[var(--good)] bg-[var(--good-bg)] text-[var(--good)]" : "border-[var(--border)] bg-[var(--card)] text-[var(--navy)]"}`}>
+          <CheckIcon className="h-5 w-5" />
           {okLabel}
         </button>
-        <button type="button" onClick={() => setPick("annule")} className={`flex flex-1 items-center justify-center gap-[7px] rounded-[14px] border-[1.5px] p-3 text-[13.5px] font-bold ${pick === "annule" ? "border-[var(--critical)] bg-[var(--critical-bg)] text-[var(--critical)]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--navy)]"}`}>
-          <CloseIcon />
+        <button type="button" onClick={() => setPick("annule")} className={`flex min-h-[56px] flex-1 items-center justify-center gap-2 rounded-2xl border-2 p-3 text-[15px] font-bold ${pick === "annule" ? "border-[var(--critical)] bg-[var(--critical-bg)] text-[var(--critical)]" : "border-[var(--border)] bg-[var(--card)] text-[var(--navy)]"}`}>
+          <CloseIcon className="h-5 w-5" />
           Annulé
         </button>
       </div>
 
       {pick === "collecte" && (
-        <div className="mt-3.5 flex flex-col gap-3">
+        <div className="mt-3.5 flex flex-col gap-3.5">
+          <StepBlock
+            n={1}
+            title={s.kind === "stock" ? "Que prenez-vous au stock ?" : s.kind === "dropoff" ? "Que laissez-vous ici ?" : "Qu'avez-vous collecté ?"}
+            sub={s.kind === "stock" ? "Indiquez le nombre de colis pour chaque produit." : s.kind === "dropoff" ? "Cochez les produits déposés. Seuls les types acceptés par l'association sont sélectionnables." : "Une carte par type de denrée : choisissez le type, puis le poids."}
+          >
           {s.kind === "partner" || s.kind === "exceptionnel" ? (
             <div>
-              <label className="mb-1.5 block text-xs font-bold text-[var(--navy)]">Items collectés <span className="text-[var(--critical)]">*</span></label>
-              <div className="mb-2 flex flex-col gap-2">
+              <div className="flex flex-col gap-3">
                 {rows.map((row, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <select value={row.denree} onChange={(e) => setRows(rows.map((r, i) => (i === idx ? { denree: e.target.value, kg: e.target.value ? r.kg : "" } : r)))} className={`${fieldCls} min-w-0 flex-1`}>
-                      <option value="">Type d&apos;item…</option>
-                      {DENREE_OPTIONS.map((d) => <option key={d}>{d}</option>)}
-                    </select>
-                    <input type="number" min={0} step={0.5} placeholder="kg" disabled={!row.denree} value={row.kg} onChange={(e) => setRows(rows.map((r, i) => (i === idx ? { ...r, kg: e.target.value } : r)))} className={`${fieldCls} w-[76px] flex-none text-right disabled:bg-[var(--todo-bg)] disabled:opacity-50`} />
-                    <button type="button" aria-label="Retirer l'item" onClick={() => setRows(rows.length > 1 ? rows.filter((_, i) => i !== idx) : [{ denree: "", kg: "" }])} className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]">
-                      <CloseIcon className="h-3.5 w-3.5" />
-                    </button>
+                  <div key={idx} className="rounded-2xl border-2 border-[var(--border)] bg-[var(--input-bg)] p-3.5">
+                    <div className="mb-2.5 flex items-center justify-between">
+                      <span className="font-display text-[12.5px] font-extrabold tracking-[0.04em] text-[var(--slate)] uppercase">Denrée n°{idx + 1}</span>
+                      {rows.length > 1 && (
+                        <button type="button" onClick={() => setRows(rows.filter((_, i) => i !== idx))} className="flex items-center gap-1 rounded-full border-[1.5px] border-[var(--border)] bg-[var(--card)] px-2.5 py-1 text-[11.5px] font-bold text-[var(--slate)] hover:border-[var(--critical)] hover:text-[var(--critical)]">
+                          <CloseIcon className="h-3 w-3" />
+                          Retirer
+                        </button>
+                      )}
+                    </div>
+                    <div className="mb-1.5 text-[12px] font-bold text-[var(--navy)]">Type de denrée</div>
+                    <div className="mb-3.5 grid grid-cols-2 gap-2">
+                      {DENREE_OPTIONS.map((d, k) => {
+                        const on = row.denree === d;
+                        return (
+                          <button
+                            key={d}
+                            type="button"
+                            onClick={() => setRows(rows.map((r, i) => (i === idx ? { ...r, denree: d } : r)))}
+                            className={`flex min-h-[48px] items-center gap-2 rounded-xl border-2 px-3 py-2.5 text-left text-[13px] leading-tight font-bold ${k === DENREE_OPTIONS.length - 1 ? "col-span-2" : ""} ${on ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "border-[var(--border)] bg-[var(--card)] text-[var(--navy)]"}`}
+                          >
+                            <span className="h-3 w-3 flex-none rounded-full" style={{ background: `var(--cat-${k + 1})` }} />
+                            <span className="flex-1">{d}</span>
+                            {on && <CheckIcon className="h-4 w-4 flex-none" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="mb-1.5 text-[12px] font-bold text-[var(--navy)]">Poids</div>
+                    <div className="flex items-center gap-2">
+                      <button type="button" aria-label="Moins 1 kg" onClick={() => setRows(rows.map((r, i) => (i === idx ? { ...r, kg: String(Math.max(0, (parseFloat(r.kg) || 0) - 1)) } : r)))} className="flex h-12 w-12 flex-none items-center justify-center rounded-xl border-2 border-[var(--border)] bg-[var(--card)] text-2xl font-bold text-[var(--navy)]">
+                        –
+                      </button>
+                      <div className="relative min-w-0 flex-1">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min={0}
+                          step={0.5}
+                          placeholder="0"
+                          value={row.kg}
+                          onChange={(e) => setRows(rows.map((r, i) => (i === idx ? { ...r, kg: e.target.value } : r)))}
+                          className="w-full rounded-xl border-2 border-[var(--border)] bg-[var(--card)] py-2.5 pr-11 pl-3 text-center font-display text-[26px] font-black text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
+                        />
+                        <span className="pointer-events-none absolute top-1/2 right-3.5 -translate-y-1/2 text-sm font-bold text-[var(--slate)]">kg</span>
+                      </div>
+                      <button type="button" aria-label="Plus 1 kg" onClick={() => setRows(rows.map((r, i) => (i === idx ? { ...r, kg: String((parseFloat(r.kg) || 0) + 1) } : r)))} className="flex h-12 w-12 flex-none items-center justify-center rounded-xl border-2 border-[var(--border)] bg-[var(--card)] text-2xl font-bold text-[var(--navy)]">
+                        +
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
-              <button type="button" onClick={() => setRows([...rows, { denree: "", kg: "" }])} className="w-full rounded-xl border-[1.5px] border-dashed border-[var(--border)] bg-[var(--input-bg)] p-2.5 text-[13px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]">
-                + Ajouter un item
+              <button type="button" onClick={() => setRows([...rows, { denree: "", kg: "" }])} className="mt-3 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[var(--turquoise)] bg-[var(--input-bg)] p-2.5 text-[14px] font-bold text-[var(--navy)]">
+                <span className="text-lg leading-none text-[var(--turquoise)]">+</span> Ajouter une autre denrée
               </button>
+              <div className="mt-3 flex items-center justify-between rounded-xl bg-[var(--track)] px-4 py-2.5">
+                <span className="text-[12.5px] font-bold text-[var(--slate)]">Total collecté</span>
+                <span className="font-display text-[20px] font-black text-[var(--navy)]">{Math.round(rows.reduce((sum, r) => sum + (parseFloat(r.kg) || 0), 0) * 10) / 10} kg</span>
+              </div>
             </div>
           ) : s.kind === "stock" ? (
             <div>
@@ -377,26 +446,27 @@ function StopPanel({ stops, index, onDone, onUpload }: { stops: Stop[]; index: n
               <p className="mt-2 text-[11.5px] leading-[1.5] text-[var(--slate)]">Sélectionnable uniquement pour : {allowed.join(", ")} (défini par l&apos;admin sur la fiche association). Le reste continue la tournée dans le camion.</p>
             </div>
           )}
-          <PhotoField previews={previews} busy={photoBusy} onPick={addPhoto} />
-          {s.kind === "partner" && <p className="-mt-1.5 text-[11.5px] text-[var(--slate)]">Une photo suffit pour valider, quel que soit le nombre d&apos;items.</p>}
-          <div className="min-h-[14px] text-[11.5px] text-[var(--critical)]">{errCollecte}</div>
-          <button type="button" onClick={validateCollecte} className="rounded-[40px] bg-[var(--good)] p-3 font-display text-[14.5px] font-bold text-white">
+          </StepBlock>
+          <StepBlock n={2} title="Prenez une photo" sub={s.kind === "stock" ? "Une photo de ce que vous chargez suffit." : "Une seule photo suffit pour valider, quel que soit le nombre de denrées."}>
+            <PhotoField previews={previews} busy={photoBusy} onPick={addPhoto} />
+          </StepBlock>
+          {errCollecte && <div className="rounded-xl bg-[var(--critical-bg)] px-3.5 py-2.5 text-[12.5px] font-semibold text-[var(--critical)]">{errCollecte}</div>}
+          <button type="button" onClick={validateCollecte} className="min-h-[56px] rounded-[40px] bg-[var(--good)] px-4 py-3.5 font-display text-[16px] font-bold text-white">
             {s.kind === "stock" ? "Valider la sortie de stock" : s.kind === "dropoff" ? "Valider la dépose" : "Valider la collecte"}
           </button>
         </div>
       )}
 
       {pick === "annule" && (
-        <div className="mt-3.5 flex flex-col gap-3">
-          <div>
-            <label className="mb-1.5 block text-xs font-bold text-[var(--navy)]">Motif d&apos;annulation <span className="text-[var(--critical)]">*</span></label>
-            <textarea value={motif} onChange={(e) => setMotif(e.target.value)} placeholder="Ex : commerce fermé, personne sur place…" className={`${fieldCls} min-h-[70px] resize-y`} />
-          </div>
-          <div className="min-h-[14px] text-[11.5px] text-[var(--critical)]">{errAnnule}</div>
+        <div className="mt-3.5 flex flex-col gap-3.5">
+          <StepBlock n={1} title="Pourquoi cet arrêt est annulé ?" sub="Le motif est transmis à l'équipe.">
+            <textarea value={motif} onChange={(e) => setMotif(e.target.value)} placeholder="Ex : commerce fermé, personne sur place…" className={`${fieldCls} min-h-[90px] resize-y text-[15px]`} />
+          </StepBlock>
+          {errAnnule && <div className="rounded-xl bg-[var(--critical-bg)] px-3.5 py-2.5 text-[12.5px] font-semibold text-[var(--critical)]">{errAnnule}</div>}
           <button
             type="button"
             onClick={() => (motif.trim() ? onDone({ motif: motif.trim() }, "annule") : setErrAnnule("Le motif d'annulation est obligatoire."))}
-            className="rounded-[40px] bg-[var(--critical)] p-3 font-display text-[14.5px] font-bold text-white"
+            className="min-h-[56px] rounded-[40px] bg-[var(--critical)] px-4 py-3.5 font-display text-[16px] font-bold text-white"
           >
             Valider l&apos;annulation
           </button>
@@ -876,9 +946,10 @@ export default function JourneePage() {
                         </span>
                       </span>
                       <span className="min-w-0 flex-1">
-                        <div className="text-[11.5px] font-bold text-[var(--slate)]">{s.time}</div>
-                        <div className="truncate text-[14.5px] font-bold text-[var(--navy)]">{s.name}</div>
-                        <div className="text-[11.5px] text-[var(--slate)]">{s.cat}</div>
+                        <div className="font-display text-[19px] leading-none font-black text-[var(--navy)]">{s.time || "—"}</div>
+                        <div className="mt-1 text-[15.5px] leading-tight font-bold text-[var(--navy)]">{s.name}</div>
+                        <div className="text-[12px] text-[var(--slate)]">{s.cat}</div>
+                        {!done && dayState === "running" && openIdx !== i && <div className="mt-1 text-[11.5px] font-bold text-[var(--turquoise)]">Touchez pour saisir cet arrêt</div>}
                       </span>
                       <span className={`rounded-[40px] px-[9px] py-[5px] text-[10.5px] font-bold tracking-[0.02em] whitespace-nowrap uppercase ${badgeCls}`}>{badge}</span>
                       {!done && dayState !== "closed" && (
@@ -886,34 +957,35 @@ export default function JourneePage() {
                       )}
                     </div>
 
-                    <div className="mt-2.5 flex items-center gap-2 border-t border-[var(--border)] pt-2.5">
-                      <span className="flex min-w-0 flex-1 items-center gap-[5px] text-[11.5px] text-[var(--slate)]">
-                        <Icon className="h-3 w-3 flex-none"><path d="M12 21 C 8 16.5, 5 13, 5 9.5 A7 7 0 0 1 19 9.5 C 19 13, 16 16.5, 12 21 Z" /><circle cx="12" cy="9.5" r="2.3" /></Icon>
-                        <span className="truncate">{s.address}</span>
+                    <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--input-bg)] p-2.5">
+                      <span className="flex min-w-0 flex-1 items-start gap-2 text-[12.5px] leading-[1.35] font-semibold text-[var(--navy)]">
+                        <Icon className="mt-0.5 h-4 w-4 flex-none text-[var(--turquoise)]"><path d="M12 21 C 8 16.5, 5 13, 5 9.5 A7 7 0 0 1 19 9.5 C 19 13, 16 16.5, 12 21 Z" /><circle cx="12" cy="9.5" r="2.3" /></Icon>
+                        <span>{s.address || "Adresse non renseignée"}</span>
                       </span>
-                      <a href={`https://www.google.com/maps?q=${encodeURIComponent(s.address)}`} target="_blank" rel="noopener noreferrer" className="flex flex-none items-center gap-[5px] rounded-[40px] border-[1.3px] border-[var(--border)] px-[11px] py-1.5 text-[11.5px] font-bold whitespace-nowrap text-[var(--navy)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]">
-                        <Icon className="h-3 w-3" sw={2}><path d="M7 17 L17 7 M9 7 H17 V15" /></Icon>
+                      <a href={`https://www.google.com/maps?q=${encodeURIComponent(s.address)}`} target="_blank" rel="noopener noreferrer" className="flex min-h-[40px] flex-none items-center gap-1.5 rounded-[40px] bg-[var(--turquoise)] px-4 py-2 text-[13px] font-bold whitespace-nowrap text-[#04262e]">
+                        <Icon className="h-3.5 w-3.5" sw={2.2}><path d="M7 17 L17 7 M9 7 H17 V15" /></Icon>
                         Y aller
                       </a>
                     </div>
                     {s.comment && (
-                      <div className="mt-2 flex items-start gap-[7px] rounded-[10px] bg-[var(--exc-accent-bg)] px-[11px] py-[9px] text-xs leading-[1.45] text-[var(--navy)]">
+                      <div className="mt-2 flex items-start gap-2 rounded-xl bg-[var(--exc-accent-bg)] px-3 py-2.5 text-[12.5px] leading-[1.45] font-semibold text-[var(--navy)]">
                         <Icon className="mt-px h-3.5 w-3.5 flex-none text-[var(--exc-accent)]"><path d="M4 5 H20 V16 H9 L5 19 V16 H4 Z" /></Icon>
                         <span>{s.comment}</span>
                       </div>
                     )}
                     {(s.accessDetails || s.sitePhoto) && (
                       <>
-                        <button type="button" onClick={() => setAccessOpen(toggle(accessOpen, i))} className="mt-1.5 flex w-full items-center gap-2 text-left text-[11.5px] font-semibold text-[var(--slate)]">
+                        <button type="button" onClick={() => setAccessOpen(toggle(accessOpen, i))} className="mt-2 flex min-h-[44px] w-full items-center gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-left text-[13px] font-bold text-[var(--navy)]">
+                          <Icon className="h-4 w-4 flex-none text-[var(--turquoise)]"><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10 V7 A4 4 0 0 1 16 7 V10" /></Icon>
+                          <span>Conditions d&apos;accès</span>
                           {s.access.length > 0 && (
-                            <span className="flex gap-[5px]">
+                            <span className="flex gap-1.5 text-[var(--slate)]">
                               {s.access.map((a) => (
-                                <span key={a} title={ACCESS_LABELS[a]}><Icon>{ACCESS_PATHS[a]}</Icon></span>
+                                <span key={a} title={ACCESS_LABELS[a]}><Icon className="h-4 w-4">{ACCESS_PATHS[a]}</Icon></span>
                               ))}
                             </span>
                           )}
-                          <span>Conditions d&apos;accès</span>
-                          <Icon className={`ml-auto h-[13px] w-[13px] ${accessOpen.has(i) ? "rotate-180" : ""}`} sw={2}><path d="M6 9 L12 15 L18 9" /></Icon>
+                          <Icon className={`ml-auto h-4 w-4 flex-none text-[var(--slate)] ${accessOpen.has(i) ? "rotate-180" : ""}`} sw={2}><path d="M6 9 L12 15 L18 9" /></Icon>
                         </button>
                         {accessOpen.has(i) && <div className="mt-[7px] rounded-[10px] border border-[var(--border)] bg-[var(--input-bg)] px-[11px] py-[9px] text-[11.5px] leading-[1.5] text-[var(--slate)]">
                           {s.accessDetails}
