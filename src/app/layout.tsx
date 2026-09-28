@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Barlow_Condensed, Inter_Tight, Pacifico } from "next/font/google";
 import "./globals.css";
 
@@ -23,6 +23,13 @@ const pacifico = Pacifico({
 export const metadata: Metadata = {
   title: "Linkee",
   description: "Entraide étudiante — logistique anti-gaspi à Lyon.",
+  applicationName: "Linkee",
+  icons: { icon: "/pwa-icon?size=192", apple: "/pwa-icon?size=180" },
+  appleWebApp: { capable: true, title: "Linkee", statusBarStyle: "black-translucent" },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0A1A3F",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -32,6 +32,8 @@ export async function updateSession(request: NextRequest) {
   const path = request.nextUrl.pathname
   // Vercel Cron has no user session: /api/cron/* checks its own secret
   if (path.startsWith('/api/cron/')) return supabaseResponse
+  // installable-app files must be readable without a session (the browser fetches them before login)
+  if (path === '/manifest.webmanifest' || path === '/pwa-icon') return supabaseResponse
   const redirectTo = (to: string) => {
     const url = request.nextUrl.clone()
     url.pathname = to
