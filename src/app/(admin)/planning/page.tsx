@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { geocode, toKm, type LatLng } from "@/lib/geocode";
+import { signedUrls } from "@/lib/photos";
 
 type Kind = "partner" | "dropoff" | "stock" | "exceptionnel" | "demande_client";
 type Status = "planifie" | "annule";
@@ -20,6 +21,7 @@ type Stop = {
   partnerId: string | null;
   beneficiaryId: string | null;
   label: string | null;
+  photoPaths: string[];
 };
 type StopC = Stop & { coords: Coords };
 type EnrichedStop = StopC & { scheduledTime: string | null; travelFromPrev: number; travelKmFromPrev: number; arrivalMin?: number };
@@ -35,6 +37,7 @@ type DbCollecte = {
   comment: string | null;
   status: string;
   duration_min: number;
+  photo_paths: string[] | null;
   scheduled_time: string | null;
   partners: DbRel | DbRel[] | null;
   beneficiaries: DbRel | DbRel[] | null;
@@ -113,6 +116,7 @@ function rowToStop(r: DbCollecte): Stop {
     partnerId: r.partner_id,
     beneficiaryId: r.beneficiary_id,
     label: r.label,
+    photoPaths: r.photo_paths ?? [],
   };
 }
 
@@ -169,7 +173,7 @@ const KIND_BADGE_CLS: Record<string, string> = {
 };
 
 const SELECT_DAY =
-  "id,kind,partner_id,beneficiary_id,label,comment,status,duration_min,scheduled_time,partners(name,category,address),beneficiaries(name,category,address)";
+  "id,kind,partner_id,beneficiary_id,label,comment,status,duration_min,photo_paths,scheduled_time,partners(name,category,address),beneficiaries(name,category,address)";
 
 export default function PlanningPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -198,6 +202,11 @@ export default function PlanningPage() {
   const [checklistNewItem, setChecklistNewItem] = useState("");
 
   const [pendingReqs, setPendingReqs] = useState<PartnerReq[]>([]);
+  const [gallery, setGallery] = useState<{ name: string; urls: string[] } | null>(null);
+  async function openGallery(s: Stop) {
+    const urls = await signedUrls(supabase, s.photoPaths);
+    setGallery({ name: s.name, urls: urls.filter(Boolean) });
+  }
 
   const dragSrcId = useRef<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -437,6 +446,7 @@ export default function PlanningPage() {
       id: data.id as string, name: place.name, cat: place.cat, kind, duration: 10, status: "planifie", dbStatus: "todo",
       comment: extra.comment || undefined, address: place.address, partnerId: place.partnerId, beneficiaryId: place.beneficiaryId,
       label: place.key === "depot" ? place.name : null,
+      photoPaths: [],
     };
     editStops((prev) => {
       const next = [...prev];
@@ -923,6 +933,24 @@ export default function PlanningPage() {
                       <small className="text-[11px] text-[var(--slate)]">min</small>
                     </span>
                     <span className="flex flex-none gap-1.5">
+                      {s.photoPaths.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openGallery(s);
+                          }}
+                          title="Voir les photos prises par le logisticien"
+                          className="flex h-[26px] flex-none items-center gap-1 rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2 text-[11px] font-bold text-[var(--slate)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                            <path d="M4 8 L7 4 H17 L20 8" />
+                            <rect x="3" y="8" width="18" height="12" rx="2" />
+                            <circle cx="12" cy="14" r="3.2" />
+                          </svg>
+                          {s.photoPaths.length}
+                        </button>
+                      )}
                       {!done && (
                         <button
                           type="button"
@@ -1062,6 +1090,28 @@ export default function PlanningPage() {
         </div>
       )}
 
+      {gallery && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 p-4" onClick={() => setGallery(null)}>
+          <div className="max-h-[90vh] w-full max-w-[720px] overflow-auto rounded-[20px] bg-[var(--card)] p-5 shadow-[var(--shadow)]" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <h4 className="font-display text-[17px] font-extrabold text-[var(--navy)]">Photos — {gallery.name}</h4>
+              <button type="button" onClick={() => setGallery(null)} className="rounded-full border-[1.5px] border-[var(--border)] px-3 py-1 text-[12px] font-bold text-[var(--slate)]">
+                Fermer
+              </button>
+            </div>
+            {gallery.urls.length === 0 ? (
+              <p className="text-[13px] text-[var(--slate)]">Impossible d&apos;afficher les photos.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                {gallery.urls.map((u, i) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img key={i} src={u} alt={`Photo ${i + 1}`} className="w-full rounded-xl object-cover" />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {toast && <div className="fixed bottom-[26px] left-1/2 z-[999] max-w-[380px] -translate-x-1/2 rounded-[14px] bg-[var(--navy-deep)] px-[18px] py-3 text-center text-[13px] font-semibold text-[var(--panel-fg)] shadow-[var(--shadow)]">{toast}</div>}
     </div>
   );

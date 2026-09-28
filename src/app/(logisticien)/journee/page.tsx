@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { signedUrls, uploadPrivatePhoto } from "@/lib/photos";
 
 type Kind = "partner" | "dropoff" | "stock" | "exceptionnel";
 type ResultItem = { denree?: string; name?: string; kg: number; from?: string; sourceId?: string; stockId?: string; colis?: number };
-type StopResult = { items?: ResultItem[]; totalKg?: number; photos?: number; motif?: string };
+type StopResult = { items?: ResultItem[]; totalKg?: number; photos?: number; photoPaths?: string[]; motif?: string };
 type ChecklistItem = { id: string; label: string };
-type Rel = { name: string; category: string | null; address: string | null; fiche: Record<string, unknown> | null };
+type Rel = { name: string; category: string | null; address: string | null; fiche: Record<string, unknown> | null; photo_url?: string | null };
 type DbItem = { denree: string | null; name: string | null; kg: number; source_collecte_id: string | null };
 type DbStop = {
   id: string;
@@ -18,6 +19,7 @@ type DbStop = {
   status: string;
   motif: string | null;
   photos_count: number;
+  photo_paths: string[] | null;
   scheduled_time: string | null;
   partners: Rel | Rel[] | null;
   beneficiaries: Rel | Rel[] | null;
@@ -34,6 +36,7 @@ type Stop = {
   kind: Kind;
   address: string;
   accessDetails?: string;
+  sitePhoto?: string;
   comment?: string;
   allowedTypes?: string[];
   presetItems?: { id: string; name: string; colis: number; upc: number; grammage: number }[];
@@ -80,11 +83,12 @@ function rowToStop(r: DbStop, all: DbStop[]): Stop {
     kind,
     address: rel?.address ?? (r.kind === "stock" ? DEPOT_ADDRESS : ""),
     accessDetails: fiche.accessNote || undefined,
+    sitePhoto: one(r.partners)?.photo_url || undefined,
     comment: r.comment || undefined,
     allowedTypes: kind === "dropoff" ? Object.entries(fiche.denrees ?? {}).filter(([, on]) => on).map(([k]) => k) : undefined,
     result:
       status === "collecte"
-        ? { items, totalKg: Math.round(items.reduce((s, it) => s + it.kg, 0) * 10) / 10, photos: r.photos_count }
+        ? { items, totalKg: Math.round(items.reduce((s, it) => s + it.kg, 0) * 10) / 10, photos: r.photo_paths?.length || r.photos_count, photoPaths: r.photo_paths ?? [] }
         : status === "annule"
           ? { motif: r.motif ?? "" }
           : undefined,
@@ -95,11 +99,20 @@ const TRUCK_SLOTS = [
   { key: "front", label: "Face avant" }, { key: "back", label: "Face arrière" }, { key: "left", label: "Côté gauche" },
   { key: "right", label: "Côté droit" }, { key: "cabin", label: "Intérieur cabine" }, { key: "hold", label: "Intérieur benne" },
 ];
-const TRUCK_CHECKS = ["Niveau d'huile moteur", "Niveau de liquide de refroidissement", "Pression des pneus", "Niveau de lave-glace", "Éclairage / clignotants"];
-const TRUCK_REVISIONS = [
-  { label: "Révision 1 mois", sub: "Prochaine échéance : 15 octobre 2026" },
-  { label: "Révision 3 mois", sub: "Prochaine échéance : 15 décembre 2026" },
+// keys match the checks / revisions of the fleet sheet (Flotte)
+const TRUCK_CHECKS = [
+  { key: "huile", label: "Niveau d'huile moteur" },
+  { key: "liquide", label: "Niveau de liquide de refroidissement" },
+  { key: "pneus", label: "Pression des pneus" },
+  { key: "laveglace", label: "Niveau de lave-glace" },
+  { key: "eclairage", label: "Éclairage / clignotants" },
 ];
+const TRUCK_REVISIONS = [
+  { key: "rev1m", label: "Révision 1 mois (garage)" },
+  { key: "rev3m", label: "Révision 3 mois (garage)" },
+  { key: "karcher", label: "Grand nettoyage (Kärcher + aspirateur)" },
+];
+type Receipt = { id: string; amount: string; preview: string };
 
 const ACCESS_LABELS: Record<string, string> = { digicode: "Digicode", quai: "Quai de livraison", camion: "Accès camion", ascenseur: "Ascenseur / étage", horaire: "Horaire strict" };
 const ACCESS_PATHS: Record<string, ReactNode> = {
@@ -157,31 +170,55 @@ function summary(s: Stop) {
   return <><strong className="text-[var(--navy)]">{r.totalKg} kg</strong> · {r.items!.length} item(s) ({r.items!.map((i) => i.denree).join(", ")}) · {photos} photo(s)</>;
 }
 
-function PhotoField({ count, onAdd, required = true }: { count: number; onAdd: () => void; required?: boolean }) {
+/** Real camera / gallery picker: thumbnails of the chosen photos + an add button. */
+function PhotoField({ previews, busy, onPick, required = true }: { previews: string[]; busy: boolean; onPick: (file: File) => void; required?: boolean }) {
   return (
     <div>
       <label className="mb-1.5 block text-xs font-bold text-[var(--navy)]">
         {required ? <>Photo <span className="text-[var(--critical)]">*</span></> : "Photos"}
       </label>
       <div className="flex flex-wrap gap-2">
-        {Array.from({ length: count }, (_, k) => (
-          <div key={k} className={thumbCls}>
-            <CameraIcon />
-          </div>
+        {previews.map((src, k) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img key={k} src={src} alt="" className="h-14 w-14 flex-none rounded-xl object-cover" />
         ))}
-        <button type="button" onClick={onAdd} className="flex h-14 w-14 flex-none items-center justify-center rounded-xl border-[1.5px] border-dashed border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)]">
-          <CameraIcon />
-        </button>
+        <label className={`flex h-14 w-14 flex-none cursor-pointer items-center justify-center rounded-xl border-[1.5px] border-dashed border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)] ${busy ? "opacity-50" : ""}`}>
+          {busy ? <span className="text-[10px] font-bold">…</span> : <CameraIcon />}
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            hidden
+            disabled={busy}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (f) onPick(f);
+            }}
+          />
+        </label>
       </div>
     </div>
   );
 }
 
-function StopPanel({ stops, index, onDone }: { stops: Stop[]; index: number; onDone: (r: StopResult, status: "collecte" | "annule") => void }) {
+function StopPanel({ stops, index, onDone, onUpload }: { stops: Stop[]; index: number; onDone: (r: StopResult, status: "collecte" | "annule") => void; onUpload: (stopId: string, file: File) => Promise<string | null> }) {
   const s = stops[index];
   const [pick, setPick] = useState<"collecte" | "annule" | null>(null);
   const [rows, setRows] = useState<{ denree: string; kg: string }[]>([{ denree: "", kg: "" }]);
-  const [photos, setPhotos] = useState(0);
+  const [photoPaths, setPhotoPaths] = useState<string[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const photos = photoPaths.length;
+  async function addPhoto(file: File) {
+    setPhotoBusy(true);
+    const path = await onUpload(s.id, file);
+    setPhotoBusy(false);
+    if (path) {
+      setPhotoPaths((p) => [...p, path]);
+      setPreviews((p) => [...p, URL.createObjectURL(file)]);
+    }
+  }
   const [stockCounts, setStockCounts] = useState<Record<string, number>>({});
   const [dropChecked, setDropChecked] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -198,7 +235,7 @@ function StopPanel({ stops, index, onDone }: { stops: Stop[]; index: number; onD
       const taken = (s.presetItems ?? []).filter((it) => (stockCounts[it.id] ?? 0) > 0);
       if (taken.length < 1 || photos < 1) return setErrCollecte("Indiquez au moins un produit pris en stock (nombre de colis) et ajoutez une photo.");
       const items: ResultItem[] = taken.map((it) => ({ name: it.name, kg: Math.round(((stockCounts[it.id] ?? 0) * it.upc * it.grammage) / 10) / 100, stockId: it.id, colis: stockCounts[it.id] }));
-      onDone({ items, totalKg: Math.round(items.reduce((sum, it) => sum + it.kg, 0) * 100) / 100, photos }, "collecte");
+      onDone({ items, totalKg: Math.round(items.reduce((sum, it) => sum + it.kg, 0) * 100) / 100, photos, photoPaths }, "collecte");
     } else if (s.kind === "dropoff") {
       const dropped: ResultItem[] = [];
       dropChecked.forEach((key) => {
@@ -207,11 +244,11 @@ function StopPanel({ stops, index, onDone }: { stops: Stop[]; index: number; onD
         dropped.push({ denree: src.denree, kg: src.kg, from: stops[p].name, sourceId: stops[p].id });
       });
       if (dropped.length < 1 || photos < 1) return setErrCollecte("Cochez au moins un produit à laisser ici, et ajoutez une photo.");
-      onDone({ items: dropped, totalKg: Math.round(dropped.reduce((sum, it) => sum + it.kg, 0) * 10) / 10, photos }, "collecte");
+      onDone({ items: dropped, totalKg: Math.round(dropped.reduce((sum, it) => sum + it.kg, 0) * 10) / 10, photos, photoPaths }, "collecte");
     } else {
       const items = rows.filter((r) => r.denree && r.kg).map((r) => ({ denree: r.denree, kg: parseFloat(r.kg) }));
       if (items.length < 1 || photos < 1) return setErrCollecte("Ajoutez au moins un item (type + poids) et une photo.");
-      onDone({ items, totalKg: Math.round(items.reduce((sum, it) => sum + it.kg, 0) * 10) / 10, photos }, "collecte");
+      onDone({ items, totalKg: Math.round(items.reduce((sum, it) => sum + it.kg, 0) * 10) / 10, photos, photoPaths }, "collecte");
     }
   }
 
@@ -339,7 +376,7 @@ function StopPanel({ stops, index, onDone }: { stops: Stop[]; index: number; onD
               <p className="mt-2 text-[11.5px] leading-[1.5] text-[var(--slate)]">Sélectionnable uniquement pour : {allowed.join(", ")} (défini par l&apos;admin sur la fiche association). Le reste continue la tournée dans le camion.</p>
             </div>
           )}
-          <PhotoField count={photos} onAdd={() => setPhotos((p) => p + 1)} />
+          <PhotoField previews={previews} busy={photoBusy} onPick={addPhoto} />
           {s.kind === "partner" && <p className="-mt-1.5 text-[11.5px] text-[var(--slate)]">Une photo suffit pour valider, quel que soit le nombre d&apos;items.</p>}
           <div className="min-h-[14px] text-[11.5px] text-[var(--critical)]">{errCollecte}</div>
           <button type="button" onClick={validateCollecte} className="rounded-[40px] bg-[var(--good)] p-3 font-display text-[14.5px] font-bold text-white">
@@ -399,7 +436,7 @@ export default function JourneePage() {
   const [firstName, setFirstName] = useState("");
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [weekRows, setWeekRows] = useState<WeekRow[]>([]);
-  const [vehicle, setVehicle] = useState<{ name: string; plate: string | null } | null>(null);
+  const [vehicle, setVehicle] = useState<{ id: string; name: string; plate: string | null } | null>(null);
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   const [depChecked, setDepChecked] = useState<Set<number>>(new Set());
   const [mapOpen, setMapOpen] = useState(false);
@@ -408,11 +445,13 @@ export default function JourneePage() {
   const [closedText, setClosedText] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [weekOpen, setWeekOpen] = useState<number | null>(null);
-  const [truckPhotos, setTruckPhotos] = useState<Set<number>>(new Set());
+  const [truckPaths, setTruckPaths] = useState<(string | null)[]>(TRUCK_SLOTS.map(() => null));
+  const [truckPreviews, setTruckPreviews] = useState<(string | null)[]>(TRUCK_SLOTS.map(() => null));
+  const [truckBusy, setTruckBusy] = useState<number | null>(null);
   const [truckDone, setTruckDone] = useState<string | null>(null);
-  const [checks, setChecks] = useState<Set<number>>(new Set());
-  const [revisions, setRevisions] = useState<Set<number>>(new Set());
-  const [receipts, setReceipts] = useState(0);
+  const [doneChecks, setDoneChecks] = useState<Record<string, string>>({}); // key -> vehicle_events.id (this week)
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const truckPhotoCount = truckPaths.filter(Boolean).length;
   const timer = useRef<number | null>(null);
 
   const depDone = depChecked.size === checklist.length;
@@ -472,13 +511,13 @@ export default function JourneePage() {
         supabase.from("profiles").select("city_id,full_name,email").eq("id", uid).maybeSingle(),
         supabase
           .from("collectes")
-          .select("id,kind,label,comment,status,motif,photos_count,scheduled_time,partners(name,category,address,fiche),beneficiaries(name,category,address,fiche),collecte_items(denree,name,kg,source_collecte_id)")
+          .select("id,kind,label,comment,status,motif,photos_count,photo_paths,scheduled_time,partners(name,category,address,fiche,photo_url),beneficiaries(name,category,address,fiche),collecte_items(denree,name,kg,source_collecte_id)")
           .eq("scheduled_date", iso)
           .order("sort_order"),
         supabase.from("checklist_templates").select("items").eq("weekday", dbWeekday(now)).maybeSingle(),
         supabase.from("checklist_overrides").select("items").eq("day", iso).maybeSingle(),
         supabase.from("stock_items").select("id,name,colis,upc,grammage").gt("colis", 0).order("name"),
-        supabase.from("vehicles").select("name,plate").limit(1).maybeSingle(),
+        supabase.from("vehicles").select("id,name,plate").limit(1).maybeSingle(),
         supabase.from("day_sessions").select("started_at,closed_at").eq("logisticien_id", uid).eq("day", iso).maybeSingle(),
         supabase
           .from("collectes")
@@ -495,7 +534,7 @@ export default function JourneePage() {
       const presets = ((stock.data ?? []) as { id: string; name: string; colis: number; upc: number; grammage: number | string }[]).map((s) => ({ id: s.id, name: s.name, colis: s.colis, upc: s.upc, grammage: Number(s.grammage) }));
       setStops(rows.map((r) => rowToStop(r, rows)).map((s) => (s.kind === "stock" ? { ...s, presetItems: presets } : s)));
       setChecklist((ovr.data?.items ?? tpl.data?.items ?? []) as ChecklistItem[]);
-      setVehicle((veh.data as { name: string; plate: string | null } | null) ?? null);
+      setVehicle((veh.data as { id: string; name: string; plate: string | null } | null) ?? null);
       setWeekRows((wk.data ?? []) as unknown as WeekRow[]);
       const s = ses.data as { started_at: string | null; closed_at: string | null } | null;
       if (s?.closed_at) {
@@ -535,6 +574,100 @@ export default function JourneePage() {
     setDayState("closed");
     setOpenIdx(null);
   }
+  async function uploadStopPhoto(stopId: string, file: File): Promise<string | null> {
+    if (!cityId) {
+      showToast("Compte sans ville : contacte l'administrateur.");
+      return null;
+    }
+    try {
+      return await uploadPrivatePhoto(supabase, `${cityId}/${stopId}`, file);
+    } catch (e) {
+      showToast("Photo non envoyée : " + (e as Error).message);
+      return null;
+    }
+  }
+  /* ---------- camion: this week's declarations (tour photos, checks, receipts) ---------- */
+  useEffect(() => {
+    if (!vehicle) return;
+    (async () => {
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+      monday.setHours(0, 0, 0, 0);
+      const { data } = await supabase.from("vehicle_events").select("id,kind,key,amount,photos,created_at").eq("vehicle_id", vehicle.id).gte("created_at", monday.toISOString()).order("created_at");
+      const rows = (data ?? []) as { id: string; kind: string; key: string | null; amount: number | null; photos: string[]; created_at: string }[];
+      const map: Record<string, string> = {};
+      rows.filter((r) => r.kind === "check" && r.key).forEach((r) => (map[r.key!] = r.id));
+      setDoneChecks(map);
+      const tour = rows.find((r) => r.kind === "tour");
+      if (tour) setTruckDone(`État des lieux validé le ${new Date(tour.created_at).toLocaleDateString("fr-FR", { weekday: "long", hour: "2-digit", minute: "2-digit" })} — ${tour.photos.length} photos enregistrées.`);
+      const rc = rows.filter((r) => r.kind === "receipt");
+      const urls = await signedUrls(supabase, rc.map((r) => r.photos[0] ?? ""));
+      setReceipts(rc.map((r, i) => ({ id: r.id, amount: r.amount != null ? String(r.amount) : "", preview: urls[i] ?? "" })));
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vehicle?.id]);
+
+  function needVehicle() {
+    if (!vehicle || !cityId) {
+      showToast("Aucun véhicule enregistré : l'admin doit d'abord en ajouter un dans Flotte.");
+      return false;
+    }
+    return true;
+  }
+  async function pickTruckPhoto(idx: number, file: File) {
+    if (!needVehicle()) return;
+    setTruckBusy(idx);
+    try {
+      const path = await uploadPrivatePhoto(supabase, `${cityId}/vehicle`, file);
+      setTruckPaths((p) => p.map((x, i) => (i === idx ? path : x)));
+      setTruckPreviews((p) => p.map((x, i) => (i === idx ? URL.createObjectURL(file) : x)));
+    } catch (e) {
+      showToast("Photo non envoyée : " + (e as Error).message);
+    }
+    setTruckBusy(null);
+  }
+  async function validateTruck() {
+    if (!needVehicle()) return;
+    const { error } = await supabase.from("vehicle_events").insert({ city_id: cityId, vehicle_id: vehicle!.id, kind: "tour", photos: truckPaths.filter(Boolean), created_by: userId });
+    if (error) return showToast("Enregistrement impossible : " + error.message);
+    const n = new Date();
+    setTruckDone(`État des lieux validé à ${pad(n.getHours())}:${pad(n.getMinutes())} — ${truckPhotoCount} photos enregistrées.`);
+    showToast("État des lieux du camion enregistré.");
+  }
+  async function toggleCheck(key: string) {
+    if (!needVehicle()) return;
+    const existing = doneChecks[key];
+    if (existing) {
+      const { error } = await supabase.from("vehicle_events").delete().eq("id", existing);
+      if (error) return showToast("Modification impossible : " + error.message);
+      setDoneChecks((m) => {
+        const c = { ...m };
+        delete c[key];
+        return c;
+      });
+    } else {
+      const { data, error } = await supabase.from("vehicle_events").insert({ city_id: cityId, vehicle_id: vehicle!.id, kind: "check", key, created_by: userId }).select("id").single();
+      if (error || !data) return showToast("Enregistrement impossible : " + (error?.message ?? "erreur"));
+      setDoneChecks((m) => ({ ...m, [key]: data.id as string }));
+    }
+  }
+  async function addReceipt(file: File) {
+    if (!needVehicle()) return;
+    try {
+      const path = await uploadPrivatePhoto(supabase, `${cityId}/vehicle`, file);
+      const { data, error } = await supabase.from("vehicle_events").insert({ city_id: cityId, vehicle_id: vehicle!.id, kind: "receipt", photos: [path], created_by: userId }).select("id").single();
+      if (error || !data) return showToast("Ticket non enregistré : " + (error?.message ?? "erreur"));
+      setReceipts((r) => [...r, { id: data.id as string, amount: "", preview: URL.createObjectURL(file) }]);
+      showToast("Ticket ajouté — il apparaît dans la fiche véhicule (Flotte) côté admin.");
+    } catch (e) {
+      showToast("Photo non envoyée : " + (e as Error).message);
+    }
+  }
+  async function saveReceiptAmount(id: string, amount: string) {
+    const { error } = await supabase.from("vehicle_events").update({ amount: amount ? parseFloat(amount) : null }).eq("id", id);
+    if (error) showToast("Montant non enregistré : " + error.message);
+  }
+
   async function finishStop(i: number, result: StopResult, status: "collecte" | "annule") {
     const s = stops[i];
     if (s.kind === "stock" && status === "collecte" && result.items?.length) {
@@ -549,7 +682,7 @@ export default function JourneePage() {
     }
     const { error } = await supabase
       .from("collectes")
-      .update({ status, motif: result.motif ?? null, photos_count: result.photos ?? 0, done_at: new Date().toISOString(), logisticien_id: userId })
+      .update({ status, motif: result.motif ?? null, photos_count: result.photos ?? 0, photo_paths: result.photoPaths ?? [], done_at: new Date().toISOString(), logisticien_id: userId })
       .eq("id", s.id);
     if (error) return showToast("Enregistrement impossible : " + error.message);
     if (status === "collecte" && result.items?.length) {
@@ -743,7 +876,7 @@ export default function JourneePage() {
                         <span>{s.comment}</span>
                       </div>
                     )}
-                    {s.accessDetails && (
+                    {(s.accessDetails || s.sitePhoto) && (
                       <>
                         <button type="button" onClick={() => setAccessOpen(toggle(accessOpen, i))} className="mt-1.5 flex w-full items-center gap-2 text-left text-[11.5px] font-semibold text-[var(--slate)]">
                           {s.access.length > 0 && (
@@ -756,13 +889,19 @@ export default function JourneePage() {
                           <span>Conditions d&apos;accès</span>
                           <Icon className={`ml-auto h-[13px] w-[13px] ${accessOpen.has(i) ? "rotate-180" : ""}`} sw={2}><path d="M6 9 L12 15 L18 9" /></Icon>
                         </button>
-                        {accessOpen.has(i) && <div className="mt-[7px] rounded-[10px] border border-[var(--border)] bg-[var(--input-bg)] px-[11px] py-[9px] text-[11.5px] leading-[1.5] text-[var(--slate)]">{s.accessDetails}</div>}
+                        {accessOpen.has(i) && <div className="mt-[7px] rounded-[10px] border border-[var(--border)] bg-[var(--input-bg)] px-[11px] py-[9px] text-[11.5px] leading-[1.5] text-[var(--slate)]">
+                          {s.accessDetails}
+                          {s.sitePhoto && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={s.sitePhoto} alt="Lieu de collecte" className="mt-2 max-h-40 w-full rounded-lg object-cover" />
+                          )}
+                        </div>}
                       </>
                     )}
                     {s.status === "collecte" && <div className="mt-2 border-t border-[var(--border)] pt-2 text-xs text-[var(--slate)]">{summary(s)}</div>}
                     {s.status === "annule" && <div className="mt-2 border-t border-[var(--border)] pt-2 text-xs text-[var(--slate)]">Motif : <strong className="text-[var(--navy)]">{s.result?.motif || "annulé depuis le planning"}</strong></div>}
 
-                    {!done && dayState === "running" && openIdx === i && <StopPanel stops={stops} index={i} onDone={(r, st) => finishStop(i, r, st)} />}
+                    {!done && dayState === "running" && openIdx === i && <StopPanel stops={stops} index={i} onDone={(r, st) => finishStop(i, r, st)} onUpload={uploadStopPhoto} />}
                   </div>
                 </div>
               );
@@ -836,31 +975,41 @@ export default function JourneePage() {
               <>
                 <div className="mb-3.5 grid grid-cols-3 gap-2.5">
                   {TRUCK_SLOTS.map((slot, idx) => {
-                    const filled = truckPhotos.has(idx);
+                    const preview = truckPreviews[idx];
                     return (
                       <div key={slot.key} className="flex flex-col items-center gap-1.5">
-                        <button type="button" onClick={() => setTruckPhotos(new Set(truckPhotos).add(idx))} className={`flex aspect-[4/3] w-full items-center justify-center rounded-xl border-[1.5px] ${filled ? "border-solid border-transparent bg-gradient-to-br from-[var(--turquoise)] to-[var(--navy-deep)] text-white" : "border-dashed border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)]"}`}>
-                          {filled ? <CheckIcon className="h-5 w-5" /> : <CameraIcon className="h-5 w-5" />}
-                        </button>
+                        <label className={`relative flex aspect-[4/3] w-full cursor-pointer items-center justify-center overflow-hidden rounded-xl border-[1.5px] ${preview ? "border-solid border-transparent" : "border-dashed border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)]"}`}>
+                          {preview ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={preview} alt={slot.label} className="h-full w-full object-cover" />
+                          ) : truckBusy === idx ? (
+                            <span className="text-xs font-bold">…</span>
+                          ) : (
+                            <CameraIcon className="h-5 w-5" />
+                          )}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            hidden
+                            disabled={truckBusy !== null}
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              e.target.value = "";
+                              if (f) pickTruckPhoto(idx, f);
+                            }}
+                          />
+                        </label>
                         <span className="text-center text-[10.5px] leading-[1.2] font-bold text-[var(--navy)]">{slot.label}</span>
                       </div>
                     );
                   })}
                 </div>
-                <button
-                  type="button"
-                  disabled={truckPhotos.size !== TRUCK_SLOTS.length}
-                  onClick={() => {
-                    const now = new Date();
-                    setTruckDone(`État des lieux validé à ${pad(now.getHours())}:${pad(now.getMinutes())} — 6 photos enregistrées (avant, arrière, côtés, cabine, benne).`);
-                    showToast("État des lieux du camion enregistré.");
-                  }}
-                  className="w-full rounded-[40px] bg-[var(--good)] p-3 font-display text-[14.5px] font-bold text-white disabled:opacity-50"
-                >
+                <button type="button" disabled={truckPhotoCount !== TRUCK_SLOTS.length} onClick={validateTruck} className="w-full rounded-[40px] bg-[var(--good)] p-3 font-display text-[14.5px] font-bold text-white disabled:opacity-50">
                   Valider l&apos;état du camion
                 </button>
                 <div className="mt-2 text-center text-[11.5px] text-[var(--slate)]">
-                  {truckPhotos.size === TRUCK_SLOTS.length ? "Photos complètes — vous pouvez valider l'état du camion." : `${truckPhotos.size} / ${TRUCK_SLOTS.length} photos prises.`}
+                  {truckPhotoCount === TRUCK_SLOTS.length ? "Photos complètes — vous pouvez valider l'état du camion." : `${truckPhotoCount} / ${TRUCK_SLOTS.length} photos prises.`}
                 </div>
               </>
             )}
@@ -871,7 +1020,7 @@ export default function JourneePage() {
             <h3 className="mb-1 font-display text-[17px] font-extrabold">Entretien courant</h3>
             <p className="mb-3.5 text-xs leading-[1.5] text-[var(--slate)]">À vérifier chaque lundi en même temps que le tour photo.</p>
             <div className="flex flex-col gap-2">
-              {TRUCK_CHECKS.map((label, idx) => <CheckRow key={idx} label={label} checked={checks.has(idx)} onChange={() => setChecks(toggle(checks, idx))} />)}
+              {TRUCK_CHECKS.map((c) => <CheckRow key={c.key} label={c.label} checked={!!doneChecks[c.key]} onChange={() => toggleCheck(c.key)} />)}
             </div>
           </div>
 
@@ -880,7 +1029,7 @@ export default function JourneePage() {
             <h3 className="mb-1 font-display text-[17px] font-extrabold">Révisions programmées</h3>
             <p className="mb-3.5 text-xs leading-[1.5] text-[var(--slate)]">Coché par l&apos;admin ou le logisticien une fois la révision effectuée en garage.</p>
             <div className="flex flex-col gap-2">
-              {TRUCK_REVISIONS.map((r, idx) => <CheckRow key={idx} label={r.label} sub={r.sub} checked={revisions.has(idx)} onChange={() => setRevisions(toggle(revisions, idx))} />)}
+              {TRUCK_REVISIONS.map((r) => <CheckRow key={r.key} label={r.label} checked={!!doneChecks[r.key]} onChange={() => toggleCheck(r.key)} />)}
             </div>
           </div>
 
@@ -889,23 +1038,41 @@ export default function JourneePage() {
             <h3 className="mb-1 font-display text-[17px] font-extrabold">Tickets &amp; factures</h3>
             <p className="mb-3.5 text-xs leading-[1.5] text-[var(--slate)]">Carburant, lavage, petites réparations… prenez le ticket en photo, il remonte dans la fiche véhicule de l&apos;admin.</p>
             <div className="mb-2.5 flex flex-wrap gap-2">
-              {Array.from({ length: receipts }, (_, k) => (
-                <div key={k} className="flex w-14 flex-col items-center gap-1">
-                  <div className={thumbCls}><CameraIcon /></div>
-                  <input type="number" placeholder="€" className="w-14 rounded-lg border border-[var(--border)] bg-[var(--input-bg)] px-0.5 py-[3px] text-center text-[10.5px] text-[var(--navy)]" />
+              {receipts.map((rc) => (
+                <div key={rc.id} className="flex w-14 flex-col items-center gap-1">
+                  {rc.preview ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={rc.preview} alt="Ticket" className="h-14 w-14 flex-none rounded-xl object-cover" />
+                  ) : (
+                    <div className={thumbCls}><CameraIcon /></div>
+                  )}
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    placeholder="€"
+                    value={rc.amount}
+                    onChange={(e) => setReceipts((list) => list.map((x) => (x.id === rc.id ? { ...x, amount: e.target.value } : x)))}
+                    onBlur={() => saveReceiptAmount(rc.id, rc.amount)}
+                    className="w-14 rounded-lg border border-[var(--border)] bg-[var(--input-bg)] px-0.5 py-[3px] text-center text-[10.5px] text-[var(--navy)]"
+                  />
                 </div>
               ))}
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setReceipts((n) => n + 1);
-                showToast("Ticket ajouté — il apparaîtra dans la fiche véhicule (Flotte) côté admin.");
-              }}
-              className="flex h-14 w-14 items-center justify-center rounded-xl border-[1.5px] border-dashed border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)]"
-            >
+            <label className="flex h-14 w-14 cursor-pointer items-center justify-center rounded-xl border-[1.5px] border-dashed border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)]">
               <CameraIcon />
-            </button>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                hidden
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) addReceipt(f);
+                }}
+              />
+            </label>
           </div>
         </div>
       )}

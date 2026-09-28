@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { compressImage } from "@/lib/photos";
 import { CAT_LABELS, buildEvo, isCollectKind, isoOf, rse, summarize, type CatKey, type StatRow } from "@/lib/stats";
 
 /* ---------------- types ---------------- */
@@ -10,7 +11,7 @@ type Contact = { type: string; nom: string; tel: string; mail: string };
 type Hours = { open: string; close: string } | null;
 type HistoryEntry = { date: string; time: string; denree: string; kg: number; status: "ok" | "annulee" };
 type Fiche = Record<string, unknown>;
-type PartnerRow = { id: string; name: string; site_label: string | null; category: string | null; address: string | null; logo_url: string | null; fiche: Fiche | null };
+type PartnerRow = { id: string; name: string; site_label: string | null; category: string | null; address: string | null; logo_url: string | null; photo_url: string | null; fiche: Fiche | null };
 type CollecteRow = StatRow & { scheduled_time: string | null };
 type Site = {
   id: string;
@@ -391,6 +392,7 @@ export default function EspacePartenairePage() {
   const savedT = useRef<number | null>(null);
   const ficheT = useRef<number | null>(null);
   const logoInput = useRef<HTMLInputElement>(null);
+  const sitePhotoInput = useRef<HTMLInputElement>(null);
   const docInput = useRef<HTMLInputElement>(null);
   const [isSmall, setIsSmall] = useState(false);
   useEffect(() => setIsSmall(window.innerWidth <= 640), []);
@@ -399,7 +401,7 @@ export default function EspacePartenairePage() {
     (async () => {
       const { data: auth } = await supabase.auth.getUser();
       setUserId(auth.user?.id ?? null);
-      const { data: ps, error } = await supabase.from("partners").select("id,name,site_label,category,address,logo_url,fiche").eq("active", true).order("name");
+      const { data: ps, error } = await supabase.from("partners").select("id,name,site_label,category,address,logo_url,photo_url,fiche").eq("active", true).order("name");
       if (error) showToast("Chargement impossible : " + error.message);
       const partners = (ps ?? []) as PartnerRow[];
       setPartnerRows(partners);
@@ -566,6 +568,23 @@ export default function EspacePartenairePage() {
     setPartnerRows((prev) => prev.map((r) => (r.id === siteKey ? { ...r, logo_url: url } : r)));
     autosave();
     showToast("Logo mis à jour — visible partout dans votre espace (ordinateur et mobile).");
+  }
+  const sitePhoto = partnerRows.find((r) => r.id === siteKey)?.photo_url ?? null;
+  async function onSitePhoto(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return showToast("Choisissez une image.");
+    const blob = await compressImage(file);
+    const path = `${siteKey}/photo-${Date.now()}.jpg`;
+    const up = await supabase.storage.from("logos").upload(path, blob, { contentType: "image/jpeg", upsert: true });
+    if (up.error) return showToast("Import de la photo impossible : " + up.error.message);
+    const url = supabase.storage.from("logos").getPublicUrl(path).data.publicUrl;
+    const { error } = await supabase.from("partners").update({ photo_url: url }).eq("id", siteKey);
+    if (error) return showToast("Photo non enregistrée : " + error.message);
+    setPartnerRows((prev) => prev.map((r) => (r.id === siteKey ? { ...r, photo_url: url } : r)));
+    autosave();
+    showToast("Photo enregistrée — le logisticien la verra sous l'adresse.");
   }
   async function onDocs(e: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -853,10 +872,18 @@ export default function EspacePartenairePage() {
               </Card>
 
               <Card title="Photo du lieu de collecte" icon={<><path d="M4 8 L7 4 H17 L20 8" /><rect x="3" y="8" width="18" height="12" rx="2" /><circle cx="12" cy="14" r="3.2" /></>} note="Aide le logisticien à repérer l'endroit exact (porte arrière, quai, etc.).">
-                <button type="button" onClick={() => showToast("Aperçu uniquement — l'import de photo sera branché à Supabase Storage.")} className="flex aspect-[4/3] w-full max-w-[280px] flex-col items-center justify-center gap-2 rounded-2xl border-[1.5px] border-dashed border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)]">
-                  <Icon className="h-7 w-7"><path d="M4 8 L7 4 H17 L20 8" /><rect x="3" y="8" width="18" height="12" rx="2" /><circle cx="12" cy="14" r="3.2" /></Icon>
-                  <span className="text-xs font-semibold">Ajouter une photo</span>
+                <button type="button" onClick={() => sitePhotoInput.current?.click()} className={`flex aspect-[4/3] w-full max-w-[280px] flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border-[1.5px] bg-[var(--input-bg)] text-[var(--slate)] ${sitePhoto ? "border-solid border-[var(--border)]" : "border-dashed border-[var(--border)]"}`}>
+                  {sitePhoto ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={sitePhoto} alt="Lieu de collecte" className="h-full w-full object-cover" />
+                  ) : (
+                    <>
+                      <Icon className="h-7 w-7"><path d="M4 8 L7 4 H17 L20 8" /><rect x="3" y="8" width="18" height="12" rx="2" /><circle cx="12" cy="14" r="3.2" /></Icon>
+                      <span className="text-xs font-semibold">Ajouter une photo</span>
+                    </>
+                  )}
                 </button>
+                <input ref={sitePhotoInput} type="file" accept="image/*" hidden onChange={onSitePhoto} />
               </Card>
             </div>
           )}

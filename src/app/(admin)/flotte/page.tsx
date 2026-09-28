@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { signedUrls } from "@/lib/photos";
 
 type CheckItem = { key: string; label: string; intervalDays: number; lastDate: string };
 type Invoice = { date: string; fournisseur: string; montant: number; statut: "Payé" | "À payer"; motif: string };
@@ -17,6 +18,7 @@ type Vehicle = {
   invoices: Invoice[];
 };
 
+type Report = { tourDate: string | null; tourUrls: string[]; receipts: { id: string; date: string; amount: number | null; url: string }[] };
 const TODAY = new Date();
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -79,6 +81,7 @@ export default function FlottePage() {
   const [cityId, setCityId] = useState<string | null>(null);
   const [logisticiens, setLogisticiens] = useState<{ id: string; name: string }[]>([{ id: "", name: "Non assigné" }]);
   const [toast, setToast] = useState<string | null>(null);
+  const [reports, setReports] = useState<Record<string, Report>>({});
   const saveTimer = useRef<number | null>(null);
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(["checks"]));
   const [autosaveVisible, setAutosaveVisible] = useState(false);
@@ -107,7 +110,36 @@ export default function FlottePage() {
         supabase.from("profiles").select("id,full_name,email").eq("role", "logisticien").order("full_name"),
       ]);
       if (v.error) showToast("Chargement impossible : " + v.error.message);
-      const list = ((v.data ?? []) as unknown as VehicleRow[]).map(rowToVehicle);
+      let list = ((v.data ?? []) as unknown as VehicleRow[]).map(rowToVehicle);
+      // what the logisticien declared from his app (checks done, tour photos, receipts)
+      if (list.length) {
+        const ev = await supabase.from("vehicle_events").select("id,vehicle_id,kind,key,amount,photos,created_at").in("vehicle_id", list.map((x) => x.id)).order("created_at");
+        const events = (ev.data ?? []) as { id: string; vehicle_id: string; kind: string; key: string | null; amount: number | null; photos: string[]; created_at: string }[];
+        list = list.map((veh) => {
+          const mine = events.filter((e) => e.vehicle_id === veh.id);
+          const bump = (items: CheckItem[]) =>
+            items.map((it) => {
+              const last = mine.filter((e) => e.kind === "check" && e.key === it.key).map((e) => e.created_at.slice(0, 10)).sort().pop();
+              return last && last > it.lastDate ? { ...it, lastDate: last } : it;
+            });
+          return { ...veh, checks: bump(veh.checks), revisions: bump(veh.revisions) };
+        });
+        const rep: Record<string, Report> = {};
+        for (const veh of list) {
+          const mine = events.filter((e) => e.vehicle_id === veh.id);
+          const tour = mine.filter((e) => e.kind === "tour").pop();
+          const receipts = mine.filter((e) => e.kind === "receipt").reverse();
+          const paths = [...(tour?.photos ?? []), ...receipts.map((r) => r.photos[0]).filter(Boolean)];
+          const urls = await signedUrls(supabase, paths);
+          const urlOf = (p: string) => urls[paths.indexOf(p)] ?? "";
+          rep[veh.id] = {
+            tourDate: tour?.created_at ?? null,
+            tourUrls: (tour?.photos ?? []).map(urlOf).filter(Boolean),
+            receipts: receipts.map((r) => ({ id: r.id, date: r.created_at, amount: r.amount, url: r.photos[0] ? urlOf(r.photos[0]) : "" })),
+          };
+        }
+        setReports(rep);
+      }
       setVehicles(list);
       if (list[0]) setCurrentId(list[0].id);
       setLogisticiens([{ id: "", name: "Non assigné" }, ...((l.data ?? []) as { id: string; full_name: string | null; email: string | null }[]).map((p) => ({ id: p.id, name: p.full_name || p.email || "Logisticien" }))]);
@@ -335,6 +367,46 @@ export default function FlottePage() {
             </svg>
             Modifications enregistrées
           </div>
+
+          {(() => {
+            const rep = reports[current.id];
+            if (!rep || (!rep.tourDate && rep.receipts.length === 0)) return null;
+            return (
+              <div className="mb-3 rounded-[14px] border border-dashed border-[var(--turquoise)] bg-[var(--input-bg)] p-4">
+                <h4 className="mb-2 font-display text-[14px] font-extrabold text-[var(--navy)]">Remonté par le logisticien</h4>
+                {rep.tourDate && (
+                  <div className="mb-3">
+                    <div className="mb-1.5 text-[11.5px] font-semibold text-[var(--slate)]">
+                      Dernier état des lieux : {new Date(rep.tourDate).toLocaleDateString("fr-FR", { weekday: "long", day: "2-digit", month: "long" })}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {rep.tourUrls.map((u, i) => (
+                        <a key={i} href={u} target="_blank" rel="noopener noreferrer">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={u} alt={`Tour du camion ${i + 1}`} className="h-16 w-20 rounded-lg object-cover" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {rep.receipts.length > 0 && (
+                  <div>
+                    <div className="mb-1.5 text-[11.5px] font-semibold text-[var(--slate)]">Tickets et factures photographiés</div>
+                    <div className="flex flex-wrap gap-2.5">
+                      {rep.receipts.map((r) => (
+                        <a key={r.id} href={r.url} target="_blank" rel="noopener noreferrer" className="flex w-[74px] flex-col items-center gap-1 text-[11px] font-bold text-[var(--navy)]">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          {r.url ? <img src={r.url} alt="Ticket" className="h-[74px] w-[74px] rounded-lg object-cover" /> : <span className="h-[74px] w-[74px] rounded-lg bg-[var(--track)]" />}
+                          {r.amount != null ? fmtEur(Number(r.amount)) : "— €"}
+                          <span className="text-[10px] font-normal text-[var(--slate)]">{new Date(r.date).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}</span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {(
             [
