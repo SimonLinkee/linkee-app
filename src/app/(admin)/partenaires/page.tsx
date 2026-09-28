@@ -199,7 +199,7 @@ function AccordionSection({
         onClick={() => onToggle(sectionKey)}
         className="flex w-full items-center justify-between bg-[var(--input-bg)] px-4 py-[13px] text-left"
       >
-        <h4 className="font-display text-[15px] font-extrabold text-[var(--navy)]">{title}</h4>
+        <h4 className="text-[14.5px] font-semibold text-[var(--navy)]">{title}</h4>
         <svg
           viewBox="0 0 24 24"
           fill="none"
@@ -219,7 +219,7 @@ function AccordionSection({
 
 const inputCls =
   "w-full rounded-[11px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-3 py-2.5 text-[13.5px] font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]";
-const labelCls = "mb-[5px] block text-[11.5px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase";
+const labelCls = "mb-[5px] block text-[11.5px] font-semibold tracking-[0.02em] text-[var(--slate)]";
 
 export default function PartenairesPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -551,7 +551,7 @@ export default function PartenairesPage() {
               </div>
 
               {current.kind === "partner" && (
-                <div className="relative z-[2] flex items-end gap-1.5 px-1">
+                <div className="mb-4 grid grid-cols-2 gap-1.5 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-1.5 sm:grid-cols-4">
                   {FICHE_TABS.map((t) => {
                     const on = ficheTab === t.k;
                     return (
@@ -559,22 +559,19 @@ export default function PartenairesPage() {
                         key={t.k}
                         type="button"
                         onClick={() => setFicheTab(t.k)}
-                        className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-t-[14px] px-3.5 transition-[margin,padding,filter] ${on ? "-mb-[3px] pt-4 pb-3.5" : "mt-2.5 pt-2.5 pb-2 brightness-[0.95] saturate-[0.8] hover:brightness-100 hover:saturate-100"}`}
-                        style={{ background: t.color, color: t.fg }}
+                        className={`flex min-w-0 items-center justify-center gap-2 rounded-[10px] px-3 py-2.5 transition-colors ${on ? "" : "hover:bg-[var(--input-bg)]"}`}
+                        style={on ? { background: t.color, color: t.fg } : { color: "var(--navy)" }}
                       >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6 flex-none">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 flex-none" style={on ? undefined : { color: t.color === "#0a1a3f" ? "var(--slate)" : t.color }}>
                           {t.icon}
                         </svg>
-                        <span className={`truncate font-display font-extrabold ${on ? "text-[15px]" : "text-[14px]"}`}>{t.label}</span>
+                        <span className="truncate text-[13.5px] font-semibold">{t.label}</span>
                       </button>
                     );
                   })}
                 </div>
               )}
-              <div
-                className={current.kind === "partner" ? "relative z-[1] rounded-[14px] border-[3px] bg-[var(--card)] p-3.5" : ""}
-                style={current.kind === "partner" ? { borderColor: FICHE_TABS.find((t) => t.k === ficheTab)!.color, borderTopLeftRadius: ficheTab === "fiche" ? 0 : 14 } : undefined}
-              >
+              <div>
               {current.kind === "partner" && ficheTab === "documents" && <PartnerDocuments key={current.id} partnerId={current.id} role="admin" />}
               {current.kind === "partner" && ficheTab === "valorisation" && <PartnerValuation key={current.id} partnerId={current.id} />}
               {current.kind === "partner" && ficheTab === "collectes" && <PartnerCollectes key={current.id} partnerId={current.id} cityId={cityId} />}

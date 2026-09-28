@@ -14,7 +14,7 @@ const fmtEur = (n: number) => n.toLocaleString("fr-FR", { minimumFractionDigits:
 const fmtKg = (n: number) => (Math.round(n * 10) / 10).toLocaleString("fr-FR") + " kg";
 const isoOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const fieldCls = "w-full rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[13px] font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]";
-const labelCls = "mb-1 block text-[11px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase";
+const labelCls = "mb-1 block text-[11.5px] font-semibold text-[var(--slate)]";
 
 type Preset = "30" | "90" | "365" | "all" | "custom";
 
@@ -146,7 +146,7 @@ export default function PartnerCollectes({ partnerId, cityId }: { partnerId: str
 
       <div className="mb-4 rounded-2xl border border-[var(--border)] bg-[var(--input-bg)] px-4 py-3">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <span className="text-[12px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">Prochaines collectes planifiées</span>
+          <span className="text-[12px] font-semibold text-[var(--slate)]">Prochaines collectes planifiées</span>
           <a href="/planning" className="text-[12px] font-bold text-[var(--turquoise)]">Ouvrir le Planning →</a>
         </div>
         {upcoming.length === 0 ? (
@@ -195,7 +195,7 @@ export default function PartnerCollectes({ partnerId, cityId }: { partnerId: str
 
       {open && (
         <div className="mb-4 rounded-2xl border-[1.5px] border-[var(--client-req)] bg-[var(--card)] p-4">
-          <h4 className="mb-0.5 font-display text-[15px] font-extrabold text-[var(--navy)]">Saisie manuelle d&apos;un volume</h4>
+          <h4 className="mb-0.5 text-[14.5px] font-semibold text-[var(--navy)]">Saisie manuelle d&apos;un volume</h4>
           <p className="mb-3 text-[11.5px] text-[var(--slate)]">Compte dans les statistiques et la Valorisation RSE comme une collecte normale, avec le tag « saisie manuelle ». Elle n&apos;apparaît pas dans le Planning.</p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>

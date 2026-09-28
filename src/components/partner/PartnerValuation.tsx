@@ -70,7 +70,7 @@ export default function PartnerValuation({ partnerId }: { partnerId: string }) {
           return (
             <div key={k} className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]" style={{ borderLeft: `5px solid ${CAT_COLOR[ci]}` }}>
               <div className="flex items-center justify-between bg-[var(--input-bg)] px-4 py-2.5">
-                <span className="font-display text-[15px] font-extrabold text-[var(--navy)]">{label}</span>
+                <span className="text-[14.5px] font-semibold text-[var(--navy)]">{label}</span>
                 <span className="text-[11.5px] text-[var(--slate)]">{list.length} sous-catégorie{list.length > 1 ? "s" : ""}</span>
               </div>
               <div className="px-4 py-2">
