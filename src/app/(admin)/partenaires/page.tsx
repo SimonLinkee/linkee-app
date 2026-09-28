@@ -10,6 +10,24 @@ import PartnerCollectes from "@/components/partner/PartnerCollectes";
 
 type FicheTab = "fiche" | "documents" | "valorisation" | "collectes";
 
+// Binder-style tabs: brand colours (navy, stock amber, "dépose" green, turquoise); text flips to navy on light fills.
+const FICHE_TABS: { k: FicheTab; label: string; color: string; fg: string; icon: React.ReactNode }[] = [
+  { k: "fiche", label: "Fiche", color: "#0a1a3f", fg: "#fdf4ed", icon: <><path d="M4 8 L8 4 H16 L20 8" /><rect x="4" y="8" width="16" height="12" rx="1.5" /><path d="M10 20 V14 H14 V20" /></> },
+  { k: "documents", label: "Mes documents", color: "#eda100", fg: "#001641", icon: <path d="M3 7 A2 2 0 0 1 5 5 H9 L11 7.5 H19 A2 2 0 0 1 21 9.5 V17 A2 2 0 0 1 19 19 H5 A2 2 0 0 1 3 17 Z" /> },
+  { k: "valorisation", label: "Valorisation RSE", color: "#1a8f68", fg: "#fdf4ed", icon: <><circle cx="12" cy="12" r="8.5" /><path d="M14.8 9.2 A3.6 3.6 0 1 0 14.8 14.8 M8.5 11 H13 M8.5 13 H13" /></> },
+  { k: "collectes", label: "Collectes", color: "#4fc1d6", fg: "#001641", icon: <><path d="M3 6.5 H14 V16 H3 Z M14 9.5 H18 L21 12.5 V16 H14" /><circle cx="7" cy="17.5" r="1.8" /><circle cx="17" cy="17.5" r="1.8" /></> },
+];
+// Coloured top edge of each fiche card
+const SECTION_COLOR: Record<string, string> = {
+  identite: "var(--cat-1)",
+  logistics: "var(--cat-4)",
+  passage: "var(--turquoise)",
+  partnerspace: "var(--client-req)",
+  accueil: "var(--dropoff)",
+  contacts: "var(--cat-2)",
+  portal: "#0a1a3f",
+};
+
 type AccessKey = "digicode" | "quai" | "camion" | "etage" | "horaire";
 type AccessFlags = Record<AccessKey, boolean>;
 type Contact = { type: string; nom: string; tel: string; mail: string };
@@ -175,7 +193,7 @@ function AccordionSection({
   children: React.ReactNode;
 }) {
   return (
-    <div className="mb-2.5 overflow-hidden rounded-[14px] border border-[var(--border)]">
+    <div className="mb-2.5 overflow-hidden rounded-[14px] border border-[var(--border)]" style={{ borderTop: `4px solid ${SECTION_COLOR[sectionKey] ?? "var(--turquoise)"}` }}>
       <button
         type="button"
         onClick={() => onToggle(sectionKey)}
@@ -533,26 +551,30 @@ export default function PartenairesPage() {
               </div>
 
               {current.kind === "partner" && (
-                <div className="mb-4 flex flex-wrap gap-1.5 rounded-[40px] border border-[var(--border)] bg-[var(--card)] p-1">
-                  {(
-                    [
-                      ["fiche", "Fiche"],
-                      ["documents", "Mes documents"],
-                      ["valorisation", "Valorisation RSE"],
-                      ["collectes", "Collectes"],
-                    ] as [FicheTab, string][]
-                  ).map(([k, l]) => (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() => setFicheTab(k)}
-                      className={`flex-1 rounded-[40px] px-4 py-2 font-display text-[13.5px] font-bold whitespace-nowrap ${ficheTab === k ? "bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "text-[var(--slate)] hover:text-[var(--navy)]"}`}
-                    >
-                      {l}
-                    </button>
-                  ))}
+                <div className="relative z-[2] flex items-end gap-1.5 px-1">
+                  {FICHE_TABS.map((t) => {
+                    const on = ficheTab === t.k;
+                    return (
+                      <button
+                        key={t.k}
+                        type="button"
+                        onClick={() => setFicheTab(t.k)}
+                        className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-t-[14px] px-3.5 transition-[margin,padding,filter] ${on ? "-mb-[3px] pt-4 pb-3.5" : "mt-2.5 pt-2.5 pb-2 brightness-[0.95] saturate-[0.8] hover:brightness-100 hover:saturate-100"}`}
+                        style={{ background: t.color, color: t.fg }}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6 flex-none">
+                          {t.icon}
+                        </svg>
+                        <span className={`truncate font-display font-extrabold ${on ? "text-[15px]" : "text-[14px]"}`}>{t.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
+              <div
+                className={current.kind === "partner" ? "relative z-[1] rounded-[14px] border-[3px] bg-[var(--card)] p-3.5" : ""}
+                style={current.kind === "partner" ? { borderColor: FICHE_TABS.find((t) => t.k === ficheTab)!.color, borderTopLeftRadius: ficheTab === "fiche" ? 0 : 14 } : undefined}
+              >
               {current.kind === "partner" && ficheTab === "documents" && <PartnerDocuments key={current.id} partnerId={current.id} role="admin" />}
               {current.kind === "partner" && ficheTab === "valorisation" && <PartnerValuation key={current.id} partnerId={current.id} />}
               {current.kind === "partner" && ficheTab === "collectes" && <PartnerCollectes key={current.id} partnerId={current.id} cityId={cityId} />}
@@ -908,6 +930,7 @@ export default function PartenairesPage() {
               )}
               </>
               )}
+              </div>
             </>
           )}
         </div>
