@@ -7,6 +7,7 @@ import { signedUrls, uploadPrivatePhoto } from "@/lib/photos";
 import { geocode } from "@/lib/geocode";
 import NotificationBell from "@/components/NotificationBell";
 import { PASSAGE_ITEMS, PassageBadges, PassageIcon, type Passage } from "@/components/PassageIcons";
+import { IMPORTANCE_COLOR, ImportanceDots, deadlineInfo, type MissionStatus } from "@/components/MissionBits";
 import dynamic from "next/dynamic";
 import type { MapPoint } from "@/components/RouteMap";
 
@@ -522,6 +523,29 @@ export default function JourneePage() {
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [weekRows, setWeekRows] = useState<WeekRow[]>([]);
   const [depotAddr, setDepotAddr] = useState(DEFAULT_DEPOT_ADDRESS);
+
+  // missions assigned to this person (RLS already limits the list to them)
+  type MissionRow = { id: string; title: string; comment: string | null; importance: number; deadline: string | null; status: MissionStatus };
+  const [missions, setMissions] = useState<MissionRow[]>([]);
+  const openMissions = missions
+    .filter((m) => m.status !== "fait")
+    .sort((a, b) => b.importance - a.importance || (a.deadline ?? "9999").localeCompare(b.deadline ?? "9999"));
+  const doneMissions = missions.filter((m) => m.status === "fait");
+  useEffect(() => {
+    if (!userId) return;
+    supabase
+      .from("missions")
+      .select("id,title,comment,importance,deadline,status")
+      .eq("assigned_to", userId)
+      .order("created_at", { ascending: false })
+      .then(({ data }) => setMissions((data ?? []) as MissionRow[]));
+  }, [supabase, userId]);
+  async function setMissionStatus(id: string, status: MissionStatus) {
+    const { error } = await supabase.from("missions").update({ status, done_at: status === "fait" ? new Date().toISOString() : null }).eq("id", id);
+    if (error) return showToast("Modification impossible : " + error.message);
+    setMissions((prev) => prev.map((m) => (m.id === id ? { ...m, status } : m)));
+    if (status === "fait") showToast("Mission terminée, bravo !");
+  }
   const [vehicle, setVehicle] = useState<{ id: string; name: string; plate: string | null } | null>(null);
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   const [depChecked, setDepChecked] = useState<Set<string>>(new Set());
@@ -893,6 +917,48 @@ export default function JourneePage() {
 
       {view === "jour" && (
         <div>
+          {/* Mes missions: only the missions assigned to this person */}
+          <div className="mb-4 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-[18px] shadow-[var(--shadow)]">
+            <div className="mb-2.5 flex items-center gap-2">
+              <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-[var(--navy-deep)] text-[var(--panel-fg)]">
+                <Icon className="h-4 w-4" sw={2}><path d="M9 11 L12 14 L20 6" /><path d="M20 12 V18 A2 2 0 0 1 18 20 H6 A2 2 0 0 1 4 18 V6 A2 2 0 0 1 6 4 H14" /></Icon>
+              </span>
+              <h3 className="font-display text-[17px] font-extrabold">Mes missions</h3>
+              {openMissions.length > 0 && <span className="rounded-[40px] bg-[var(--critical)] px-2 py-0.5 text-[11px] font-bold text-white">{openMissions.length}</span>}
+            </div>
+            {openMissions.length === 0 && <p className="text-[12.5px] text-[var(--slate)]">Aucune mission en cours. Quand l&apos;équipe t&apos;en confie une, elle apparaît ici.</p>}
+            <div className="flex flex-col gap-2.5">
+              {openMissions.map((m) => {
+                const dl = deadlineInfo(m.deadline, false);
+                return (
+                  <div key={m.id} className="rounded-2xl border border-[var(--border)] bg-[var(--input-bg)] p-3.5" style={{ borderLeft: `5px solid ${IMPORTANCE_COLOR[m.importance]}` }}>
+                    <div className="text-[15px] leading-tight font-bold text-[var(--navy)]">{m.title}</div>
+                    {m.comment && <p className="mt-1 text-[12.5px] leading-[1.45] whitespace-pre-line text-[var(--slate)]">{m.comment}</p>}
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <ImportanceDots level={m.importance} />
+                      <span className="rounded-[40px] px-2.5 py-1 text-[11px] font-bold" style={{ background: dl.bg, color: dl.color }}>
+                        {m.deadline ? "Pour le " : ""}
+                        {dl.text}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      {m.status === "a_faire" && (
+                        <button type="button" onClick={() => setMissionStatus(m.id, "en_cours")} className="flex-1 rounded-[40px] border-2 border-[var(--navy-deep)] px-3 py-2.5 font-display text-[14px] font-bold text-[var(--navy)]">
+                          Commencer
+                        </button>
+                      )}
+                      {m.status === "en_cours" && <span className="flex flex-none items-center rounded-[40px] bg-[var(--warn-bg)] px-3 text-[11.5px] font-bold text-[var(--warn)]">En cours</span>}
+                      <button type="button" onClick={() => setMissionStatus(m.id, "fait")} className="flex-1 rounded-[40px] bg-[var(--good)] px-3 py-2.5 font-display text-[14px] font-bold text-white">
+                        Marquer terminée
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {doneMissions.length > 0 && <p className="mt-2.5 text-center text-[11.5px] text-[var(--slate)]">{doneMissions.length} mission{doneMissions.length > 1 ? "s" : ""} terminée{doneMissions.length > 1 ? "s" : ""}.</p>}
+          </div>
+
           {dayState === "closed" && (
             <div className="mb-4 flex items-start gap-2.5 rounded-2xl bg-[var(--good-bg)] px-4 py-3.5 text-[13px] font-semibold text-[var(--good)]">
               <CheckIcon className="mt-px h-[18px] w-[18px] flex-none" />

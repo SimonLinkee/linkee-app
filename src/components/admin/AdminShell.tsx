@@ -6,7 +6,7 @@ import { CityProvider, useCity } from "@/components/admin/CityContext";
 import { Sidebar } from "@/components/admin/Sidebar";
 
 // Screens that only make sense for one city. In the national view ("all cities") only Dashboard and Fleet stay available.
-export const CITY_ONLY_PATHS = ["/partenaires", "/planning", "/stock"];
+export const CITY_ONLY_PATHS = ["/partenaires", "/planning", "/stock", "/todo"];
 
 function Frame({ children }: { children: ReactNode }) {
   const { ready, isAll, city } = useCity();
