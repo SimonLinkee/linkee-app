@@ -693,10 +693,6 @@ export default function DistributionsPage() {
                   </h3>
                   <p className="mb-2 text-[11.5px] text-[var(--slate)]">Affluence, imprévus, retours des bénéficiaires… il apparaît aussi dans l&apos;historique du pilotage.</p>
                   <textarea className={`${fillCls} min-h-[90px] resize-y`} placeholder="Ex : rupture de pain, forte affluence…" value={draft.comment} onChange={(e) => edit((d) => ({ ...d, comment: e.target.value }))} />
-                  <div className="mt-2 flex items-center gap-2">
-                    <label className="text-[11.5px] font-semibold text-[var(--slate)]">Cible F&amp;L par personne</label>
-                    <input type="number" min={0} step="0.1" className={`${fillCls} !w-[90px]`} value={draft.flTarget} onChange={(e) => edit((d) => ({ ...d, flTarget: e.target.value }))} placeholder="kg" />
-                  </div>
                 </div>
               </div>
 

@@ -279,7 +279,7 @@ export default function PilotagePage() {
                 ["Paniers distribués", fmt(t.baskets), t.registered ? `présence réelle ${fmt(t.presence)} %` : "présence non calculable", "var(--cat-3)"],
                 ["Poids distribué", `${fmt(t.distributed, 1)} kg`, "sur la période", "var(--cat-4)"],
                 ["Poids moyen par colis (théorique)", t.avgBasket ? `${fmt(t.avgBasket, 2)} kg` : "—", "kg du tableau ÷ paniers", "var(--cat-2)"],
-                ["F&L par personne", t.flPer ? `${fmt(t.flPer, 2)} kg` : "—", t.flTarget ? `cible moyenne ${fmt(t.flTarget, 2)} kg` : `${fmt(t.fl, 1)} kg de F&L`, "var(--cat-3)"],
+                ["F&L par personne", t.flPer ? `${fmt(t.flPer, 2)} kg` : "—", `${fmt(t.fl, 1)} kg de F&L au total`, "var(--cat-3)"],
                 ["Part de dons", t.donPct ? `${fmt(t.donPct)} %` : "—", "du poids reçu", "var(--good)"],
                 ["Associations présentes", fmt(t.presences), `${t.assoDistinct} différente${t.assoDistinct > 1 ? "s" : ""} · ${fmt(t.assoAvg, 1)} par distribution`, ORANGE],
                 ["Bénévoles par distribution", t.volAvg ? fmt(t.volAvg, 1) : "—", t.volN ? `dont ${fmt(t.coordAvg, 1)} coordinateur${t.coordAvg >= 2 ? "s" : ""} · ${fmt(t.volunteers)} présences` : "non renseigné", "var(--client-req)"],
@@ -296,7 +296,7 @@ export default function PilotagePage() {
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <Chart title="Paniers distribués" sub="Comparés au nombre d'inscrits" points={points.map((p) => ({ l: p.l, v: p.s.baskets, v2: p.s.registered }))} color="#2a78d6" color2="var(--slate)" label2="Inscrits" unit="paniers" />
             <Chart title="Poids moyen du colis" sub="Kilos distribués par panier" points={points.map((p) => ({ l: p.l, v: p.s.avgBasket }))} color="var(--cat-2)" unit="kg" decimals={2} />
-            <Chart title="Fruits et légumes par personne" sub="Réel, avec la cible en pointillés" points={points.map((p) => ({ l: p.l, v: p.s.flPer }))} color="var(--cat-3)" unit="kg" decimals={2} target={t.flTarget} />
+            <Chart title="Fruits et légumes par personne" sub="Kilos de fruits et légumes par panier" points={points.map((p) => ({ l: p.l, v: p.s.flPer }))} color="var(--cat-3)" unit="kg" decimals={2} />
             <Chart title="Associations présentes" sub="Nombre d&apos;associations du Village associatif à chaque distribution" points={points.map((p) => ({ l: p.l, v: p.s.presences }))} color={ORANGE} unit="assos" decimals={0} />
             <Chart title="Bénévoles présents" sub="Total de bénévoles, coordinateurs en gris" points={points.map((p) => ({ l: p.l, v: p.s.volunteers, v2: p.s.coordinators }))} color="var(--client-req)" color2="var(--slate)" label2="Coordinateurs" unit="bénévoles" decimals={0} />
             <Chart title="Poids distribué" sub="Total de kilos distribués" points={points.map((p) => ({ l: p.l, v: p.s.distributed }))} color="var(--cat-4)" unit="kg" decimals={0} />
