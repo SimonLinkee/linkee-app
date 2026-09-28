@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
-import { signedUrls, uploadPrivatePhoto } from "@/lib/photos";
 import DistribTabs from "@/components/DistribTabs";
+import PhotoStrip from "@/components/PhotoStrip";
+import { STATUS_UI, distribStatus } from "@/lib/distributions";
 
 /* ---------------- types ---------------- */
 type Place = { id: string; name: string; cat: string; address: string };
@@ -29,6 +31,8 @@ type Line = {
   categorisation: string;
   source_collecte_id: string | null;
 };
+type Inter = { associationId: string; comment: string; photoPaths: string[] };
+type Assoc = { id: string; name: string; activity_type: string | null; archived: boolean };
 type Draft = {
   id?: string;
   beneficiaryId: string;
@@ -40,6 +44,8 @@ type Draft = {
   status: "prevue" | "distribuee";
   receivedOk: boolean;
   photoPaths: string[];
+  eventPhotos: string[];
+  interventions: Inter[];
   comment: string;
   lines: Line[];
 };
@@ -54,6 +60,8 @@ type DbDist = {
   status: "prevue" | "distribuee";
   received_ok: boolean;
   photo_paths: string[] | null;
+  event_photo_paths: string[] | null;
+  distribution_interventions: { association_id: string; comment: string | null; photo_paths: string[] | null }[] | null;
   comment: string | null;
   distribution_lines: DbLine[] | null;
 };
@@ -129,6 +137,8 @@ function dbToDraft(d: DbDist): Draft {
     status: d.status,
     receivedOk: d.received_ok,
     photoPaths: d.photo_paths ?? [],
+    eventPhotos: d.event_photo_paths ?? [],
+    interventions: (d.distribution_interventions ?? []).map((i) => ({ associationId: i.association_id, comment: i.comment ?? "", photoPaths: i.photo_paths ?? [] })),
     comment: d.comment ?? "",
     lines: [...(d.distribution_lines ?? [])]
       .sort((a, b) => a.sort_order - b.sort_order)
@@ -140,16 +150,15 @@ export default function DistributionsPage() {
   const supabase = useMemo(() => createClient(), []);
   const { cityId, city } = useCity(); // the page remounts when the city changes
   const [places, setPlaces] = useState<Place[]>([]);
+  const [assocs, setAssocs] = useState<Assoc[]>([]);
   const [dists, setDists] = useState<DbDist[]>([]);
   const [drops, setDrops] = useState<PlanDrop[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"todo" | "done" | "all">("all");
+  const [filter, setFilter] = useState<"all" | "encours" | "avenir" | "retard" | "cloture">("all");
   const [selKey, setSelKey] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
-  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
-  const [photoBusy, setPhotoBusy] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
   const [newPlace, setNewPlace] = useState("");
   const [newDate, setNewDate] = useState(isoOf(new Date()));
@@ -169,8 +178,10 @@ export default function DistributionsPage() {
       .map((b) => ({ id: b.id, name: b.name, cat: b.category ?? "", address: b.address ?? "" }));
     setPlaces(pl);
     const ids = pl.map((p) => p.id);
+    const aq = await supabase.from("associations").select("id,name,activity_type,archived").eq("city_id", cityId).order("name");
+    setAssocs((aq.data ?? []) as Assoc[]);
     const [dq, cq] = await Promise.all([
-      supabase.from("distributions").select("*,distribution_lines(*)").eq("city_id", cityId).gte("event_date", since).order("event_date", { ascending: false }),
+      supabase.from("distributions").select("*,distribution_lines(*),distribution_interventions(*)").eq("city_id", cityId).gte("event_date", since).order("event_date", { ascending: false }),
       ids.length
         ? supabase.from("collectes").select("id,beneficiary_id,scheduled_date,status,collecte_items!collecte_id(denree,name,kg,source_collecte_id)").eq("city_id", cityId).eq("kind", "dropoff").eq("source", "planning").in("beneficiary_id", ids).gte("scheduled_date", since).neq("status", "annule")
         : Promise.resolve({ data: [], error: null }),
@@ -212,8 +223,10 @@ export default function DistributionsPage() {
     if (e) void open(e);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries, loading]);
-  const shown = entries.filter((e) => (filter === "all" ? true : filter === "done" ? e.status === "distribuee" : e.status === "prevue"));
-  const nTodo = entries.filter((e) => e.status === "prevue").length;
+  const stOf = (e: { date: string; status: string }) => distribStatus(e.date, e.status === "distribuee");
+  const shown = entries.filter((e) => filter === "all" || stOf(e) === filter);
+  const count = (k: "encours" | "avenir" | "retard" | "cloture") => entries.filter((e) => stOf(e) === k).length;
+  const nLate = count("retard");
 
   /* ---------- open one distribution (the landing page) ---------- */
   async function suppliersFor(sourceIds: string[]) {
@@ -237,7 +250,6 @@ export default function DistributionsPage() {
   async function open(e: Entry) {
     await flush();
     setSelKey(e.key);
-    setPhotoUrls([]);
     dirty.current = false;
     setSaveState("idle");
     const saved = dists.find((d) => `${d.beneficiary_id}|${d.event_date}` === e.key);
@@ -246,17 +258,11 @@ export default function DistributionsPage() {
     else {
       const mine = drops.filter((c) => `${c.beneficiary_id}|${c.scheduled_date}` === e.key);
       const lines = await linesFromItems(mine.flatMap((c) => c.collecte_items ?? []));
-      d = { beneficiaryId: e.beneficiaryId, date: e.date, registered: "", presence: "80", baskets: "", flTarget: "", status: "prevue", receivedOk: false, photoPaths: [], comment: "", lines };
+      d = { beneficiaryId: e.beneficiaryId, date: e.date, registered: "", presence: "80", baskets: "", flTarget: "", status: "prevue", receivedOk: false, photoPaths: [], eventPhotos: [], interventions: [], comment: "", lines };
     }
     setDraft(d);
     window.setTimeout(() => detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
   }
-
-  useEffect(() => {
-    if (!draft?.photoPaths.length) return setPhotoUrls([]);
-    signedUrls(supabase, draft.photoPaths).then((u) => setPhotoUrls(u.filter(Boolean)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft?.photoPaths.join("|")]);
 
   /* ---------- saving (debounced; the first save turns a planning entry into a real distribution) ---------- */
   function edit(fn: (d: Draft) => Draft) {
@@ -288,6 +294,7 @@ export default function DistributionsPage() {
         status: d.status,
         received_ok: d.receivedOk,
         photo_paths: d.photoPaths,
+        event_photo_paths: d.eventPhotos,
         comment: d.comment || null,
         ...(d.status === "distribuee" ? { validated_at: new Date().toISOString() } : {}),
       };
@@ -326,6 +333,11 @@ export default function DistributionsPage() {
         );
         if (ins.error) setMsg("Lignes non enregistrées : " + ins.error.message);
       }
+      await supabase.from("distribution_interventions").delete().eq("distribution_id", id);
+      if (d.interventions.length) {
+        const ii = await supabase.from("distribution_interventions").insert(d.interventions.map((i) => ({ distribution_id: id, association_id: i.associationId, comment: i.comment || null, photo_paths: i.photoPaths })));
+        if (ii.error) setMsg("Interventions non enregistrées : " + ii.error.message + " (la migration 015 est-elle passée ?)");
+      }
       if (!d.id) setDraft((cur) => (cur && !cur.id ? { ...cur, id } : cur));
       setSaveState("saved");
       await load();
@@ -340,18 +352,6 @@ export default function DistributionsPage() {
   async function reopen() {
     edit((d) => ({ ...d, status: "prevue", receivedOk: false }));
     await flush();
-  }
-
-  async function addPhoto(f: File) {
-    if (!cityId || !draft) return;
-    setPhotoBusy(true);
-    try {
-      const path = await uploadPrivatePhoto(supabase, `${cityId}/dist-${draft.beneficiaryId}-${draft.date}`, f);
-      edit((d) => ({ ...d, photoPaths: [...d.photoPaths, path] }));
-    } catch (e) {
-      setMsg("Photo non envoyée : " + (e as Error).message);
-    }
-    setPhotoBusy(false);
   }
 
   async function prefillFromDay() {
@@ -377,9 +377,8 @@ export default function DistributionsPage() {
     if (exists) return open(exists);
     await flush();
     setSelKey(`${newPlace}|${newDate}`);
-    setPhotoUrls([]);
     dirty.current = false;
-    setDraft({ beneficiaryId: newPlace, date: newDate, registered: "", presence: "80", baskets: "", flTarget: "", status: "prevue", receivedOk: false, photoPaths: [], comment: "", lines: [] });
+    setDraft({ beneficiaryId: newPlace, date: newDate, registered: "", presence: "80", baskets: "", flTarget: "", status: "prevue", receivedOk: false, photoPaths: [], eventPhotos: [], interventions: [], comment: "", lines: [] });
     edit((d) => d); // creates it right away
   }
 
@@ -442,6 +441,15 @@ export default function DistributionsPage() {
 
       <DistribTabs />
 
+      {nLate > 0 && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-[1.5px] border-[var(--critical)] bg-[var(--critical-bg)] px-4 py-3">
+          <span className="text-[13.5px] font-semibold text-[var(--critical)]">
+            ⚠ {nLate} distribution{nLate > 1 ? "s" : ""} pas encore clôturée{nLate > 1 ? "s" : ""} alors que le jour J est passé. Clique sur « Bien réceptionné et distribué » pour la clôturer.
+          </span>
+          <button type="button" onClick={() => setFilter("retard")} className="rounded-[40px] bg-[var(--critical)] px-4 py-1.5 text-[12.5px] font-bold text-white">Voir les distributions en retard</button>
+        </div>
+      )}
+
       {msg && (
         <div className="mb-3 flex items-start justify-between gap-3 rounded-xl bg-[var(--critical-bg)] px-3.5 py-2.5 text-[12.5px] font-semibold text-[var(--critical)]">
           <span>{msg}</span>
@@ -472,15 +480,17 @@ export default function DistributionsPage() {
       <div className="grid grid-cols-1 items-start gap-[18px] xl:grid-cols-[340px_1fr]">
         {/* ---- list ---- */}
         <div className="rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-2.5 shadow-[var(--shadow)]">
-          <div className="mb-2 flex gap-1 rounded-[40px] bg-[var(--input-bg)] p-1">
+          <div className="mb-2 flex flex-wrap gap-1 rounded-[20px] bg-[var(--input-bg)] p-1">
             {(
               [
                 ["all", "Toutes"],
-                ["todo", `À valider${nTodo ? ` (${nTodo})` : ""}`],
-                ["done", "Distribuées"],
-              ] as ["all" | "todo" | "done", string][]
+                ["encours", `En cours${count("encours") ? ` (${count("encours")})` : ""}`],
+                ["avenir", "À venir"],
+                ["retard", `En retard${nLate ? ` (${nLate})` : ""}`],
+                ["cloture", "Clôturées"],
+              ] as ["all" | "encours" | "avenir" | "retard" | "cloture", string][]
             ).map(([k, l]) => (
-              <button key={k} type="button" onClick={() => setFilter(k)} className={`flex-1 rounded-[40px] px-2 py-1.5 text-[12px] font-semibold ${filter === k ? "bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "text-[var(--slate)]"}`}>
+              <button key={k} type="button" onClick={() => setFilter(k)} className={`flex-1 rounded-[40px] px-1.5 py-1.5 text-[11.5px] font-semibold whitespace-nowrap ${filter === k ? "bg-[var(--navy-deep)] text-[var(--panel-fg)]" : k === "retard" && nLate ? "text-[var(--critical)]" : "text-[var(--slate)]"}`}>
                 {l}
               </button>
             ))}
@@ -505,8 +515,8 @@ export default function DistributionsPage() {
                       {e.baskets != null ? ` · ${e.baskets} paniers` : ""}
                     </span>
                   </span>
-                  <span className={`flex-none rounded-[40px] px-2 py-0.5 text-[10.5px] font-bold ${e.status === "distribuee" ? "bg-[var(--good-bg)] text-[var(--good)]" : "bg-[var(--warn-bg)] text-[var(--warn)]"}`}>
-                    {e.status === "distribuee" ? "Distribuée" : e.planned && !e.saved ? "Au planning" : "À valider"}
+                  <span className="flex-none rounded-[40px] px-2 py-0.5 text-[10.5px] font-bold" style={{ background: STATUS_UI[stOf(e)].bg, color: STATUS_UI[stOf(e)].fg }}>
+                    {stOf(e) === "retard" ? "En retard" : STATUS_UI[stOf(e)].label}
                   </span>
                 </button>
               );
@@ -535,6 +545,9 @@ export default function DistributionsPage() {
                     <div className="flex flex-wrap items-center gap-2.5">
                       <h2 className="font-display text-[28px] leading-tight font-black text-[var(--navy)]">{place?.name ?? "Lieu"}</h2>
                       <DistribBadge />
+                      <span className="rounded-[40px] px-3 py-1.5 text-[12px] font-bold" style={{ background: STATUS_UI[distribStatus(draft.date, done)].bg, color: STATUS_UI[distribStatus(draft.date, done)].fg }}>
+                        {STATUS_UI[distribStatus(draft.date, done)].label}
+                      </span>
                     </div>
                     <p className="mt-1 text-[13.5px] text-[var(--slate)]">
                       {fmtDay(draft.date)}
@@ -545,7 +558,7 @@ export default function DistributionsPage() {
                   <div className="flex flex-col items-end gap-2">
                     {done ? (
                       <>
-                        <span className="flex items-center gap-2 rounded-[40px] bg-[var(--good-bg)] px-4 py-2 font-display text-[14px] font-bold text-[var(--good)]">✓ Réceptionnée et distribuée</span>
+                        <span className="flex items-center gap-2 rounded-[40px] bg-[var(--good-bg)] px-4 py-2 font-display text-[14px] font-bold text-[var(--good)]">✓ Clôturée — réceptionnée et distribuée</span>
                         <button type="button" onClick={reopen} className="text-[12px] font-semibold text-[var(--slate)] underline">Rouvrir pour corriger</button>
                       </>
                     ) : (
@@ -583,12 +596,13 @@ export default function DistributionsPage() {
                   <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">{fmt(fig.distributed)} kg distribués</p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
                 {[
                   ["Coût par personne", fig.costPer ? eur(fig.costPer) : "—", `${eur(fig.cost)} au total`],
                   ["F&L par personne", fig.flPer ? `${fmt(fig.flPer, 2)} kg` : "—", draft.flTarget ? `cible ${draft.flTarget} kg` : `${fmt(fig.fl)} kg de F&L`],
                   ["Pertes", `${fmt(fig.lossPct, 1)} %`, `sur ${fmt(fig.weight)} kg reçus`],
                   ["Poids total reçu", `${fmt(fig.weight)} kg`, `${draft.lines.length} ligne${draft.lines.length > 1 ? "s" : ""} produit`],
+                  ["Associations présentes", String(draft.interventions.length), draft.interventions.length ? "voir plus bas" : "Village associatif"],
                 ].map(([l, v, sub]) => (
                   <div key={l} className="rounded-2xl bg-[var(--track)] px-4 py-3">
                     <div className="text-[11.5px] font-semibold text-[var(--slate)]">{l}</div>
@@ -598,27 +612,20 @@ export default function DistributionsPage() {
                 ))}
               </div>
 
-              {/* photo + notes */}
+              {/* photos: parcel and event are two separate spaces */}
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
-                  <h3 className="mb-2 text-[14.5px] font-semibold text-[var(--navy)]">Photo du colis</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {photoUrls.map((u, i) => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img key={i} src={u} alt="Colis distribué" className="h-24 w-24 rounded-xl object-cover" />
-                    ))}
-                    <label className={`flex h-24 min-w-[96px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-[#2a78d6] px-3 text-center text-[12px] font-semibold text-[var(--navy)] ${photoBusy ? "opacity-50" : ""}`}>
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6 text-[#2a78d6]">
-                        <path d="M4 8 L7 4 H17 L20 8" />
-                        <rect x="3" y="8" width="18" height="12" rx="2" />
-                        <circle cx="12" cy="14" r="3.2" />
-                      </svg>
-                      {photoBusy ? "Envoi…" : "Ajouter une photo"}
-                      <input type="file" accept="image/*" hidden disabled={photoBusy} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void addPhoto(f); }} />
-                    </label>
-                  </div>
+                <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4" style={{ borderTop: "4px solid var(--cat-4)" }}>
+                  <h3 className="text-[14.5px] font-semibold text-[var(--navy)]">Photos du colis</h3>
+                  <p className="mb-2.5 text-[11.5px] text-[var(--slate)]">Le contenu type d&apos;un panier distribué.</p>
+                  <PhotoStrip paths={draft.photoPaths} folder={`${cityId}/dist-${draft.beneficiaryId}-${draft.date}`} onChange={(p) => edit((d) => ({ ...d, photoPaths: p }))} accent="var(--cat-4)" />
                 </div>
-                <div className="rounded-2xl border-[1.5px] border-[#2a78d6] bg-[var(--card)] p-4">
+                <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4" style={{ borderTop: "4px solid #2a78d6" }}>
+                  <h3 className="text-[14.5px] font-semibold text-[var(--navy)]">Photos de la distribution</h3>
+                  <p className="mb-2.5 text-[11.5px] text-[var(--slate)]">Ambiance, stand, bénéficiaires, bénévoles…</p>
+                  <PhotoStrip paths={draft.eventPhotos} folder={`${cityId}/dist-${draft.beneficiaryId}-${draft.date}`} onChange={(p) => edit((d) => ({ ...d, eventPhotos: p }))} accent="#2a78d6" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3">                <div className="rounded-2xl border-[1.5px] border-[#2a78d6] bg-[var(--card)] p-4">
                   <h3 className="mb-0.5 flex items-center gap-2 text-[14.5px] font-semibold text-[var(--navy)]">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px] text-[#2a78d6]">
                       <path d="M4 5 H20 V16 H10 L5.5 20 V16 H4 Z" />
@@ -634,8 +641,49 @@ export default function DistributionsPage() {
                 </div>
               </div>
 
-              {/* products */}
-              <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
+              {/* associations present (external interventions) */}
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4" style={{ borderTop: "4px solid #eb6834" }}>
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="flex items-center gap-2 text-[14.5px] font-semibold text-[var(--navy)]">
+                    Associations présentes
+                    <span className="rounded-[40px] bg-[#eb6834] px-2.5 py-0.5 text-[12px] font-bold text-white">{draft.interventions.length}</span>
+                  </h3>
+                  <Link href="/distributions/village" className="text-[12px] font-semibold text-[#eb6834]">Ouvrir le Village associatif →</Link>
+                </div>
+                <p className="mb-3 text-[11.5px] text-[var(--slate)]">Coche celles qui sont intervenues. Chaque intervention apparaît aussi dans la fiche de l&apos;association.</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {assocs.filter((a) => !a.archived || draft.interventions.some((i) => i.associationId === a.id)).map((a) => {
+                    const on = draft.interventions.some((i) => i.associationId === a.id);
+                    return (
+                      <button key={a.id} type="button" onClick={() => edit((d) => ({ ...d, interventions: on ? d.interventions.filter((i) => i.associationId !== a.id) : [...d.interventions, { associationId: a.id, comment: "", photoPaths: [] }] }))} className={`rounded-[40px] border-[1.5px] px-3.5 py-1.5 text-[12.5px] font-semibold ${on ? "border-[#eb6834] bg-[#eb6834] text-white" : "border-[var(--border)] bg-[var(--card)] text-[var(--slate)] hover:border-[#eb6834]"}`}>
+                        {on ? "✓ " : "+ "}{a.name}
+                      </button>
+                    );
+                  })}
+                  {assocs.length === 0 && <span className="text-[12.5px] text-[var(--slate)]">Aucune association pour l&apos;instant — ajoute-les dans le Village associatif.</span>}
+                </div>
+                {draft.interventions.length > 0 && (
+                  <div className="mt-4 flex flex-col gap-3">
+                    {draft.interventions.map((iv) => {
+                      const a = assocs.find((x) => x.id === iv.associationId);
+                      return (
+                        <div key={iv.associationId} className="rounded-xl border border-[var(--border)] bg-[var(--input-bg)] p-3">
+                          <div className="mb-2 flex items-center justify-between">
+                            <span className="text-[13.5px] font-semibold text-[var(--navy)]">{a?.name ?? "Association"}{a?.activity_type ? <span className="ml-2 text-[11.5px] font-normal text-[var(--slate)]">{a.activity_type}</span> : null}</span>
+                            <button type="button" onClick={() => edit((d) => ({ ...d, interventions: d.interventions.filter((i) => i.associationId !== iv.associationId) }))} className="text-[12px] font-semibold text-[var(--slate)] hover:text-[var(--critical)]">Retirer</button>
+                          </div>
+                          <textarea className={`${fieldCls} min-h-[64px] resize-y`} placeholder="Ce que l'association a fait, retour sur son intervention…" value={iv.comment} onChange={(e) => edit((d) => ({ ...d, interventions: d.interventions.map((i) => (i.associationId === iv.associationId ? { ...i, comment: e.target.value } : i)) }))} />
+                          <div className="mt-2">
+                            <PhotoStrip paths={iv.photoPaths} folder={`${cityId}/dist-${draft.beneficiaryId}-${draft.date}`} onChange={(p) => edit((d) => ({ ...d, interventions: d.interventions.map((i) => (i.associationId === iv.associationId ? { ...i, photoPaths: p } : i)) }))} accent="#eb6834" size={72} label="Photos" />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* products */}              <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h3 className="text-[15px] font-semibold text-[var(--navy)]">Produits distribués</h3>

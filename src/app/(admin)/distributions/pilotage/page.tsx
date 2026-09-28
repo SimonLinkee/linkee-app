@@ -17,6 +17,7 @@ type Dist = {
   fl_target_kg: number | string | null;
   comment: string | null;
   distribution_lines: DbLine[] | null;
+  distribution_interventions: { association_id: string }[] | null;
 };
 type Place = { id: string; name: string };
 type Preset = "90" | "180" | "365" | "all" | "custom";
@@ -29,6 +30,7 @@ const isoOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padSta
 const fmt = (v: number, d = 0) => v.toLocaleString("fr-FR", { maximumFractionDigits: d });
 const eur = (v: number) => v.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
 const fmtDay = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "2-digit" });
+const ORANGE = "#eb6834";
 const CAT_COLOR: Record<string, string> = { "F&L": "var(--cat-2)", Boulang: "var(--cat-5)", Sec: "var(--cat-1)", Frais: "var(--cat-3)", "Plats préparés": "var(--cat-4)", Hygiène: "var(--client-req)", Autre: "var(--slate)" };
 
 /** Numbers of one distribution, from its product lines. */
@@ -48,7 +50,8 @@ function figures(d: Dist) {
 type Fig = ReturnType<typeof figures>;
 
 function sum(list: Dist[]) {
-  const t = { count: list.length, weight: 0, distributed: 0, cost: 0, lossKg: 0, donKg: 0, returned: 0, redistributed: 0, baskets: 0, registered: 0, fl: 0, byCat: {} as Record<string, number>, flTargetSum: 0, flTargetN: 0 };
+  const assoIds = new Map<string, number>();
+  const t = { count: list.length, presences: 0, weight: 0, distributed: 0, cost: 0, lossKg: 0, donKg: 0, returned: 0, redistributed: 0, baskets: 0, registered: 0, fl: 0, byCat: {} as Record<string, number>, flTargetSum: 0, flTargetN: 0 };
   for (const d of list) {
     const f: Fig = figures(d);
     t.weight += f.weight;
@@ -61,6 +64,10 @@ function sum(list: Dist[]) {
     t.baskets += f.baskets;
     t.registered += f.registered;
     t.fl += f.fl;
+    for (const iv of d.distribution_interventions ?? []) {
+      t.presences++;
+      assoIds.set(iv.association_id, (assoIds.get(iv.association_id) ?? 0) + 1);
+    }
     for (const [k, v] of Object.entries(f.byCat)) t.byCat[k] = (t.byCat[k] ?? 0) + v;
     if (d.fl_target_kg != null) {
       t.flTargetSum += n(d.fl_target_kg);
@@ -69,6 +76,9 @@ function sum(list: Dist[]) {
   }
   return {
     ...t,
+    assoIds,
+    assoDistinct: assoIds.size,
+    assoAvg: t.count ? t.presences / t.count : 0,
     avgBasket: t.baskets ? t.distributed / t.baskets : 0,
     costPer: t.baskets ? t.cost / t.baskets : 0,
     flPer: t.baskets ? t.fl / t.baskets : 0,
@@ -159,6 +169,7 @@ export default function PilotagePage() {
   const supabase = useMemo(() => createClient(), []);
   const { cityId, city } = useCity();
   const [places, setPlaces] = useState<Place[]>([]);
+  const [assocName, setAssocName] = useState<Map<string, string>>(new Map());
   const [dists, setDists] = useState<Dist[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -170,16 +181,18 @@ export default function PilotagePage() {
   useEffect(() => {
     if (!cityId) return;
     (async () => {
-      const [b, d] = await Promise.all([
+      const [b, d, a] = await Promise.all([
         supabase.from("beneficiaries").select("id,name,category,fiche").eq("city_id", cityId).order("name"),
         supabase
           .from("distributions")
-          .select("id,beneficiary_id,event_date,registered,presence_rate,baskets,fl_target_kg,comment,distribution_lines(category,weight_kg,distributed_kg,total_cost,loss_pct,returned_kg,redistributed_kg,don_pct)")
+          .select("id,beneficiary_id,event_date,registered,presence_rate,baskets,fl_target_kg,comment,distribution_lines(category,weight_kg,distributed_kg,total_cost,loss_pct,returned_kg,redistributed_kg,don_pct),distribution_interventions(association_id)")
           .eq("city_id", cityId)
           .eq("status", "distribuee")
           .order("event_date")
           .limit(3000),
+        supabase.from("associations").select("id,name").eq("city_id", cityId),
       ]);
+      setAssocName(new Map(((a.data ?? []) as { id: string; name: string }[]).map((x) => [x.id, x.name])));
       if (d.error) setErr(d.error.message + " (la migration 014 est-elle passée ?)");
       const all = (b.data ?? []) as { id: string; name: string; category: string | null; fiche: { pinned?: boolean } | null }[];
       setPlaces(all.filter((x) => x.category === "Distribution Linkee" || x.fiche?.pinned).map((x) => ({ id: x.id, name: x.name })));
@@ -207,6 +220,8 @@ export default function PilotagePage() {
     for (const d of list) byDate.set(d.event_date, [...(byDate.get(d.event_date) ?? []), d]);
     return Array.from(byDate.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([date, ds]) => ({ date, l: fmtDay(date), s: sum(ds) }));
   }, [list]);
+
+  const ranking = useMemo(() => Array.from(t.assoIds.entries()).sort((a, b) => b[1] - a[1]), [t]);
 
   const perPlace = useMemo(() => {
     const m = new Map<string, Dist[]>();
@@ -258,7 +273,7 @@ export default function PilotagePage() {
         <div className={`flex flex-col gap-4 ${list.length === 0 ? "" : ""}`}>
           {list.length === 0 && <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card)] px-5 py-8 text-center text-[13px] text-[var(--slate)]">Aucune distribution validée sur cette période. Dans « Distributions », clique sur « Bien réceptionné et distribué » pour qu&apos;elle compte ici.</div>}
 
-          <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             {(
               [
                 ["Distributions", fmt(t.count), `${fmt(t.registered)} inscrits au total`, "#2a78d6"],
@@ -269,6 +284,8 @@ export default function PilotagePage() {
                 ["F&L par personne", t.flPer ? `${fmt(t.flPer, 2)} kg` : "—", t.flTarget ? `cible moyenne ${fmt(t.flTarget, 2)} kg` : `${fmt(t.fl, 1)} kg de F&L`, "var(--cat-3)"],
                 ["Pertes", `${fmt(t.lossPct, 1)} %`, `${fmt(t.lossKg, 1)} kg perdus`, "var(--critical)"],
                 ["Part de dons", t.donPct ? `${fmt(t.donPct)} %` : "—", `retours ${fmt(t.returned, 1)} kg · redonné ${fmt(t.redistributed, 1)} kg`, "var(--good)"],
+                ["Associations présentes", fmt(t.presences), `${t.assoDistinct} association${t.assoDistinct > 1 ? "s" : ""} différente${t.assoDistinct > 1 ? "s" : ""}`, ORANGE],
+                ["Associations par distribution", t.assoAvg ? fmt(t.assoAvg, 1) : "—", "moyenne sur la période", ORANGE],
               ] as [string, string, string, string][]
             ).map(([l, v, sub, col]) => (
               <div key={l} className="flex flex-col gap-1.5 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow)]" style={{ borderTop: `4px solid ${col}` }}>
@@ -285,6 +302,7 @@ export default function PilotagePage() {
             <Chart title="Coût par personne" sub="Coût total des produits divisé par les paniers" points={points.map((p) => ({ l: p.l, v: p.s.costPer }))} color="var(--client-req)" unit="€" decimals={2} />
             <Chart title="Fruits et légumes par personne" sub="Réel, avec la cible en pointillés" points={points.map((p) => ({ l: p.l, v: p.s.flPer }))} color="var(--cat-3)" unit="kg" decimals={2} target={t.flTarget} />
             <Chart title="Pertes" sub="Part du poids reçu perdu" points={points.map((p) => ({ l: p.l, v: p.s.lossPct }))} color="var(--critical)" unit="%" decimals={1} />
+            <Chart title="Associations présentes" sub="Nombre d&apos;associations du Village associatif à chaque distribution" points={points.map((p) => ({ l: p.l, v: p.s.presences }))} color={ORANGE} unit="assos" decimals={0} />
             <Chart title="Poids distribué" sub="Total de kilos distribués" points={points.map((p) => ({ l: p.l, v: p.s.distributed }))} color="var(--cat-4)" unit="kg" decimals={0} />
           </section>
 
@@ -348,17 +366,41 @@ export default function PilotagePage() {
             </div>
           </section>
 
+          <section className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow)]" style={{ borderTop: `4px solid ${ORANGE}` }}>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-[14.5px] font-semibold text-[var(--navy)]">Les associations les plus présentes</h3>
+                <p className="text-[11.5px] text-[var(--slate)]">Nombre d&apos;interventions sur la période sélectionnée</p>
+              </div>
+              <Link href="/distributions/village" className="text-[12px] font-semibold" style={{ color: ORANGE }}>Ouvrir le Village associatif →</Link>
+            </div>
+            {ranking.length === 0 && <p className="text-[13px] text-[var(--slate)]">Aucune intervention d&apos;association sur cette période.</p>}
+            <div className="flex flex-col gap-2.5">
+              {ranking.slice(0, 10).map(([id, c], i) => (
+                <div key={id} className="grid grid-cols-[26px_minmax(0,190px)_1fr_64px] items-center gap-2.5">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full font-display text-[12px] font-black text-white" style={{ background: i === 0 ? ORANGE : i < 3 ? "#f0925f" : "var(--slate)" }}>{i + 1}</span>
+                  <span className="truncate text-[13px] font-semibold text-[var(--navy)]">{assocName.get(id) ?? "Association"}</span>
+                  <span className="h-3 overflow-hidden rounded-md bg-[var(--track)]">
+                    <span className="block h-full rounded-md" style={{ width: `${Math.round((c / ranking[0][1]) * 100)}%`, background: ORANGE }} />
+                  </span>
+                  <span className="text-right text-[12.5px] font-semibold text-[var(--slate)] tabular-nums">{c} fois</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
           <section className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow)]">
             <h3 className="text-[14.5px] font-semibold text-[var(--navy)]">Historique et commentaires</h3>
             <p className="mb-3 text-[11.5px] text-[var(--slate)]">Clique sur une ligne pour ouvrir la distribution.</p>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[680px] text-left text-[12.5px]">
+              <table className="w-full min-w-[720px] text-left text-[12.5px]">
                 <thead>
                   <tr className="text-[11px] font-semibold text-[var(--slate)]">
                     <th className="py-1.5 pr-2">Date</th>
                     <th className="px-2">Lieu</th>
                     <th className="px-2 text-right">Inscrits</th>
                     <th className="px-2 text-right">Paniers</th>
+                    <th className="px-2 text-right">Assos</th>
                     <th className="px-2 text-right">Colis moyen</th>
                     <th className="px-2 text-right">Coût / pers.</th>
                     <th className="pl-3">Commentaire</th>
@@ -373,6 +415,7 @@ export default function PilotagePage() {
                         <td className="px-2 font-semibold text-[var(--navy)]">{placeName.get(d.beneficiary_id) ?? "Lieu"}</td>
                         <td className="px-2 text-right tabular-nums">{f.registered || "—"}</td>
                         <td className="px-2 text-right tabular-nums">{f.baskets || "—"}</td>
+                        <td className="px-2 text-right tabular-nums">{(d.distribution_interventions ?? []).length || "—"}</td>
                         <td className="px-2 text-right tabular-nums">{f.baskets ? `${fmt(f.distributed / f.baskets, 2)} kg` : "—"}</td>
                         <td className="px-2 text-right tabular-nums">{f.baskets && f.cost ? eur(f.cost / f.baskets) : "—"}</td>
                         <td className="max-w-[320px] truncate pl-3 text-[var(--slate)]" title={d.comment ?? ""}>{d.comment || "—"}</td>

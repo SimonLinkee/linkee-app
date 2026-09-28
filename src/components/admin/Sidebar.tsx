@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { AVATAR_DEFS, critterSvg, type AvatarKey } from "@/lib/avatars";
 import NotificationBell from "@/components/NotificationBell";
 import { useCity } from "@/components/admin/CityContext";
+import { countLateDistributions } from "@/lib/distributions";
 
 /** readable text colour (white or dark navy) on top of a hex background */
 function textOn(hex: string) {
@@ -123,6 +124,7 @@ export function Sidebar() {
   const [me, setMe] = useState<{ name: string; role: string; avatar: string | null }>({ name: "", role: "", avatar: null });
   const { ready, cities, city, isAll, canSwitch, select } = useCity();
   const [cityMenu, setCityMenu] = useState(false);
+  const [lateDist, setLateDist] = useState(0); // distributions not closed after D-day
   const NATIONAL_BG = "linear-gradient(120deg,#2a78d6,#7C5CD9 45%,#eb6834)";
   // only Dashboard and Fleet exist in the national view (all cities)
   const visibleNav = isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/flotte", "/profil"].includes(n.href)) : NAV_ITEMS;
@@ -138,6 +140,11 @@ export function Sidebar() {
       if (p) setMe({ name: p.full_name || p.email?.split("@")[0] || "", role: p.role, avatar: p.avatar_key && p.avatar_key in AVATAR_DEFS ? p.avatar_key : null });
     })();
   }, []);
+
+  useEffect(() => {
+    if (!city?.id || isAll) return setLateDist(0);
+    countLateDistributions(createClient(), city.id).then(setLateDist).catch(() => setLateDist(0));
+  }, [city?.id, isAll, pathname]);
 
   async function handleLogout() {
     const supabase = createClient();
@@ -256,7 +263,10 @@ export function Sidebar() {
                 >
                   {item.icon}
                 </svg>
-                <span>{item.label}</span>
+                <span className="flex-1">{item.label}</span>
+                {item.href === "/distributions" && lateDist > 0 && (
+                  <span title="Distributions à clôturer" className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--critical)] px-1.5 text-[11px] font-bold text-white">{lateDist}</span>
+                )}
               </Link>
             );
           })}
