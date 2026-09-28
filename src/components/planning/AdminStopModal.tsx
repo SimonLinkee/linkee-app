@@ -6,7 +6,7 @@ import { uploadPrivatePhoto } from "@/lib/photos";
 import { CAT_KEYS, CAT_LABELS, SUBCAT_SELECT, UNIT_LABEL, itemValue, kgFromQuantity, subMap, type SubCat } from "@/lib/stats";
 
 export type AdminStop = { id: string; name: string; kind: string; partnerId: string | null; cat: string };
-export type AdminStopSaved = { status: "collecte" | "annule"; photoPaths: string[] };
+export type AdminStopSaved = { status: "collecte" | "annule" | "todo"; photoPaths: string[] };
 
 type Row = { denree: string; sub: string; qty: string };
 type StockItem = { id: string; name: string; category: string | null; colis: number; upc: number; grammage: number | string };
@@ -16,10 +16,12 @@ const fieldCls = "w-full rounded-[10px] border-[1.5px] border-[var(--border)] bg
 const labelCls = "mb-1 block text-[11px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase";
 const PICKUP = ["partner", "exceptionnel", "demande_client"];
 
-/** Lets an admin do from the Planning what the logisticien does in Ma Journée: mark a stop collected (goods, weights) or cancelled (reason). */
-export default function AdminStopModal({ stop, cityId, date, onClose, onSaved }: { stop: AdminStop; cityId: string; date: string; onClose: () => void; onSaved: (r: AdminStopSaved) => void }) {
+/** Lets the Superadmin do what the logisticien does: mark a stop collected/delivered (goods, weights), cancelled (reason) — and change it afterwards, or put it back to "to do". */
+export default function AdminStopModal({ stop, cityId, date, current = "todo", onClose, onSaved }: { stop: AdminStop; cityId: string; date: string; current?: string; onClose: () => void; onSaved: (r: AdminStopSaved) => void }) {
   const supabase = useMemo(() => createClient(), []);
-  const [pick, setPick] = useState<"collecte" | "annule">("collecte");
+  const [pick, setPick] = useState<"collecte" | "annule" | "todo">(current === "annule" ? "annule" : current === "collecte" && stop.kind === "stock" ? "todo" : "collecte");
+  const [existingPhotos, setExistingPhotos] = useState<string[]>([]);
+  const alreadyDone = current === "collecte";
   const [rows, setRows] = useState<Row[]>([{ denree: "", sub: "", qty: "" }]);
   const [subs, setSubs] = useState<SubCat[]>([]);
   const [stock, setStock] = useState<StockItem[]>([]);
@@ -34,6 +36,15 @@ export default function AdminStopModal({ stop, cityId, date, onClose, onSaved }:
 
   useEffect(() => {
     (async () => {
+      // what is already recorded on this stop (when it is edited after the fact)
+      const cur = await supabase.from("collectes").select("motif,photo_paths,collecte_items!collecte_id(denree,name,kg,subcategory_id,quantity,unit,source_collecte_id)").eq("id", stop.id).maybeSingle();
+      const rec = cur.data as unknown as { motif: string | null; photo_paths: string[] | null; collecte_items: { denree: string | null; name: string | null; kg: number | string; subcategory_id: string | null; quantity: number | string | null; unit: string | null; source_collecte_id: string | null }[] | null } | null;
+      const existing = rec?.collecte_items ?? [];
+      setExistingPhotos(rec?.photo_paths ?? []);
+      if (current === "annule" && rec?.motif) setMotif(rec.motif);
+      if (current === "collecte" && isPickup && existing.length) {
+        setRows(existing.map((it) => ({ denree: it.denree ?? "", sub: it.subcategory_id ?? "", qty: it.subcategory_id && it.quantity != null ? String(it.quantity) : String(Number(it.kg)) })));
+      }
       if (isPickup && stop.partnerId) {
         const { data } = await supabase.from("partner_subcategories").select(SUBCAT_SELECT).eq("partner_id", stop.partnerId).order("name");
         setSubs(((data ?? []) as unknown as SubCat[]).map((s) => ({ ...s, unit_price: s.unit_price == null ? null : Number(s.unit_price), unit_weight_kg: s.unit_weight_kg == null ? null : Number(s.unit_weight_kg) })));
@@ -63,6 +74,10 @@ export default function AdminStopModal({ stop, cityId, date, onClose, onSaved }:
           for (const it of c.collecte_items ?? []) list.push({ key: it.id, sourceId: c.id, from: p?.name ?? b?.name ?? c.label ?? "Point", denree: it.denree, name: it.name, kg: Number(it.kg) });
         }
         setDrops(list);
+        if (current === "collecte" && existing.length) {
+          const same = (d: DropItem, it: (typeof existing)[number]) => d.sourceId === it.source_collecte_id && d.denree === it.denree && d.name === it.name && Math.abs(d.kg - Number(it.kg)) < 0.005;
+          setDropChecked(new Set(list.filter((d) => existing.some((it) => same(d, it))).map((d) => d.key)));
+        }
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -81,11 +96,24 @@ export default function AdminStopModal({ stop, cityId, date, onClose, onSaved }:
     setErr("");
     setBusy(true);
     try {
+      if (pick === "todo") {
+        if (alreadyDone && !window.confirm("Remettre cet arrêt « à faire » ? Les poids déjà saisis seront effacés.")) {
+          setBusy(false);
+          return;
+        }
+        const wipe = await supabase.from("collecte_items").delete().eq("collecte_id", stop.id);
+        if (wipe.error) throw new Error(wipe.error.message);
+        const { error } = await supabase.from("collectes").update({ status: "todo", motif: null, done_at: null, logisticien_id: null }).eq("id", stop.id);
+        if (error) throw new Error(error.message);
+        onSaved({ status: "todo", photoPaths: existingPhotos });
+        return;
+      }
       if (pick === "annule") {
         if (!motif.trim()) throw new Error("Le motif d'annulation est obligatoire.");
+        if (alreadyDone) await supabase.from("collecte_items").delete().eq("collecte_id", stop.id);
         const { error } = await supabase.from("collectes").update({ status: "annule", motif: motif.trim(), done_at: new Date().toISOString() }).eq("id", stop.id);
         if (error) throw new Error(error.message);
-        onSaved({ status: "annule", photoPaths: [] });
+        onSaved({ status: "annule", photoPaths: existingPhotos });
         return;
       }
       let items: { denree: string | null; name: string | null; kg: number; subcategory_id?: string | null; quantity?: number | null; unit?: string | null; source_collecte_id?: string | null }[] = [];
@@ -110,10 +138,11 @@ export default function AdminStopModal({ stop, cityId, date, onClose, onSaved }:
           return { denree: r.denree, name: null, kg: rowKg(r)!, subcategory_id: s?.id ?? null, quantity: parseFloat(r.qty.replace(",", ".")), unit: s?.unit ?? "kg" };
         });
       }
-      const photoPaths: string[] = [];
+      const photoPaths: string[] = [...existingPhotos];
       for (const f of files) photoPaths.push(await uploadPrivatePhoto(supabase, `${cityId}/${stop.id}`, f));
       const { error } = await supabase.from("collectes").update({ status: "collecte", motif: null, photos_count: photoPaths.length, photo_paths: photoPaths, done_at: new Date().toISOString() }).eq("id", stop.id);
       if (error) throw new Error(error.message);
+      if (alreadyDone) await supabase.from("collecte_items").delete().eq("collecte_id", stop.id); // replaced by the corrected lines
       const ins = await supabase.from("collecte_items").insert(items.map((it) => ({ collecte_id: stop.id, ...it })));
       if (ins.error) throw new Error("Poids non enregistrés : " + ins.error.message);
       onSaved({ status: "collecte", photoPaths });
@@ -137,18 +166,25 @@ export default function AdminStopModal({ stop, cityId, date, onClose, onSaved }:
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <h3 className="font-display text-[20px] font-black text-[var(--navy)]">{stop.name}</h3>
-            <p className="text-[12px] text-[var(--slate)]">{stop.cat} · renseigner l&apos;arrêt à la place du logisticien</p>
+            <p className="text-[12px] text-[var(--slate)]">{stop.cat} · {current === "todo" ? "renseigner l&apos;arrêt à la place du logisticien" : "modifier le statut de l&apos;arrêt"}</p>
           </div>
           <button type="button" onClick={onClose} className="flex h-8 w-8 flex-none items-center justify-center rounded-full border-[1.5px] border-[var(--border)] text-[var(--slate)]" aria-label="Fermer">×</button>
         </div>
 
         <div className="mb-3.5 flex gap-2.5">
-          <button type="button" onClick={() => setPick("collecte")} className={`flex-1 rounded-2xl border-2 px-3 py-2.5 font-display text-[14px] font-bold ${pick === "collecte" ? "border-[var(--good)] bg-[var(--good-bg)] text-[var(--good)]" : "border-[var(--border)] text-[var(--navy)]"}`}>{okLabel}</button>
-          <button type="button" onClick={() => setPick("annule")} className={`flex-1 rounded-2xl border-2 px-3 py-2.5 font-display text-[14px] font-bold ${pick === "annule" ? "border-[var(--critical)] bg-[var(--critical-bg)] text-[var(--critical)]" : "border-[var(--border)] text-[var(--navy)]"}`}>Annulé</button>
+          {!(stop.kind === "stock" && alreadyDone) && <button type="button" onClick={() => setPick("collecte")} className={`flex-1 rounded-2xl border-2 px-2 py-2.5 font-display text-[14px] font-bold ${pick === "collecte" ? "border-[var(--good)] bg-[var(--good-bg)] text-[var(--good)]" : "border-[var(--border)] text-[var(--navy)]"}`}>{okLabel}</button>}
+          <button type="button" onClick={() => setPick("annule")} className={`flex-1 rounded-2xl border-2 px-2 py-2.5 font-display text-[14px] font-bold ${pick === "annule" ? "border-[var(--critical)] bg-[var(--critical-bg)] text-[var(--critical)]" : "border-[var(--border)] text-[var(--navy)]"}`}>Annulé</button>
+          {current !== "todo" && <button type="button" onClick={() => setPick("todo")} className={`flex-1 rounded-2xl border-2 px-2 py-2.5 font-display text-[14px] font-bold ${pick === "todo" ? "border-[var(--navy-deep)] bg-[var(--track)] text-[var(--navy)]" : "border-[var(--border)] text-[var(--navy)]"}`}>À faire</button>}
         </div>
 
-        {pick === "annule" ? (
+        {pick === "todo" ? (
+          <p className="rounded-xl bg-[var(--input-bg)] px-3.5 py-3 text-[13px] leading-[1.5] text-[var(--slate)]">
+            L&apos;arrêt redevient « à faire » : le logisticien pourra le refaire dans Ma Journée. Les poids saisis sont effacés.
+            {stop.kind === "stock" && alreadyDone ? " Le stock déjà retiré n'est pas remis automatiquement : corrige-le dans Stock si besoin." : ""}
+          </p>
+        ) : pick === "annule" ? (
           <div>
+            {stop.kind === "stock" && alreadyDone && <p className="mb-2 text-[12px] text-[var(--slate)]">Le stock déjà retiré n'est pas remis automatiquement : corrige-le dans Stock si besoin.</p>}
             <label className={labelCls}>Motif de l&apos;annulation</label>
             <textarea value={motif} onChange={(e) => setMotif(e.target.value)} placeholder="Ex : commerce fermé, personne sur place…" className={`${fieldCls} min-h-[84px] resize-y`} />
           </div>
@@ -240,8 +276,8 @@ export default function AdminStopModal({ stop, cityId, date, onClose, onSaved }:
 
         {err && <div className="mt-3 rounded-xl bg-[var(--critical-bg)] px-3.5 py-2.5 text-[12.5px] font-semibold text-[var(--critical)]">{err}</div>}
         <div className="mt-4 flex gap-2.5">
-          <button type="button" disabled={busy} onClick={save} className={`rounded-[40px] px-5 py-2.5 font-display text-[14px] font-bold text-white disabled:opacity-60 ${pick === "annule" ? "bg-[var(--critical)]" : "bg-[var(--good)]"}`}>
-            {busy ? "Enregistrement…" : pick === "annule" ? "Valider l'annulation" : "Valider"}
+          <button type="button" disabled={busy} onClick={save} className={`rounded-[40px] px-5 py-2.5 font-display text-[14px] font-bold text-white disabled:opacity-60 ${pick === "annule" ? "bg-[var(--critical)]" : pick === "todo" ? "bg-[var(--navy-deep)]" : "bg-[var(--good)]"}`}>
+            {busy ? "Enregistrement…" : pick === "annule" ? "Valider l'annulation" : pick === "todo" ? "Remettre à faire" : "Valider"}
           </button>
           <button type="button" onClick={onClose} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-2.5 font-display text-[14px] font-bold text-[var(--slate)]">Fermer</button>
         </div>

@@ -1046,20 +1046,20 @@ export default function PlanningPage() {
                       <small className="text-[11px] text-[var(--slate)]">min</small>
                     </span>
                     <span className="flex flex-none gap-1.5">
-                      {!done && !ro && (
+                      {!ro && (
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             setResultStop(s);
                           }}
-                          title="Renseigner l'arrêt : collecté (denrées, poids) ou annulé (motif)"
+                          title="Changer le statut : collecté (denrées, poids), annulé (motif) ou remis à faire"
                           className="flex h-[26px] flex-none items-center gap-1 rounded-full border-[1.5px] border-[var(--good)] bg-[var(--good-bg)] px-2.5 text-[11px] font-bold whitespace-nowrap text-[var(--good)] hover:brightness-95"
                         >
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
                             <path d="M20 6 L9 17 L4 12" />
                           </svg>
-                          Renseigner
+                          {done || cancelled ? "Statut" : "Renseigner"}
                         </button>
                       )}
                       {!done && !ro && (
@@ -1218,13 +1218,14 @@ export default function PlanningPage() {
           stop={{ id: resultStop.id, name: resultStop.name, kind: resultStop.kind, partnerId: resultStop.partnerId, cat: resultStop.cat }}
           cityId={cityId}
           date={iso}
+          current={resultStop.dbStatus}
           onClose={() => setResultStop(null)}
           onSaved={(r) => {
             const id = resultStop.id;
-            setStops((prev) => prev.map((s) => (s.id === id ? { ...s, status: r.status === "annule" ? "annule" : "planifie", dbStatus: r.status, photoPaths: r.photoPaths } : s)));
+            setStops((prev) => prev.map((s) => (s.id === id ? { ...s, status: r.status === "annule" ? "annule" : "planifie", dbStatus: r.status === "todo" ? "todo" : r.status, photoPaths: r.photoPaths } : s)));
             setResultStop(null);
             loadWeek();
-            showToast(r.status === "annule" ? "Arrêt marqué comme annulé." : "Arrêt enregistré comme réalisé — visible dans les statistiques.");
+            showToast(r.status === "annule" ? "Arrêt marqué comme annulé." : r.status === "todo" ? "Arrêt remis à faire." : "Arrêt enregistré comme réalisé — visible dans les statistiques.");
           }}
         />
       )}

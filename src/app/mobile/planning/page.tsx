@@ -39,7 +39,7 @@ export default function MobilePlanning() {
   const [partners, setPartners] = useState<Opt[]>([]);
   const [benefs, setBenefs] = useState<Opt[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
-  const [modal, setModal] = useState<AdminStop | null>(null);
+  const [modal, setModal] = useState<{ stop: AdminStop; current: string } | null>(null);
   const [panel, setPanel] = useState<"" | "exc" | "drop">("");
   const [xPartner, setXPartner] = useState("");
   const [xDate, setXDate] = useState(day);
@@ -179,9 +179,12 @@ export default function MobilePlanning() {
                   {done ? "Réalisée" : cancelled ? "Annulée" : "À faire"}
                 </span>
               </div>
+              {done && (
+                <button type="button" onClick={() => setModal({ current: s.status, stop: { id: s.id, name: nameOf(s), kind: s.kind, partnerId: s.partner_id, cat: first(s.partners)?.category ?? first(s.beneficiaries)?.category ?? "" } })} className="mt-3 h-[52px] w-full rounded-xl border-2 border-[var(--navy-deep)] text-[15px] font-bold text-[var(--navy)]">Modifier le statut</button>
+              )}
               {!done && (
                 <div className="mt-3 grid grid-cols-[1fr_52px_52px_52px] gap-2">
-                  <button type="button" onClick={() => setModal({ id: s.id, name: nameOf(s), kind: s.kind, partnerId: s.partner_id, cat: first(s.partners)?.category ?? first(s.beneficiaries)?.category ?? "" })} className="h-[52px] rounded-xl bg-[var(--good)] text-[15px] font-bold text-white">Compléter</button>
+                  <button type="button" onClick={() => setModal({ current: s.status, stop: { id: s.id, name: nameOf(s), kind: s.kind, partnerId: s.partner_id, cat: first(s.partners)?.category ?? first(s.beneficiaries)?.category ?? "" } })} className="h-[52px] rounded-xl bg-[var(--good)] text-[15px] font-bold text-white">{cancelled ? "Modifier le statut" : "Compléter"}</button>
                   <button type="button" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Monter" className="h-[52px] rounded-xl bg-[var(--track)] text-[22px] font-bold text-[var(--navy)] disabled:opacity-30">↑</button>
                   <button type="button" onClick={() => move(i, 1)} disabled={i === stops.length - 1} aria-label="Descendre" className="h-[52px] rounded-xl bg-[var(--track)] text-[22px] font-bold text-[var(--navy)] disabled:opacity-30">↓</button>
                   <button type="button" onClick={() => remove(s)} aria-label="Retirer" className="h-[52px] rounded-xl bg-[var(--critical-bg)] text-[20px] font-bold text-[var(--critical)]">🗑</button>
@@ -248,7 +251,8 @@ export default function MobilePlanning() {
 
       {modal && cityId && (
         <AdminStopModal
-          stop={modal}
+          stop={modal.stop}
+          current={modal.current}
           cityId={cityId}
           date={day}
           onClose={() => setModal(null)}
