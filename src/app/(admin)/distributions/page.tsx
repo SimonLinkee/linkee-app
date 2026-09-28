@@ -17,18 +17,11 @@ type Line = {
   nb_colis: string;
   colis_weight_kg: string;
   weight_kg: string;
-  loss_pct: string;
-  returned_kg: string;
-  redistributed_kg: string;
-  distributed_kg: string;
-  price: string;
-  total_cost: string;
   supplier: string;
   don_pct: string;
   delivery_mode: string;
   eco_label: string;
   geo_label: string;
-  categorisation: string;
   source_collecte_id: string | null;
 };
 type Inter = { associationId: string; comment: string; photoPaths: string[] };
@@ -100,7 +93,7 @@ const OPTIONS: Record<string, string[]> = {
 };
 const STOCK_SUPPLIER = "Stock Linkee";
 
-const blankLine = (): Line => ({ key: uid(), category: "F&L", product: "", nb_colis: "", colis_weight_kg: "", weight_kg: "", loss_pct: "", returned_kg: "", redistributed_kg: "", distributed_kg: "", price: "", total_cost: "", supplier: "", don_pct: "", delivery_mode: "", eco_label: "", geo_label: "", categorisation: "", source_collecte_id: null });
+const blankLine = (): Line => ({ key: uid(), category: "F&L", product: "", nb_colis: "", colis_weight_kg: "", weight_kg: "", supplier: "", don_pct: "", delivery_mode: "", eco_label: "", geo_label: "", source_collecte_id: null });
 
 const fieldCls = "w-full rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[13px] font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]";
 const labelCls = "mb-1 block text-[11.5px] font-semibold text-[var(--slate)]";
@@ -123,12 +116,6 @@ const COLS: { k: keyof Omit<Line, "key" | "source_collecte_id">; l: string; w: n
   { k: "nb_colis", l: "Nb colis", w: 74, type: "num" },
   { k: "colis_weight_kg", l: "Pds colis (kg)", w: 88, type: "num" },
   { k: "weight_kg", l: "Poids (kg)", w: 82, type: "num" },
-  { k: "loss_pct", l: "% pertes", w: 72, type: "num" },
-  { k: "returned_kg", l: "Retours (kg)", w: 82, type: "num" },
-  { k: "redistributed_kg", l: "Redonné (kg)", w: 86, type: "num" },
-  { k: "distributed_kg", l: "Distribué (kg)", w: 90, type: "num" },
-  { k: "price", l: "Prix (€)", w: 72, type: "num" },
-  { k: "total_cost", l: "Coût total (€)", w: 92, type: "num" },
   { k: "supplier", l: "Fournisseur", w: 170, type: "supplier" },
   { k: "don_pct", l: "% don", w: 66, type: "num" },
   { k: "delivery_mode", l: "Mode de livraison", w: 150, type: "opt" },
@@ -259,7 +246,7 @@ export default function DistributionsPage() {
     const sup = await suppliersFor(items.map((i) => i.source_collecte_id ?? ""));
     return items.map((i) => {
       const kg = r2(Number(i.kg) || 0);
-      return { ...blankLine(), category: (i.denree && DENREE_TO_CAT[i.denree]) || "Autre", product: i.name || i.denree || "", weight_kg: String(kg), distributed_kg: String(kg), supplier: (i.source_collecte_id && sup.get(i.source_collecte_id)) || "", don_pct: i.source_collecte_id ? "100" : "", delivery_mode: i.source_collecte_id ? "Collecte Log" : "", source_collecte_id: i.source_collecte_id };
+      return { ...blankLine(), category: (i.denree && DENREE_TO_CAT[i.denree]) || "Autre", product: i.name || i.denree || "", weight_kg: String(kg), supplier: (i.source_collecte_id && sup.get(i.source_collecte_id)) || "", don_pct: i.source_collecte_id ? "100" : "", delivery_mode: i.source_collecte_id ? "Collecte Log" : "", source_collecte_id: i.source_collecte_id };
     });
   }
 
@@ -334,18 +321,11 @@ export default function DistributionsPage() {
             nb_colis: numOrNull(l.nb_colis),
             colis_weight_kg: numOrNull(l.colis_weight_kg),
             weight_kg: numOrNull(l.weight_kg),
-            loss_pct: numOrNull(l.loss_pct),
-            returned_kg: numOrNull(l.returned_kg),
-            redistributed_kg: numOrNull(l.redistributed_kg),
-            distributed_kg: numOrNull(l.distributed_kg),
-            price: numOrNull(l.price),
-            total_cost: numOrNull(l.total_cost),
             supplier: l.supplier || null,
             don_pct: numOrNull(l.don_pct),
             delivery_mode: l.delivery_mode || null,
             eco_label: l.eco_label || null,
             geo_label: l.geo_label || null,
-            categorisation: l.categorisation || null,
             source_collecte_id: l.source_collecte_id,
           })),
         );
@@ -405,17 +385,13 @@ export default function DistributionsPage() {
     if (!draft) return null;
     const L = draft.lines;
     const weight = L.reduce((a, l) => a + num(l.weight_kg), 0);
-    const distributed = L.reduce((a, l) => a + num(l.distributed_kg), 0);
-    const cost = L.reduce((a, l) => a + num(l.total_cost), 0);
-    const lossKg = L.reduce((a, l) => a + (num(l.weight_kg) * num(l.loss_pct)) / 100, 0);
-    const fl = L.filter((l) => l.category === "F&L").reduce((a, l) => a + num(l.distributed_kg), 0);
+    const distributed = weight; // kilos received = kilos distributed
+    const fl = L.filter((l) => l.category === "F&L").reduce((a, l) => a + num(l.weight_kg), 0);
     const baskets = num(draft.baskets);
     const registered = num(draft.registered);
     return {
-      weight, distributed, cost, fl,
-      lossPct: weight ? (lossKg / weight) * 100 : 0,
+      weight, distributed, fl,
       avgBasket: baskets ? distributed / baskets : 0,
-      costPer: baskets ? cost / baskets : 0,
       flPer: baskets ? fl / baskets : 0,
       presence: registered && baskets ? (baskets / registered) * 100 : 0,
       expected: Math.round((registered * num(draft.presence)) / 100),
@@ -431,15 +407,7 @@ export default function DistributionsPage() {
       lines: d.lines.map((l, idx) => {
         if (idx !== i) return l;
         const n: Line = { ...l, [k]: v };
-        if (k === "nb_colis" || k === "colis_weight_kg") {
-          if (n.nb_colis && n.colis_weight_kg) {
-            n.weight_kg = String(r2(num(n.nb_colis) * num(n.colis_weight_kg)));
-            n.distributed_kg = n.weight_kg;
-          }
-        }
-        if (k === "price" || k === "weight_kg" || k === "nb_colis" || k === "colis_weight_kg") {
-          if (n.price && n.weight_kg) n.total_cost = String(r2(num(n.price) * num(n.weight_kg)));
-        }
+        if ((k === "nb_colis" || k === "colis_weight_kg") && n.nb_colis && n.colis_weight_kg) n.weight_kg = String(r2(num(n.nb_colis) * num(n.colis_weight_kg)));
         return n;
       }),
     }));
@@ -647,7 +615,7 @@ export default function DistributionsPage() {
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h3 className="text-[15px] font-semibold text-[var(--navy)]">Produits distribués</h3>
-                    <p className="text-[11.5px] text-[var(--slate)]">Pré-rempli avec ce qui est livré au planning ce jour-là. Poids = nb colis × poids d&apos;un colis, coût = prix × poids.</p>
+                    <p className="text-[11.5px] text-[var(--slate)]">Pré-rempli avec ce qui est livré au planning ce jour-là. Poids = nb colis × poids d&apos;un colis.</p>
                   </div>
                   <div className="flex gap-2">
                     <button type="button" onClick={prefillFromDay} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--navy)] hover:border-[#2a78d6]">
@@ -709,13 +677,7 @@ export default function DistributionsPage() {
                           <td className="px-2.5 py-2 text-right tabular-nums">{fmt(draft.lines.reduce((a, l) => a + num(l.nb_colis), 0), 0)}</td>
                           <td />
                           <td className="px-2.5 py-2 text-right tabular-nums">{fmt(fig.weight)}</td>
-                          <td className="px-2.5 py-2 text-right tabular-nums">{fmt(fig.lossPct)}%</td>
-                          <td className="px-2.5 py-2 text-right tabular-nums">{fmt(draft.lines.reduce((a, l) => a + num(l.returned_kg), 0))}</td>
-                          <td className="px-2.5 py-2 text-right tabular-nums">{fmt(draft.lines.reduce((a, l) => a + num(l.redistributed_kg), 0))}</td>
-                          <td className="px-2.5 py-2 text-right tabular-nums">{fmt(fig.distributed)}</td>
-                          <td />
-                          <td className="px-2.5 py-2 text-right tabular-nums">{fmt(fig.cost, 2)}</td>
-                          <td colSpan={COLS.length - 10} />
+                          <td colSpan={COLS.length - 4} />
                         </tr>
                       </tfoot>
                     )}

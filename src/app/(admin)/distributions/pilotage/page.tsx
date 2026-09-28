@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
 import DistribTabs from "@/components/DistribTabs";
 
-type DbLine = { category: string | null; weight_kg: number | string | null; distributed_kg: number | string | null; total_cost: number | string | null; loss_pct: number | string | null; returned_kg: number | string | null; redistributed_kg: number | string | null; don_pct: number | string | null };
+type DbLine = { category: string | null; weight_kg: number | string | null; don_pct: number | string | null };
 type Dist = {
   id: string;
   beneficiary_id: string;
@@ -39,30 +39,22 @@ const CAT_COLOR: Record<string, string> = { "F&L": "var(--cat-2)", Boulang: "var
 function figures(d: Dist) {
   const L = d.distribution_lines ?? [];
   const weight = L.reduce((a, l) => a + n(l.weight_kg), 0);
-  const distributed = L.reduce((a, l) => a + n(l.distributed_kg), 0);
-  const cost = L.reduce((a, l) => a + n(l.total_cost), 0);
-  const lossKg = L.reduce((a, l) => a + (n(l.weight_kg) * n(l.loss_pct)) / 100, 0);
+  const distributed = weight;
   const donKg = L.reduce((a, l) => a + (n(l.weight_kg) * n(l.don_pct)) / 100, 0);
-  const returned = L.reduce((a, l) => a + n(l.returned_kg), 0);
-  const redistributed = L.reduce((a, l) => a + n(l.redistributed_kg), 0);
   const byCat: Record<string, number> = {};
-  for (const l of L) byCat[l.category || "Autre"] = (byCat[l.category || "Autre"] ?? 0) + n(l.distributed_kg);
-  return { weight, distributed, cost, lossKg, donKg, returned, redistributed, byCat, fl: byCat["F&L"] ?? 0, baskets: n(d.baskets), registered: n(d.registered) };
+  for (const l of L) byCat[l.category || "Autre"] = (byCat[l.category || "Autre"] ?? 0) + n(l.weight_kg);
+  return { weight, distributed, donKg, byCat, fl: byCat["F&L"] ?? 0, baskets: n(d.baskets), registered: n(d.registered) };
 }
 type Fig = ReturnType<typeof figures>;
 
 function sum(list: Dist[]) {
   const assoIds = new Map<string, number>();
-  const t = { count: list.length, presences: 0, volunteers: 0, coordinators: 0, volN: 0, weight: 0, distributed: 0, cost: 0, lossKg: 0, donKg: 0, returned: 0, redistributed: 0, baskets: 0, registered: 0, fl: 0, byCat: {} as Record<string, number>, flTargetSum: 0, flTargetN: 0 };
+  const t = { count: list.length, presences: 0, volunteers: 0, coordinators: 0, volN: 0, weight: 0, distributed: 0, donKg: 0, baskets: 0, registered: 0, fl: 0, byCat: {} as Record<string, number>, flTargetSum: 0, flTargetN: 0 };
   for (const d of list) {
     const f: Fig = figures(d);
     t.weight += f.weight;
     t.distributed += f.distributed;
-    t.cost += f.cost;
-    t.lossKg += f.lossKg;
     t.donKg += f.donKg;
-    t.returned += f.returned;
-    t.redistributed += f.redistributed;
     t.baskets += f.baskets;
     t.registered += f.registered;
     t.fl += f.fl;
@@ -89,10 +81,8 @@ function sum(list: Dist[]) {
     volAvg: t.volN ? t.volunteers / t.volN : 0,
     coordAvg: t.volN ? t.coordinators / t.volN : 0,
     avgBasket: t.baskets ? t.distributed / t.baskets : 0,
-    costPer: t.baskets ? t.cost / t.baskets : 0,
     flPer: t.baskets ? t.fl / t.baskets : 0,
     flTarget: t.flTargetN ? t.flTargetSum / t.flTargetN : 0,
-    lossPct: t.weight ? (t.lossKg / t.weight) * 100 : 0,
     donPct: t.weight ? (t.donKg / t.weight) * 100 : 0,
     presence: t.registered ? (t.baskets / t.registered) * 100 : 0,
   };
@@ -194,7 +184,7 @@ export default function PilotagePage() {
         supabase.from("beneficiaries").select("id,name,category,fiche").eq("city_id", cityId).order("name"),
         supabase
           .from("distributions")
-          .select("id,beneficiary_id,event_date,registered,presence_rate,baskets,volunteers_total,coordinators,fl_target_kg,comment,distribution_lines(category,weight_kg,distributed_kg,total_cost,loss_pct,returned_kg,redistributed_kg,don_pct),distribution_interventions(association_id)")
+          .select("id,beneficiary_id,event_date,registered,presence_rate,baskets,volunteers_total,coordinators,fl_target_kg,comment,distribution_lines(category,weight_kg,don_pct),distribution_interventions(association_id)")
           .eq("city_id", cityId)
           .eq("status", "distribuee")
           .order("event_date")
@@ -282,17 +272,15 @@ export default function PilotagePage() {
         <div className={`flex flex-col gap-4 ${list.length === 0 ? "" : ""}`}>
           {list.length === 0 && <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card)] px-5 py-8 text-center text-[13px] text-[var(--slate)]">Aucune distribution validée sur cette période. Dans « Distributions », clique sur « Bien réceptionné et distribué » pour qu&apos;elle compte ici.</div>}
 
-          <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {(
               [
                 ["Distributions", fmt(t.count), `${fmt(t.registered)} inscrits au total`, "#2a78d6"],
                 ["Paniers distribués", fmt(t.baskets), t.registered ? `présence réelle ${fmt(t.presence)} %` : "présence non calculable", "var(--cat-3)"],
-                ["Poids distribué", `${fmt(t.distributed, 1)} kg`, `${fmt(t.weight, 1)} kg reçus`, "var(--cat-4)"],
+                ["Poids distribué", `${fmt(t.distributed, 1)} kg`, "sur la période", "var(--cat-4)"],
                 ["Poids moyen du colis", t.avgBasket ? `${fmt(t.avgBasket, 2)} kg` : "—", "kg distribués par panier", "var(--cat-2)"],
-                ["Coût par personne", t.costPer ? eur(t.costPer) : "—", `${eur(t.cost)} au total`, "var(--client-req)"],
                 ["F&L par personne", t.flPer ? `${fmt(t.flPer, 2)} kg` : "—", t.flTarget ? `cible moyenne ${fmt(t.flTarget, 2)} kg` : `${fmt(t.fl, 1)} kg de F&L`, "var(--cat-3)"],
-                ["Pertes", `${fmt(t.lossPct, 1)} %`, `${fmt(t.lossKg, 1)} kg perdus`, "var(--critical)"],
-                ["Part de dons", t.donPct ? `${fmt(t.donPct)} %` : "—", `retours ${fmt(t.returned, 1)} kg · redonné ${fmt(t.redistributed, 1)} kg`, "var(--good)"],
+                ["Part de dons", t.donPct ? `${fmt(t.donPct)} %` : "—", "du poids reçu", "var(--good)"],
                 ["Associations présentes", fmt(t.presences), `${t.assoDistinct} différente${t.assoDistinct > 1 ? "s" : ""} · ${fmt(t.assoAvg, 1)} par distribution`, ORANGE],
                 ["Bénévoles par distribution", t.volAvg ? fmt(t.volAvg, 1) : "—", t.volN ? `dont ${fmt(t.coordAvg, 1)} coordinateur${t.coordAvg >= 2 ? "s" : ""} · ${fmt(t.volunteers)} présences` : "non renseigné", "var(--client-req)"],
               ] as [string, string, string, string][]
@@ -308,9 +296,7 @@ export default function PilotagePage() {
           <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <Chart title="Paniers distribués" sub="Comparés au nombre d'inscrits" points={points.map((p) => ({ l: p.l, v: p.s.baskets, v2: p.s.registered }))} color="#2a78d6" color2="var(--slate)" label2="Inscrits" unit="paniers" />
             <Chart title="Poids moyen du colis" sub="Kilos distribués par panier" points={points.map((p) => ({ l: p.l, v: p.s.avgBasket }))} color="var(--cat-2)" unit="kg" decimals={2} />
-            <Chart title="Coût par personne" sub="Coût total des produits divisé par les paniers" points={points.map((p) => ({ l: p.l, v: p.s.costPer }))} color="var(--client-req)" unit="€" decimals={2} />
             <Chart title="Fruits et légumes par personne" sub="Réel, avec la cible en pointillés" points={points.map((p) => ({ l: p.l, v: p.s.flPer }))} color="var(--cat-3)" unit="kg" decimals={2} target={t.flTarget} />
-            <Chart title="Pertes" sub="Part du poids reçu perdu" points={points.map((p) => ({ l: p.l, v: p.s.lossPct }))} color="var(--critical)" unit="%" decimals={1} />
             <Chart title="Associations présentes" sub="Nombre d&apos;associations du Village associatif à chaque distribution" points={points.map((p) => ({ l: p.l, v: p.s.presences }))} color={ORANGE} unit="assos" decimals={0} />
             <Chart title="Bénévoles présents" sub="Total de bénévoles, coordinateurs en gris" points={points.map((p) => ({ l: p.l, v: p.s.volunteers, v2: p.s.coordinators }))} color="var(--client-req)" color2="var(--slate)" label2="Coordinateurs" unit="bénévoles" decimals={0} />
             <Chart title="Poids distribué" sub="Total de kilos distribués" points={points.map((p) => ({ l: p.l, v: p.s.distributed }))} color="var(--cat-4)" unit="kg" decimals={0} />
@@ -348,9 +334,7 @@ export default function PilotagePage() {
                       <th className="px-2 text-right">Distrib.</th>
                       <th className="px-2 text-right">Paniers</th>
                       <th className="px-2 text-right">Colis moyen</th>
-                      <th className="px-2 text-right">Coût / pers.</th>
-                      <th className="px-2 text-right">F&amp;L / pers.</th>
-                      <th className="pl-2 text-right">Pertes</th>
+                      <th className="pl-2 text-right">F&amp;L / pers.</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -360,14 +344,12 @@ export default function PilotagePage() {
                         <td className="px-2 text-right tabular-nums">{p.s.count}</td>
                         <td className="px-2 text-right tabular-nums">{fmt(p.s.baskets)}</td>
                         <td className="px-2 text-right tabular-nums">{p.s.avgBasket ? `${fmt(p.s.avgBasket, 2)} kg` : "—"}</td>
-                        <td className="px-2 text-right tabular-nums">{p.s.costPer ? eur(p.s.costPer) : "—"}</td>
-                        <td className="px-2 text-right tabular-nums">{p.s.flPer ? `${fmt(p.s.flPer, 2)} kg` : "—"}</td>
-                        <td className="pl-2 text-right tabular-nums">{fmt(p.s.lossPct, 1)} %</td>
+                        <td className="pl-2 text-right tabular-nums">{p.s.flPer ? `${fmt(p.s.flPer, 2)} kg` : "—"}</td>
                       </tr>
                     ))}
                     {perPlace.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="py-4 text-center text-[var(--slate)]">Aucune donnée.</td>
+                        <td colSpan={5} className="py-4 text-center text-[var(--slate)]">Aucune donnée.</td>
                       </tr>
                     )}
                   </tbody>
@@ -412,7 +394,6 @@ export default function PilotagePage() {
                     <th className="px-2 text-right">Paniers</th>
                     <th className="px-2 text-right">Assos</th>
                     <th className="px-2 text-right">Colis moyen</th>
-                    <th className="px-2 text-right">Coût / pers.</th>
                     <th className="pl-3">Commentaire</th>
                   </tr>
                 </thead>
@@ -427,7 +408,6 @@ export default function PilotagePage() {
                         <td className="px-2 text-right tabular-nums">{f.baskets || "—"}</td>
                         <td className="px-2 text-right tabular-nums">{(d.distribution_interventions ?? []).length || "—"}</td>
                         <td className="px-2 text-right tabular-nums">{f.baskets ? `${fmt(f.distributed / f.baskets, 2)} kg` : "—"}</td>
-                        <td className="px-2 text-right tabular-nums">{f.baskets && f.cost ? eur(f.cost / f.baskets) : "—"}</td>
                         <td className="max-w-[320px] truncate pl-3 text-[var(--slate)]" title={d.comment ?? ""}>{d.comment || "—"}</td>
                       </tr>
                     );
