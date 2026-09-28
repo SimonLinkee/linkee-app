@@ -14,6 +14,8 @@ type Dist = {
   registered: number | null;
   presence_rate: number | string;
   baskets: number | null;
+  volunteers_total: number | null;
+  coordinators: number | null;
   fl_target_kg: number | string | null;
   comment: string | null;
   distribution_lines: DbLine[] | null;
@@ -51,7 +53,7 @@ type Fig = ReturnType<typeof figures>;
 
 function sum(list: Dist[]) {
   const assoIds = new Map<string, number>();
-  const t = { count: list.length, presences: 0, weight: 0, distributed: 0, cost: 0, lossKg: 0, donKg: 0, returned: 0, redistributed: 0, baskets: 0, registered: 0, fl: 0, byCat: {} as Record<string, number>, flTargetSum: 0, flTargetN: 0 };
+  const t = { count: list.length, presences: 0, volunteers: 0, coordinators: 0, volN: 0, weight: 0, distributed: 0, cost: 0, lossKg: 0, donKg: 0, returned: 0, redistributed: 0, baskets: 0, registered: 0, fl: 0, byCat: {} as Record<string, number>, flTargetSum: 0, flTargetN: 0 };
   for (const d of list) {
     const f: Fig = figures(d);
     t.weight += f.weight;
@@ -64,6 +66,11 @@ function sum(list: Dist[]) {
     t.baskets += f.baskets;
     t.registered += f.registered;
     t.fl += f.fl;
+    if (d.volunteers_total != null) {
+      t.volunteers += n(d.volunteers_total);
+      t.coordinators += n(d.coordinators);
+      t.volN++;
+    }
     for (const iv of d.distribution_interventions ?? []) {
       t.presences++;
       assoIds.set(iv.association_id, (assoIds.get(iv.association_id) ?? 0) + 1);
@@ -79,6 +86,8 @@ function sum(list: Dist[]) {
     assoIds,
     assoDistinct: assoIds.size,
     assoAvg: t.count ? t.presences / t.count : 0,
+    volAvg: t.volN ? t.volunteers / t.volN : 0,
+    coordAvg: t.volN ? t.coordinators / t.volN : 0,
     avgBasket: t.baskets ? t.distributed / t.baskets : 0,
     costPer: t.baskets ? t.cost / t.baskets : 0,
     flPer: t.baskets ? t.fl / t.baskets : 0,
@@ -185,7 +194,7 @@ export default function PilotagePage() {
         supabase.from("beneficiaries").select("id,name,category,fiche").eq("city_id", cityId).order("name"),
         supabase
           .from("distributions")
-          .select("id,beneficiary_id,event_date,registered,presence_rate,baskets,fl_target_kg,comment,distribution_lines(category,weight_kg,distributed_kg,total_cost,loss_pct,returned_kg,redistributed_kg,don_pct),distribution_interventions(association_id)")
+          .select("id,beneficiary_id,event_date,registered,presence_rate,baskets,volunteers_total,coordinators,fl_target_kg,comment,distribution_lines(category,weight_kg,distributed_kg,total_cost,loss_pct,returned_kg,redistributed_kg,don_pct),distribution_interventions(association_id)")
           .eq("city_id", cityId)
           .eq("status", "distribuee")
           .order("event_date")
@@ -284,8 +293,8 @@ export default function PilotagePage() {
                 ["F&L par personne", t.flPer ? `${fmt(t.flPer, 2)} kg` : "—", t.flTarget ? `cible moyenne ${fmt(t.flTarget, 2)} kg` : `${fmt(t.fl, 1)} kg de F&L`, "var(--cat-3)"],
                 ["Pertes", `${fmt(t.lossPct, 1)} %`, `${fmt(t.lossKg, 1)} kg perdus`, "var(--critical)"],
                 ["Part de dons", t.donPct ? `${fmt(t.donPct)} %` : "—", `retours ${fmt(t.returned, 1)} kg · redonné ${fmt(t.redistributed, 1)} kg`, "var(--good)"],
-                ["Associations présentes", fmt(t.presences), `${t.assoDistinct} association${t.assoDistinct > 1 ? "s" : ""} différente${t.assoDistinct > 1 ? "s" : ""}`, ORANGE],
-                ["Associations par distribution", t.assoAvg ? fmt(t.assoAvg, 1) : "—", "moyenne sur la période", ORANGE],
+                ["Associations présentes", fmt(t.presences), `${t.assoDistinct} différente${t.assoDistinct > 1 ? "s" : ""} · ${fmt(t.assoAvg, 1)} par distribution`, ORANGE],
+                ["Bénévoles par distribution", t.volAvg ? fmt(t.volAvg, 1) : "—", t.volN ? `dont ${fmt(t.coordAvg, 1)} coordinateur${t.coordAvg >= 2 ? "s" : ""} · ${fmt(t.volunteers)} présences` : "non renseigné", "var(--client-req)"],
               ] as [string, string, string, string][]
             ).map(([l, v, sub, col]) => (
               <div key={l} className="flex flex-col gap-1.5 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow)]" style={{ borderTop: `4px solid ${col}` }}>
@@ -303,6 +312,7 @@ export default function PilotagePage() {
             <Chart title="Fruits et légumes par personne" sub="Réel, avec la cible en pointillés" points={points.map((p) => ({ l: p.l, v: p.s.flPer }))} color="var(--cat-3)" unit="kg" decimals={2} target={t.flTarget} />
             <Chart title="Pertes" sub="Part du poids reçu perdu" points={points.map((p) => ({ l: p.l, v: p.s.lossPct }))} color="var(--critical)" unit="%" decimals={1} />
             <Chart title="Associations présentes" sub="Nombre d&apos;associations du Village associatif à chaque distribution" points={points.map((p) => ({ l: p.l, v: p.s.presences }))} color={ORANGE} unit="assos" decimals={0} />
+            <Chart title="Bénévoles présents" sub="Total de bénévoles, coordinateurs en gris" points={points.map((p) => ({ l: p.l, v: p.s.volunteers, v2: p.s.coordinators }))} color="var(--client-req)" color2="var(--slate)" label2="Coordinateurs" unit="bénévoles" decimals={0} />
             <Chart title="Poids distribué" sub="Total de kilos distribués" points={points.map((p) => ({ l: p.l, v: p.s.distributed }))} color="var(--cat-4)" unit="kg" decimals={0} />
           </section>
 

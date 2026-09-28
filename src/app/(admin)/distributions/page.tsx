@@ -40,6 +40,8 @@ type Draft = {
   registered: string;
   presence: string;
   baskets: string;
+  volunteers: string;
+  coordinators: string;
   flTarget: string;
   status: "prevue" | "distribuee";
   receivedOk: boolean;
@@ -56,6 +58,8 @@ type DbDist = {
   registered: number | null;
   presence_rate: number | string;
   baskets: number | null;
+  volunteers_total: number | null;
+  coordinators: number | null;
   fl_target_kg: number | string | null;
   status: "prevue" | "distribuee";
   received_ok: boolean;
@@ -88,6 +92,14 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 const first = <T,>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? (v[0] ?? null) : (v ?? null));
 const s = (v: string | number | null | undefined) => (v == null ? "" : String(v));
 
+// closed lists (no free typing): values taken from the Linkee follow-up spreadsheet
+const OPTIONS: Record<string, string[]> = {
+  delivery_mode: ["Collecte Log", "Reste camion", "Livraison sur site", "Sortie stock", "Stockage sur place"],
+  eco_label: ["BIO"],
+  geo_label: ["BIO"],
+};
+const STOCK_SUPPLIER = "Stock Linkee";
+
 const blankLine = (): Line => ({ key: uid(), category: "F&L", product: "", nb_colis: "", colis_weight_kg: "", weight_kg: "", loss_pct: "", returned_kg: "", redistributed_kg: "", distributed_kg: "", price: "", total_cost: "", supplier: "", don_pct: "", delivery_mode: "", eco_label: "", geo_label: "", categorisation: "", source_collecte_id: null });
 
 const fieldCls = "w-full rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[13px] font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]";
@@ -105,7 +117,7 @@ function DistribBadge() {
   );
 }
 
-const COLS: { k: keyof Omit<Line, "key" | "source_collecte_id">; l: string; w: number; type?: "num" | "cat" }[] = [
+const COLS: { k: keyof Omit<Line, "key" | "source_collecte_id">; l: string; w: number; type?: "num" | "cat" | "opt" | "supplier" }[] = [
   { k: "category", l: "Catégorie", w: 118, type: "cat" },
   { k: "product", l: "Produit", w: 170 },
   { k: "nb_colis", l: "Nb colis", w: 74, type: "num" },
@@ -117,12 +129,11 @@ const COLS: { k: keyof Omit<Line, "key" | "source_collecte_id">; l: string; w: n
   { k: "distributed_kg", l: "Distribué (kg)", w: 90, type: "num" },
   { k: "price", l: "Prix (€)", w: 72, type: "num" },
   { k: "total_cost", l: "Coût total (€)", w: 92, type: "num" },
-  { k: "supplier", l: "Fournisseur", w: 140 },
+  { k: "supplier", l: "Fournisseur", w: 170, type: "supplier" },
   { k: "don_pct", l: "% don", w: 66, type: "num" },
-  { k: "delivery_mode", l: "Mode de livraison", w: 130 },
-  { k: "eco_label", l: "Label éco", w: 96 },
-  { k: "geo_label", l: "Label géo", w: 96 },
-  { k: "categorisation", l: "Catégorisation", w: 120 },
+  { k: "delivery_mode", l: "Mode de livraison", w: 150, type: "opt" },
+  { k: "eco_label", l: "Label éco", w: 96, type: "opt" },
+  { k: "geo_label", l: "Label géo", w: 96, type: "opt" },
 ];
 
 function dbToDraft(d: DbDist): Draft {
@@ -133,6 +144,8 @@ function dbToDraft(d: DbDist): Draft {
     registered: s(d.registered),
     presence: s(d.presence_rate),
     baskets: s(d.baskets),
+    volunteers: s(d.volunteers_total),
+    coordinators: s(d.coordinators),
     flTarget: s(d.fl_target_kg),
     status: d.status,
     receivedOk: d.received_ok,
@@ -151,6 +164,7 @@ export default function DistributionsPage() {
   const { cityId, city } = useCity(); // the page remounts when the city changes
   const [places, setPlaces] = useState<Place[]>([]);
   const [assocs, setAssocs] = useState<Assoc[]>([]);
+  const [suppliers, setSuppliers] = useState<string[]>([]); // partner names of the city (suppliers are picked, never typed)
   const [dists, setDists] = useState<DbDist[]>([]);
   const [drops, setDrops] = useState<PlanDrop[]>([]);
   const [loading, setLoading] = useState(true);
@@ -180,6 +194,8 @@ export default function DistributionsPage() {
     const ids = pl.map((p) => p.id);
     const aq = await supabase.from("associations").select("id,name,activity_type,archived").eq("city_id", cityId).order("name");
     setAssocs((aq.data ?? []) as Assoc[]);
+    const pq = await supabase.from("partners").select("name").eq("city_id", cityId).order("name");
+    setSuppliers(((pq.data ?? []) as { name: string }[]).map((p) => p.name));
     const [dq, cq] = await Promise.all([
       supabase.from("distributions").select("*,distribution_lines(*),distribution_interventions(*)").eq("city_id", cityId).gte("event_date", since).order("event_date", { ascending: false }),
       ids.length
@@ -258,7 +274,7 @@ export default function DistributionsPage() {
     else {
       const mine = drops.filter((c) => `${c.beneficiary_id}|${c.scheduled_date}` === e.key);
       const lines = await linesFromItems(mine.flatMap((c) => c.collecte_items ?? []));
-      d = { beneficiaryId: e.beneficiaryId, date: e.date, registered: "", presence: "80", baskets: "", flTarget: "", status: "prevue", receivedOk: false, photoPaths: [], eventPhotos: [], interventions: [], comment: "", lines };
+      d = { beneficiaryId: e.beneficiaryId, date: e.date, registered: "", presence: "80", baskets: "", volunteers: "", coordinators: "", flTarget: "", status: "prevue", receivedOk: false, photoPaths: [], eventPhotos: [], interventions: [], comment: "", lines };
     }
     setDraft(d);
     window.setTimeout(() => detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
@@ -290,6 +306,8 @@ export default function DistributionsPage() {
         registered: numOrNull(d.registered) == null ? null : Math.round(num(d.registered)),
         presence_rate: d.presence.trim() === "" ? 80 : num(d.presence),
         baskets: numOrNull(d.baskets) == null ? null : Math.round(num(d.baskets)),
+        volunteers_total: numOrNull(d.volunteers) == null ? null : Math.round(num(d.volunteers)),
+        coordinators: numOrNull(d.coordinators) == null ? null : Math.round(num(d.coordinators)),
         fl_target_kg: numOrNull(d.flTarget),
         status: d.status,
         received_ok: d.receivedOk,
@@ -378,7 +396,7 @@ export default function DistributionsPage() {
     await flush();
     setSelKey(`${newPlace}|${newDate}`);
     dirty.current = false;
-    setDraft({ beneficiaryId: newPlace, date: newDate, registered: "", presence: "80", baskets: "", flTarget: "", status: "prevue", receivedOk: false, photoPaths: [], eventPhotos: [], interventions: [], comment: "", lines: [] });
+    setDraft({ beneficiaryId: newPlace, date: newDate, registered: "", presence: "80", baskets: "", volunteers: "", coordinators: "", flTarget: "", status: "prevue", receivedOk: false, photoPaths: [], eventPhotos: [], interventions: [], comment: "", lines: [] });
     edit((d) => d); // creates it right away
   }
 
@@ -477,46 +495,49 @@ export default function DistributionsPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 items-start gap-[18px] xl:grid-cols-[340px_1fr]">
-        {/* ---- list ---- */}
-        <div className="rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-2.5 shadow-[var(--shadow)]">
-          <div className="mb-2 flex flex-wrap gap-1 rounded-[20px] bg-[var(--input-bg)] p-1">
+      <div className="flex flex-col gap-4">
+        {/* ---- distributions: a compact strip instead of a side column ---- */}
+        <div>
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="text-[12px] font-semibold text-[var(--slate)]">Statut</span>
             {(
               [
                 ["all", "Toutes"],
-                ["encours", `En cours${count("encours") ? ` (${count("encours")})` : ""}`],
+                ["encours", `En cours${count("encours") ? ` ${count("encours")}` : ""}`],
                 ["avenir", "À venir"],
-                ["retard", `En retard${nLate ? ` (${nLate})` : ""}`],
+                ["retard", `En retard${nLate ? ` ${nLate}` : ""}`],
                 ["cloture", "Clôturées"],
               ] as ["all" | "encours" | "avenir" | "retard" | "cloture", string][]
             ).map(([k, l]) => (
-              <button key={k} type="button" onClick={() => setFilter(k)} className={`flex-1 rounded-[40px] px-1.5 py-1.5 text-[11.5px] font-semibold whitespace-nowrap ${filter === k ? "bg-[var(--navy-deep)] text-[var(--panel-fg)]" : k === "retard" && nLate ? "text-[var(--critical)]" : "text-[var(--slate)]"}`}>
+              <button key={k} type="button" onClick={() => setFilter(k)} className={`rounded-[40px] border px-3 py-1 text-[11.5px] font-semibold whitespace-nowrap ${filter === k ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : k === "retard" && nLate ? "border-[var(--critical)] text-[var(--critical)]" : "border-[var(--border)] text-[var(--slate)] hover:border-[#2a78d6]"}`}>
                 {l}
               </button>
             ))}
+            <span className="ml-auto text-[11.5px] text-[var(--slate)]">{shown.length} distribution{shown.length > 1 ? "s" : ""}</span>
           </div>
-          <div className="max-h-[calc(100vh-260px)] overflow-y-auto">
-            {loading && <p className="p-4 text-[13px] text-[var(--slate)]">Chargement…</p>}
-            {!loading && shown.length === 0 && <p className="p-4 text-[13px] text-[var(--slate)]">Aucune distribution. Planifie une dépose dans un lieu « Distribution Linkee », ou crée-en une avec le bouton en haut.</p>}
+          {loading && <p className="text-[13px] text-[var(--slate)]">Chargement…</p>}
+          {!loading && shown.length === 0 && <p className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[13px] text-[var(--slate)]">Aucune distribution. Planifie une dépose dans un lieu « Distribution Linkee », ou crée-en une avec le bouton en haut.</p>}
+          <div className="flex gap-2 overflow-x-auto pb-2">
             {shown.map((e) => {
               const p = placeById.get(e.beneficiaryId);
               const on = e.key === selKey;
               return (
-                <button key={e.key} type="button" onClick={() => open(e)} className={`mb-1 flex w-full items-center gap-3 rounded-xl border-[1.5px] px-3 py-2.5 text-left ${on ? "border-[#2a78d6] bg-[var(--track)]" : "border-transparent hover:bg-[var(--input-bg)]"}`}>
+                <button key={e.key} type="button" onClick={() => open(e)} className={`flex w-[236px] flex-none items-center gap-2.5 rounded-xl border-[1.5px] bg-[var(--card)] px-2.5 py-2 text-left ${on ? "border-[#2a78d6] shadow-[var(--shadow)]" : "border-[var(--border)] hover:border-[#2a78d6]"}`}>
                   <span className="flex h-10 w-10 flex-none flex-col items-center justify-center rounded-[10px] bg-[#2a78d6] text-white">
                     <span className="font-display text-[15px] leading-none font-black">{new Date(e.date + "T00:00:00").getDate()}</span>
                     <span className="text-[9px] font-semibold uppercase">{new Date(e.date + "T00:00:00").toLocaleDateString("fr-FR", { month: "short" })}</span>
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13.5px] font-semibold text-[var(--navy)]">{p?.name ?? "Lieu"}</span>
-                    <span className="block text-[11.5px] text-[var(--slate)]">
-                      {fmtShort(e.date)}
-                      {e.registered != null ? ` · ${e.registered} inscrits` : ""}
-                      {e.baskets != null ? ` · ${e.baskets} paniers` : ""}
+                    <span className="block truncate text-[13px] font-semibold text-[var(--navy)]">{p?.name ?? "Lieu"}</span>
+                    <span className="mt-0.5 inline-block rounded-[40px] px-2 py-px text-[10.5px] font-bold" style={{ background: STATUS_UI[stOf(e)].bg, color: STATUS_UI[stOf(e)].fg }}>
+                      {stOf(e) === "retard" ? "En retard" : STATUS_UI[stOf(e)].label}
                     </span>
-                  </span>
-                  <span className="flex-none rounded-[40px] px-2 py-0.5 text-[10.5px] font-bold" style={{ background: STATUS_UI[stOf(e)].bg, color: STATUS_UI[stOf(e)].fg }}>
-                    {stOf(e) === "retard" ? "En retard" : STATUS_UI[stOf(e)].label}
+                    {(e.registered != null || e.baskets != null) && (
+                      <span className="ml-1.5 text-[11px] text-[var(--slate)]">
+                        {e.registered != null ? `${e.registered} insc.` : ""}
+                        {e.baskets != null ? ` · ${e.baskets} paniers` : ""}
+                      </span>
+                    )}
                   </span>
                 </button>
               );
@@ -612,6 +633,32 @@ export default function DistributionsPage() {
                 ))}
               </div>
 
+              {/* volunteers */}
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3.5" style={{ borderTop: "4px solid var(--client-req)" }}>
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-[var(--client-req)] text-white">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                      <circle cx="9" cy="8" r="3" />
+                      <path d="M3 19 C3.5 15.5 5.8 13.6 9 13.6 C12.2 13.6 14.5 15.5 15 19" />
+                      <path d="M16 5.5 A3 3 0 0 1 16 11 M17.5 13.8 C19.6 14.3 20.7 16 21 19" />
+                    </svg>
+                  </span>
+                  <div>
+                    <div className="text-[14.5px] font-semibold text-[var(--navy)]">Équipe bénévole</div>
+                    <div className="text-[11.5px] text-[var(--slate)]">Présents à la distribution</div>
+                  </div>
+                </div>
+                <div className="w-[190px]">
+                  <label className={labelCls}>Bénévoles présents (total)</label>
+                  <input type="number" min={0} className={`${fieldCls} font-display !text-[20px] font-black`} value={draft.volunteers} onChange={(e) => edit((d) => ({ ...d, volunteers: e.target.value }))} placeholder="0" />
+                </div>
+                <div className="w-[190px]">
+                  <label className={labelCls}>dont coordinateurs</label>
+                  <input type="number" min={0} className={`${fieldCls} font-display !text-[20px] font-black`} value={draft.coordinators} onChange={(e) => edit((d) => ({ ...d, coordinators: e.target.value }))} placeholder="0" />
+                </div>
+                {num(draft.coordinators) > num(draft.volunteers) && <span className="text-[12px] font-semibold text-[var(--critical)]">Les coordinateurs sont comptés dans le total : vérifie les chiffres.</span>}
+              </div>
+
               {/* photos: parcel and event are two separate spaces */}
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                 <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4" style={{ borderTop: "4px solid var(--cat-4)" }}>
@@ -650,19 +697,20 @@ export default function DistributionsPage() {
                   </h3>
                   <Link href="/distributions/village" className="text-[12px] font-semibold text-[#eb6834]">Ouvrir le Village associatif →</Link>
                 </div>
-                <p className="mb-3 text-[11.5px] text-[var(--slate)]">Coche celles qui sont intervenues. Chaque intervention apparaît aussi dans la fiche de l&apos;association.</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {assocs.filter((a) => !a.archived || draft.interventions.some((i) => i.associationId === a.id)).map((a) => {
-                    const on = draft.interventions.some((i) => i.associationId === a.id);
-                    return (
-                      <button key={a.id} type="button" onClick={() => edit((d) => ({ ...d, interventions: on ? d.interventions.filter((i) => i.associationId !== a.id) : [...d.interventions, { associationId: a.id, comment: "", photoPaths: [] }] }))} className={`rounded-[40px] border-[1.5px] px-3.5 py-1.5 text-[12.5px] font-semibold ${on ? "border-[#eb6834] bg-[#eb6834] text-white" : "border-[var(--border)] bg-[var(--card)] text-[var(--slate)] hover:border-[#eb6834]"}`}>
-                        {on ? "✓ " : "+ "}{a.name}
-                      </button>
-                    );
-                  })}
-                  {assocs.length === 0 && <span className="text-[12.5px] text-[var(--slate)]">Aucune association pour l&apos;instant — ajoute-les dans le Village associatif.</span>}
-                </div>
-                {draft.interventions.length > 0 && (
+                <p className="mb-3 text-[11.5px] text-[var(--slate)]">Choisis dans la liste celles qui sont intervenues. Chaque intervention apparaît aussi dans la fiche de l&apos;association.</p>
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    if (id) edit((d) => (d.interventions.some((i) => i.associationId === id) ? d : { ...d, interventions: [...d.interventions, { associationId: id, comment: "", photoPaths: [] }] }));
+                  }}
+                  className={`${fieldCls} max-w-[420px]`}
+                >
+                  <option value="">{assocs.filter((a) => !a.archived && !draft.interventions.some((i) => i.associationId === a.id)).length ? "Ajouter une association présente…" : assocs.length ? "Toutes les associations sont déjà ajoutées" : "Aucune association dans le Village associatif"}</option>
+                  {assocs.filter((a) => !a.archived && !draft.interventions.some((i) => i.associationId === a.id)).map((a) => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>                {draft.interventions.length > 0 && (
                   <div className="mt-4 flex flex-col gap-3">
                     {draft.interventions.map((iv) => {
                       const a = assocs.find((x) => x.id === iv.associationId);
@@ -721,6 +769,13 @@ export default function DistributionsPage() {
                               {c.type === "cat" ? (
                                 <select className={cellCls} value={l.category} onChange={(e) => setLine(i, "category", e.target.value)}>
                                   {Array.from(new Set([...CATS, l.category])).map((x) => (
+                                    <option key={x}>{x}</option>
+                                  ))}
+                                </select>
+                              ) : c.type === "opt" || c.type === "supplier" ? (
+                                <select className={cellCls} value={l[c.k]} onChange={(e) => setLine(i, c.k, e.target.value)}>
+                                  <option value="">—</option>
+                                  {Array.from(new Set([...(c.type === "supplier" ? [...suppliers, STOCK_SUPPLIER] : OPTIONS[c.k]), l[c.k]].filter(Boolean))).map((x) => (
                                     <option key={x}>{x}</option>
                                   ))}
                                 </select>
