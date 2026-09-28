@@ -269,6 +269,11 @@ export default function TodoPage() {
                 </select>
               </div>
             </div>
+            {!people.some((p) => p.role === "logisticien") && (
+              <p className="mb-3 rounded-xl bg-[var(--warn-bg)] px-3.5 py-2.5 text-[12px] font-semibold text-[var(--warn)]">
+                Aucun logisticien n&apos;est rattaché à {city?.name ?? "cette ville"}. Les missions se confient aux personnes de la ville affichée dans le menu : change de ville en haut à gauche, ou rattache un compte à cette ville dans Villes &amp; comptes.
+              </p>
+            )}
             <p className="mb-3 text-[11.5px] text-[var(--slate)]">La personne choisie reçoit une notification. Un logisticien retrouve la mission dans le cadre « Mes missions » de son écran.</p>
             {err && <div className="mb-3 rounded-xl bg-[var(--critical-bg)] px-3.5 py-2.5 text-[12.5px] font-semibold text-[var(--critical)]">{err}</div>}
             <div className="flex gap-2.5">

@@ -4,7 +4,8 @@ export type MissionStatus = "a_faire" | "en_cours" | "fait";
 export const STATUS_LABEL: Record<MissionStatus, string> = { a_faire: "À faire", en_cours: "En cours", fait: "Terminée" };
 
 export const IMPORTANCE_LABEL: Record<number, string> = { 1: "Faible", 2: "Modérée", 3: "Importante", 4: "Très importante", 5: "Critique" };
-export const IMPORTANCE_COLOR: Record<number, string> = { 1: "var(--muted)", 2: "var(--good)", 3: "var(--warn)", 4: "var(--cat-2)", 5: "var(--critical)" };
+// green (low) → red (critical)
+export const IMPORTANCE_COLOR: Record<number, string> = { 1: "var(--good)", 2: "#8fb912", 3: "var(--cat-4)", 4: "var(--cat-2)", 5: "var(--critical)" };
 
 /** Importance as five dots + "4/5". */
 export function ImportanceDots({ level, showLabel = false }: { level: number; showLabel?: boolean }) {
