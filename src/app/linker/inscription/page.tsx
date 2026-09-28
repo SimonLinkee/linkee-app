@@ -37,15 +37,20 @@ export default function LinkerInscriptionPage() {
         } catch { /* ignore */ }
         return setPhase("form");
       }
-      const { data: prof } = await supabase.from("profiles").select("role,full_name").eq("id", auth.user.id).maybeSingle();
-      if (prof?.role === "linker") { window.location.href = "/linker/accueil"; return; }
-      if (prof && prof.role !== "en_attente") { window.location.href = "/"; return; }
-      // signed in, role still en_attente: pre-fill from the draft saved before signUp (if any), then let them finish
+      const [prof, lk] = await Promise.all([
+        supabase.from("profiles").select("role,full_name").eq("id", auth.user.id).maybeSingle(),
+        supabase.from("linkers").select("id").eq("id", auth.user.id).maybeSingle(),
+      ]);
+      // only send them onward once BOTH the role and the Linker row are in place — checking role alone caused an
+      // accueil ⇄ inscription loop for an account stuck mid-signup (role set, linkers row missing)
+      if (prof.data?.role === "linker" && lk.data) { window.location.href = "/linker/accueil"; return; }
+      if (prof.data && prof.data.role !== "en_attente" && prof.data.role !== "linker") { window.location.href = "/"; return; }
+      // signed in, not finished yet (role still en_attente, or role is linker but the fiche is missing): let them (re)finish
       try {
         const raw = window.localStorage.getItem(DRAFT_KEY);
         if (raw) setD((x) => ({ ...x, ...JSON.parse(raw) }));
       } catch { /* ignore */ }
-      setD((x) => ({ ...x, name: x.name || prof?.full_name || "" }));
+      setD((x) => ({ ...x, name: x.name || prof.data?.full_name || "" }));
       setPhase("finish");
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -62,10 +67,11 @@ export default function LinkerInscriptionPage() {
     setBusy(true);
     const { data: auth } = await supabase.auth.getUser();
     if (!auth.user) { setBusy(false); return setErr("Session expirée, reconnecte-toi."); }
-    const upd = await supabase.from("profiles").update({ full_name: d.name.trim(), role: "linker", city_id: d.cityId }).eq("id", auth.user.id);
-    if (upd.error) { setBusy(false); return setErr("Inscription impossible : " + upd.error.message); }
-    const ins = await supabase.from("linkers").insert({ id: auth.user.id, city_id: d.cityId, character: d.character });
-    if (ins.error) { setBusy(false); return setErr("Fiche Linker non créée : " + ins.error.message + " (la migration 020 est-elle passée ?)"); }
+    // one transaction, all or nothing: sets the role + creates the Linker fiche together, so the account can
+    // never end up "half-registered" (which used to cause an accueil ⇄ inscription loop)
+    const { error } = await supabase.rpc("claim_linker", { p_city_id: d.cityId, p_character: d.character, p_full_name: d.name.trim() });
+    setBusy(false);
+    if (error) return setErr("Inscription impossible : " + error.message + " (les migrations 020 à 022 sont-elles passées ?)");
     try { window.localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
     router.replace("/linker/profil?bienvenue=1");
   }
