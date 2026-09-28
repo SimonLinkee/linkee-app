@@ -22,7 +22,7 @@ export type StatRow = {
   partners: Rel | Rel[] | null;
   collecte_items: { denree: string | null; kg: number | string }[] | null;
 };
-export const STAT_SELECT = "scheduled_date,kind,status,motif,partner_id,partners(name,category),collecte_items(denree,kg)";
+export const STAT_SELECT = "scheduled_date,kind,status,motif,partner_id,partners(name,category),collecte_items!collecte_id(denree,kg)";
 
 export type Summary = {
   volume: number;

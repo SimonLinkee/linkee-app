@@ -512,7 +512,7 @@ export default function JourneePage() {
         supabase.from("profiles").select("city_id,full_name,email").eq("id", uid).maybeSingle(),
         supabase
           .from("collectes")
-          .select("id,kind,label,comment,status,motif,photos_count,photo_paths,scheduled_time,partners(name,category,address,fiche,photo_url),beneficiaries(name,category,address,fiche),collecte_items(denree,name,kg,source_collecte_id)")
+          .select("id,kind,label,comment,status,motif,photos_count,photo_paths,scheduled_time,partners(name,category,address,fiche,photo_url),beneficiaries(name,category,address,fiche),collecte_items!collecte_id(denree,name,kg,source_collecte_id)")
           .eq("scheduled_date", iso)
           .order("sort_order"),
         supabase.from("checklist_templates").select("items").eq("weekday", dbWeekday(now)).maybeSingle(),

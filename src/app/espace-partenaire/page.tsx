@@ -409,7 +409,7 @@ export default function EspacePartenairePage() {
       if (partners.length) {
         const ids = partners.map((p) => p.id);
         const [col, rq, dc] = await Promise.all([
-          supabase.from("collectes").select("scheduled_date,scheduled_time,kind,status,motif,partner_id,partners(name,category),collecte_items(denree,kg)").in("partner_id", ids).order("scheduled_date").limit(5000),
+          supabase.from("collectes").select("scheduled_date,scheduled_time,kind,status,motif,partner_id,partners(name,category),collecte_items!collecte_id(denree,kg)").in("partner_id", ids).order("scheduled_date").limit(5000),
           supabase.from("exceptional_requests").select("id,partner_id,wished_date,wished_time,denree,volume_kg,comment,status").in("partner_id", ids).order("created_at"),
           supabase.from("documents").select("id,partner_id,name,storage_path,size_bytes,created_at").in("partner_id", ids).order("created_at", { ascending: false }),
         ]);
