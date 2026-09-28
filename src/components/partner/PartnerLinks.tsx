@@ -77,7 +77,7 @@ export default function PartnerLinks({ partnerId }: { partnerId: string }) {
     if (!okAll) return setMsg("Corrige les conditions ci-dessous avant d'envoyer.");
     if (!info!.address) return setMsg("Ajoute d'abord ton adresse dans « Ma fiche ».");
     setBusy(true);
-    const match = await matchNearestOpenBeneficiary(supabase, info!.city_id, info!.address, date);
+    const match = await matchNearestOpenBeneficiary(supabase, info!.city_id, info!.address, date, from, to);
     if (!match) {
       setBusy(false);
       return setMsg("Aucune association disponible sur ce créneau. Essaie une autre date ou un autre horaire.");

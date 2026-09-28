@@ -88,7 +88,7 @@ export default function LinksBenevolesAdminPage() {
       chosen.map(async (p, i) => {
         const car = p.allow_car && (i === 2 || !p.allow_backpack);
         const kg = car ? [32, 55, 78][i % 3] : [6, 12, 21][i % 3];
-        const match = p.address ? await matchNearestOpenBeneficiary(supabase, cityId, p.address, iso) : null;
+        const match = p.address ? await matchNearestOpenBeneficiary(supabase, cityId, p.address, iso, "17:30", "19:00") : null;
         return {
           city_id: cityId, partner_id: p.id, beneficiary_id: match?.id ?? null,
           status: "proposee", kg_estime: kg, is_fresh: i % 2 === 0, mode_required: car ? "car" : "walk",

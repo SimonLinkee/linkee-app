@@ -34,6 +34,11 @@ type AccessFlags = Record<AccessKey, boolean>;
 type Contact = { type: string; nom: string; tel: string; mail: string };
 type HistoryEntry = { date: string; denree: string; kg: number; status: "ok" | "annulee" };
 type DenreeFlags = Record<string, boolean>;
+type Hours = { open: string; close: string } | null;
+const DAYS = [
+  { k: "lun", l: "Lundi" }, { k: "mar", l: "Mardi" }, { k: "mer", l: "Mercredi" }, { k: "jeu", l: "Jeudi" },
+  { k: "ven", l: "Vendredi" }, { k: "sam", l: "Samedi" }, { k: "dim", l: "Dimanche" },
+];
 
 type PartnerEntity = {
   id: string;
@@ -75,6 +80,7 @@ type BeneficiaireEntity = {
   access: AccessFlags;
   accessNote: string;
   horaires: string;
+  hours: Record<string, Hours>;
   volumesAcceptes: string;
   equipement: { cuisine: boolean; frigo: boolean; chambreFroide: boolean };
   stockageM2: number;
@@ -116,7 +122,7 @@ const BLANK_PARTNER: Omit<PartnerEntity, "id"> = {
 };
 const BLANK_BENEFICIAIRE: Omit<BeneficiaireEntity, "id"> = {
   kind: "beneficiaire", name: "Nouveau bénéficiaire", cat: "Association partenaire", pinned: false, active: true, address: "", tel: "", mail: "",
-  access: NO_ACCESS, accessNote: "", horaires: "", volumesAcceptes: "", equipement: { cuisine: false, frigo: false, chambreFroide: false },
+  access: NO_ACCESS, accessNote: "", horaires: "", hours: {}, volumesAcceptes: "", equipement: { cuisine: false, frigo: false, chambreFroide: false },
   stockageM2: 0, denrees: NO_DENREES, contacts: [],
 };
 
@@ -468,7 +474,7 @@ export default function PartenairesPage() {
       {tab === "beneficiaire" && !loading && (
         <BeneficiaryMap
           key={cityId ?? "none"}
-          items={beneficiaires.map((b) => ({ id: b.id, name: b.name, cat: b.cat, address: b.address, active: b.active, pinned: b.pinned, horaires: b.horaires, denrees: b.denrees, equipement: b.equipement }))}
+          items={beneficiaires.map((b) => ({ id: b.id, name: b.name, cat: b.cat, address: b.address, active: b.active, pinned: b.pinned, horaires: b.horaires, hours: b.hours, denrees: b.denrees, equipement: b.equipement }))}
           selectedId={currentId}
           onSelect={(id) => {
             setCurrentId(id);
@@ -774,9 +780,32 @@ export default function PartenairesPage() {
 
               {current.kind === "beneficiaire" && (
                 <AccordionSection title="Accueil & équipements" sectionKey="accueil" open={openSections.has("accueil")} onToggle={toggleSection}>
+                  <div className="mb-3.5">
+                    <label className={labelCls}>
+                      Horaires d&apos;ouverture <span className="font-normal text-[var(--muted)]">(utilisés pour trouver l&apos;association la plus proche ouverte, dans Links Bénévoles)</span>
+                    </label>
+                    <div className="flex flex-col overflow-hidden rounded-[14px] border border-[var(--border)]">
+                      {DAYS.map((d) => {
+                        const h = current.hours?.[d.k] ?? null;
+                        const setH = (v: Hours) =>
+                          updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, hours: { ...(entity.hours ?? {}), [d.k]: v } } : entity));
+                        return (
+                          <div key={d.k} className="grid grid-cols-[70px_auto_1fr_1fr] items-center gap-2.5 bg-[var(--card)] px-3 py-2 border-b border-[var(--border)] last:border-b-0 sm:grid-cols-[90px_auto_1fr_1fr]">
+                            <span className="text-[12.5px] font-bold text-[var(--navy)]">{d.l}</span>
+                            <label className="flex items-center gap-1.5 text-[11.5px] whitespace-nowrap text-[var(--slate)]">
+                              <input type="checkbox" checked={!h} onChange={(e) => setH(e.target.checked ? null : { open: "09:00", close: "18:00" })} className="h-[15px] w-[15px] accent-[var(--critical)]" />
+                              Fermé
+                            </label>
+                            <input type="time" disabled={!h} className={`${inputCls} !px-2 !py-1.5 !text-xs disabled:opacity-35`} value={h?.open ?? "09:00"} onChange={(e) => h && setH({ ...h, open: e.target.value })} />
+                            <input type="time" disabled={!h} className={`${inputCls} !px-2 !py-1.5 !text-xs disabled:opacity-35`} value={h?.close ?? "18:00"} onChange={(e) => h && setH({ ...h, close: e.target.value })} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className={labelCls}>Horaires d&apos;ouverture</label>
+                    <div className="sm:col-span-2">
+                      <label className={labelCls}>Note horaires (facultatif) <span className="font-normal text-[var(--muted)]">— fermetures exceptionnelles, précisions…</span></label>
                       <input className={inputCls} value={current.horaires} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, horaires: e.target.value } : entity))} />
                     </div>
                     <div>

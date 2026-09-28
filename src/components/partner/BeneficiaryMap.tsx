@@ -10,6 +10,7 @@ const PointsMap = dynamic(() => import("@/components/PointsMap"), {
   loading: () => <div className="flex h-[380px] items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--input-bg)] text-[13px] text-[var(--slate)]">Chargement de la carte…</div>,
 });
 
+export type DayHours = { open: string; close: string } | null;
 export type MapBeneficiary = {
   id: string;
   name: string;
@@ -18,6 +19,7 @@ export type MapBeneficiary = {
   active: boolean;
   pinned?: boolean;
   horaires: string;
+  hours?: Record<string, DayHours>;
   denrees: Record<string, boolean>;
   equipement: { cuisine: boolean; frigo: boolean; chambreFroide: boolean };
 };
@@ -55,6 +57,21 @@ export function openDays(text: string): Set<number> | null {
     } else out.add(cur.d);
   }
   return out;
+}
+
+/** Days open read from structured hours (jours×créneau), or null when nothing structured is set yet. */
+export function openDaysFromHours(hours: Record<string, DayHours> | undefined): Set<number> | null {
+  if (!hours || Object.keys(hours).length === 0) return null;
+  const out = new Set<number>();
+  DAYS.forEach((k, i) => {
+    if (hours[k]) out.add(i);
+  });
+  return out;
+}
+
+/** Structured hours take priority when set; falls back to the free-text "horaires" field otherwise. */
+export function resolveOpenDays(b: { horaires: string; hours?: Record<string, DayHours> }): Set<number> | null {
+  return openDaysFromHours(b.hours) ?? openDays(b.horaires);
 }
 
 const chip = (on: boolean) =>
@@ -104,7 +121,7 @@ export default function BeneficiaryMap({ items, selectedId, onSelect }: { items:
     for (const d of denrees) if (!b.denrees[d]) return false;
     for (const k of equip) if (!b.equipement[k as "cuisine"]) return false;
     if (days.size) {
-      const od = openDays(b.horaires);
+      const od = resolveOpenDays(b);
       if (!od) return false;
       for (const d of days) if (!od.has(d)) return false;
     }
@@ -117,7 +134,7 @@ export default function BeneficiaryMap({ items, selectedId, onSelect }: { items:
     const g = coords[b.id + "|" + b.address]!;
     return { id: b.id, lat: g.lat, lng: g.lng, label: b.name, sub: [b.cat, b.horaires].filter(Boolean).join(" · "), color: !b.active ? "#8a93a8" : b.pinned ? "#2a78d6" : "#0a1a3f" };
   });
-  const unreadable = days.size ? items.filter((b) => (!onlyActive || b.active) && !openDays(b.horaires)).length : 0;
+  const unreadable = days.size ? items.filter((b) => (!onlyActive || b.active) && !resolveOpenDays(b)).length : 0;
   const nFilters = days.size + denrees.size + equip.size + (cat ? 1 : 0);
 
   return (

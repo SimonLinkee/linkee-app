@@ -4,6 +4,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useLinker } from "@/components/linker/LinkerContext";
 import { MAX_KG, typology, type Mode } from "@/lib/linker/gamification";
+import AddressSearch, { type AddressHit } from "@/components/AddressSearch";
 
 const DAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 const SLOTS = [["Matin", "8–12h"], ["Midi", "12–17h"], ["Soir", "17–20h"]];
@@ -14,15 +15,18 @@ export default function LinkerProfilPage() {
   const { ready, linker, availability, patchLinker } = useLinker();
   const [bienvenue, setBienvenue] = useState(false);
   const [avail, setAvail] = useState<Set<string>>(new Set());
+  const [busySlots, setBusySlots] = useState<Set<string>>(new Set());
   const [addr, setAddr] = useState("");
+  const [addrVerified, setAddrVerified] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState("");
   const addrTimer = useRef<number | null>(null);
 
   useEffect(() => {
     setBienvenue(new URLSearchParams(window.location.search).get("bienvenue") === "1");
   }, []);
   useEffect(() => {
-    if (ready) { setAvail(availability); setAddr(linker?.address_ref ?? ""); }
+    if (ready) { setAvail(availability); setAddr(linker?.address_ref ?? ""); setAddrVerified(!!linker?.address_ref); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
@@ -30,15 +34,25 @@ export default function LinkerProfilPage() {
 
   const walk = linker.mode === "walk";
   const ty = typology(linker.mode, linker.radius_km);
-  const flash = () => { setSaved(true); window.setTimeout(() => setSaved(false), 1400); };
+  const flash = () => { setSaved(true); setErr(""); window.setTimeout(() => setSaved(false), 1400); };
 
   async function toggleSlot(day: number, slot: number) {
     const key = `${day}-${slot}`;
+    if (busySlots.has(key)) return; // évite un double-clic pendant qu'une requête est en cours (source de l'ancien bug)
     const supabase = createClient();
-    const on = avail.has(key);
-    setAvail((prev) => { const n = new Set(prev); on ? n.delete(key) : n.add(key); return n; });
-    if (on) await supabase.from("linker_availability").delete().eq("linker_id", linker!.id).eq("weekday", day).eq("slot", slot);
-    else await supabase.from("linker_availability").insert({ linker_id: linker!.id, weekday: day, slot });
+    const turningOn = !avail.has(key);
+    setBusySlots((prev) => new Set(prev).add(key));
+    setAvail((prev) => { const n = new Set(prev); turningOn ? n.add(key) : n.delete(key); return n; });
+    const { error } = turningOn
+      ? await supabase.from("linker_availability").upsert({ linker_id: linker!.id, weekday: day, slot })
+      : await supabase.from("linker_availability").delete().eq("linker_id", linker!.id).eq("weekday", day).eq("slot", slot);
+    setBusySlots((prev) => { const n = new Set(prev); n.delete(key); return n; });
+    if (error) {
+      // échec réel (RLS, réseau…) : on annule le changement optimiste au lieu de laisser croire que c'est enregistré
+      setAvail((prev) => { const n = new Set(prev); turningOn ? n.delete(key) : n.add(key); return n; });
+      setErr("Créneau non enregistré : " + error.message);
+      return;
+    }
     flash();
   }
   async function setMode(m: Mode) {
@@ -54,11 +68,19 @@ export default function LinkerProfilPage() {
   }
   function onAddr(v: string) {
     setAddr(v);
+    setAddrVerified(false);
     if (addrTimer.current) window.clearTimeout(addrTimer.current);
     addrTimer.current = window.setTimeout(async () => {
       await patchLinker({ address_ref: v });
       flash();
     }, 700);
+  }
+  async function onAddrPick(hit: AddressHit) {
+    if (addrTimer.current) window.clearTimeout(addrTimer.current);
+    setAddr(hit.label);
+    setAddrVerified(true);
+    await patchLinker({ address_ref: hit.label });
+    flash();
   }
 
   return (
@@ -66,6 +88,7 @@ export default function LinkerProfilPage() {
       <h1 className="font-display text-[26px] leading-none font-black text-[var(--navy)]">Ton profil de Linker</h1>
       {bienvenue && <div className="rounded-[16px] bg-[var(--good-bg)] px-3.5 py-2.5 text-[13px] font-bold text-[var(--good)]">🎉 Bienvenue chez les Linkers ! Configure ton profil pour recevoir des Links compatibles.</div>}
       <div className={`text-[12px] font-bold text-[var(--good)] transition-opacity ${saved ? "opacity-100" : "opacity-0"}`}>Enregistré ✓</div>
+      {err && <div className="rounded-[14px] bg-[var(--critical-bg)] px-3.5 py-2.5 text-[12.5px] font-bold text-[var(--critical)]">{err}</div>}
 
       <div className="flex items-center gap-3 rounded-[18px] p-3.5" style={{ background: "linear-gradient(120deg,#fff3c4,#ffe0b0)" }}>
         <span className="text-[34px]">{ty.e}</span>
@@ -118,7 +141,8 @@ export default function LinkerProfilPage() {
       </div>
 
       <label className={labelCls}>Adresse de référence <span className="font-semibold text-[var(--muted)]">(si la géoloc n&apos;est pas disponible)</span></label>
-      <input className={fieldCls} value={addr} onChange={(e) => onAddr(e.target.value)} placeholder="14 rue de la République, Lyon" />
+      <AddressSearch className={fieldCls} value={addr} onChange={onAddr} onPick={onAddrPick} verified={addrVerified} placeholder="14 rue de la République, Lyon" />
+      <p className="-mt-1 text-[11px] font-semibold text-[var(--muted)]">Choisis une suggestion dans la liste pour être sûr que l&apos;adresse est bien reconnue.</p>
     </div>
   );
 }
