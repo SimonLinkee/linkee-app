@@ -10,8 +10,9 @@ import { computeOutfit, stageOf, type Mode, type StyleKey } from "@/lib/linker/g
 import { matchNearestOpenBeneficiary } from "@/lib/linker/matching";
 
 const ORANGE = "#eb6834";
-type LinkerRow = { id: string; character: CharKey; level: number; mode: Mode; radius_km: number; cold_ok: boolean; kg_saved: number; links_done: number; chosen: Record<number, StyleKey>; equipped: Record<number, number | "none">; profiles: { full_name: string | null; email: string | null } | { full_name: string | null; email: string | null }[] | null };
-type LinkRow = { id: string; status: string; kg_estime: number; is_fresh: boolean; window_date: string; window_from: string; window_to: string; is_demo: boolean; partners: { name: string } | { name: string }[] | null; beneficiaries: { name: string } | { name: string }[] | null; linkers: { character: CharKey; level: number } | { character: CharKey; level: number }[] | null };
+type LinkerRow = { id: string; character: CharKey; level: number; mode: Mode; radius_km: number; cold_ok: boolean; kg_saved: number; links_done: number; chosen: Record<number, StyleKey>; equipped: Record<number, number | "none">; profiles: { full_name: string | null; email: string | null; phone: string | null } | { full_name: string | null; email: string | null; phone: string | null }[] | null };
+type LinkedProfile = { full_name: string | null; phone: string | null };
+type LinkRow = { id: string; status: string; kg_estime: number; is_fresh: boolean; window_date: string; window_from: string; window_to: string; is_demo: boolean; partners: { name: string } | { name: string }[] | null; beneficiaries: { name: string } | { name: string }[] | null; linkers: { character: CharKey; level: number; profiles: LinkedProfile | LinkedProfile[] | null } | { character: CharKey; level: number; profiles: LinkedProfile | LinkedProfile[] | null }[] | null };
 type Partner = { id: string; name: string; address: string | null; allow_backpack: boolean; allow_car: boolean };
 
 const STATUS_UI: Record<string, { l: string; bg: string; fg: string }> = {
@@ -48,8 +49,8 @@ export default function LinksBenevolesAdminPage() {
     if (!cityId) return setLoading(false);
     setLoading(true);
     const [lk, lnk, pt] = await Promise.all([
-      supabase.from("linkers").select("id,character,level,mode,radius_km,cold_ok,kg_saved,links_done,chosen,equipped,profiles(full_name,email)").eq("city_id", cityId).order("level", { ascending: false }),
-      supabase.from("links").select("id,status,kg_estime,is_fresh,window_date,window_from,window_to,is_demo,partners(name),beneficiaries(name),linkers(character,level)").eq("city_id", cityId).order("created_at", { ascending: false }).limit(100),
+      supabase.from("linkers").select("id,character,level,mode,radius_km,cold_ok,kg_saved,links_done,chosen,equipped,profiles(full_name,email,phone)").eq("city_id", cityId).order("level", { ascending: false }),
+      supabase.from("links").select("id,status,kg_estime,is_fresh,window_date,window_from,window_to,is_demo,partners(name),beneficiaries(name),linkers(character,level,profiles(full_name,phone))").eq("city_id", cityId).order("created_at", { ascending: false }).limit(100),
       supabase.from("partners").select("id,name,address,allow_backpack,allow_car").eq("city_id", cityId).eq("active", true).order("name"),
     ]);
     if (lk.error) setMsg(lk.error.message + " (les migrations 019, 020 et 021 sont-elles passées ?)");
@@ -175,6 +176,7 @@ export default function LinksBenevolesAdminPage() {
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13px] font-semibold text-[var(--navy)]">{p?.full_name || p?.email || "Linker"} · {CH[lk.character].n}</span>
                       <span className="block text-[11px] text-[var(--slate)]">Level {lk.level} · {lk.mode === "walk" ? "🚶 à pied/vélo" : "🚗 voiture"} · {lk.radius_km} km{lk.cold_ok ? " · 🧊" : ""}</span>
+                      {p?.phone && <a href={`tel:${p.phone}`} className="mt-0.5 inline-block text-[11px] font-bold text-[#2a78d6]">📞 {p.phone}</a>}
                     </span>
                     <span className="flex-none text-right text-[11.5px] font-bold text-[var(--good)]">{lk.links_done} livré{lk.links_done > 1 ? "s" : ""}</span>
                   </div>
@@ -196,6 +198,7 @@ export default function LinksBenevolesAdminPage() {
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[12.5px] font-semibold text-[var(--navy)]">{first(l.partners)?.name} → {first(l.beneficiaries)?.name ?? "—"}</span>
                       <span className="block text-[11px] text-[var(--slate)]">{fmtDay(l.window_date)} · {l.window_from.slice(0, 5)}–{l.window_to.slice(0, 5)} · {l.kg_estime} kg{l.is_fresh ? " · 🧊" : ""}{l.is_demo ? " · démo" : ""}</span>
+                      {linker && (() => { const lp = first(linker.profiles); return lp?.phone ? <a href={`tel:${lp.phone}`} className="mt-0.5 inline-block text-[11px] font-bold text-[#2a78d6]">📞 {lp.full_name || "Linker"} · {lp.phone}</a> : null; })()}
                     </span>
                     {linker && (
                       <span className="h-8 w-8 flex-none overflow-hidden" title={`${CH[linker.character].n} niveau ${linker.level}`}>

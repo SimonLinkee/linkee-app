@@ -8,12 +8,15 @@ import { CityProvider, useCity } from "@/components/admin/CityContext";
 /** Frame of the Superadmin's mobile app: slim header (home, city), one column, no side menu. */
 function Frame({ children }: { children: ReactNode }) {
   const path = usePathname();
-  const { ready, cities, city, isAll, select, canSwitch } = useCity();
+  const { ready, cities, city, isAll, select, canSwitch, role } = useCity();
   // the national view does not exist on mobile: pick a city
   useEffect(() => {
     if (ready && canSwitch && isAll && cities[0]) select(cities[0].id);
   }, [ready, canSwitch, isAll, cities, select]);
   const home = path === "/mobile";
+  // le menu à tuiles /mobile n'existe que pour le Superadmin — le Responsable d'antenne et le Resp. Distribution
+  // qui ouvrent une page sous /mobile (ex. /mobile/links) reviennent plutôt à /version, leur propre accueil mobile.
+  const homeHref = role === "admin_principal" ? "/mobile" : "/version";
   return (
     <div className="mx-auto min-h-screen max-w-[560px] px-4 pt-3 pb-24">
       <header className="mb-4 flex items-center justify-between gap-2">
@@ -25,7 +28,7 @@ function Frame({ children }: { children: ReactNode }) {
             </svg>
           </div>
         ) : (
-          <Link href="/mobile" className="flex h-11 items-center gap-1.5 rounded-full bg-[var(--navy-deep)] px-4 text-[14px] font-bold text-[var(--panel-fg)]">
+          <Link href={homeHref} className="flex h-11 items-center gap-1.5 rounded-full bg-[var(--navy-deep)] px-4 text-[14px] font-bold text-[var(--panel-fg)]">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
               <path d="M15 5 L8 12 L15 19" />
             </svg>

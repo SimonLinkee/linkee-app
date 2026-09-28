@@ -7,7 +7,7 @@ import CharSvg from "@/components/linker/CharSvg";
 import { CH, FRUITS, LEGUMES, characterSVG, type CharKey } from "@/lib/linker/characters";
 
 type City = { id: string; name: string; color: string };
-type Draft = { email: string; password: string; name: string; cityId: string; character: CharKey };
+type Draft = { email: string; password: string; name: string; phone: string; cityId: string; character: CharKey };
 const DRAFT_KEY = "linkee.linker.signup_draft";
 const fieldCls = "h-[52px] w-full rounded-[16px] border-2 border-[var(--border)] bg-[var(--input-bg)] px-4 text-[15px] font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]";
 const labelCls = "mb-1.5 block text-[12.5px] font-bold text-[var(--navy)]";
@@ -17,7 +17,7 @@ export default function LinkerInscriptionPage() {
   const router = useRouter();
   const [phase, setPhase] = useState<"checking" | "form" | "sentEmail" | "finish">("checking");
   const [cities, setCities] = useState<City[]>([]);
-  const [d, setD] = useState<Draft>({ email: "", password: "", name: "", cityId: "", character: "fraise" });
+  const [d, setD] = useState<Draft>({ email: "", password: "", name: "", phone: "", cityId: "", character: "fraise" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [sentTo, setSentTo] = useState("");
@@ -38,7 +38,7 @@ export default function LinkerInscriptionPage() {
         return setPhase("form");
       }
       const [prof, lk] = await Promise.all([
-        supabase.from("profiles").select("role,full_name").eq("id", auth.user.id).maybeSingle(),
+        supabase.from("profiles").select("role,full_name,phone").eq("id", auth.user.id).maybeSingle(),
         supabase.from("linkers").select("id").eq("id", auth.user.id).maybeSingle(),
       ]);
       // only send them onward once BOTH the role and the Linker row are in place — checking role alone caused an
@@ -50,28 +50,29 @@ export default function LinkerInscriptionPage() {
         const raw = window.localStorage.getItem(DRAFT_KEY);
         if (raw) setD((x) => ({ ...x, ...JSON.parse(raw) }));
       } catch { /* ignore */ }
-      setD((x) => ({ ...x, name: x.name || prof.data?.full_name || "" }));
+      setD((x) => ({ ...x, name: x.name || prof.data?.full_name || "", phone: x.phone || prof.data?.phone || "" }));
       setPhase("finish");
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function saveDraft(next: Draft) {
-    try { window.localStorage.setItem(DRAFT_KEY, JSON.stringify({ name: next.name, cityId: next.cityId, character: next.character })); } catch { /* ignore */ }
+    try { window.localStorage.setItem(DRAFT_KEY, JSON.stringify({ name: next.name, phone: next.phone, cityId: next.cityId, character: next.character })); } catch { /* ignore */ }
   }
 
   async function finishSignup() {
     setErr("");
     if (!d.name.trim()) return setErr("Indique ton prénom.");
+    if (!d.phone.trim()) return setErr("Indique ton numéro de téléphone (utile si l'équipe Linkee a besoin de te joindre).");
     if (!d.cityId) return setErr("Choisis ta ville.");
     setBusy(true);
     const { data: auth } = await supabase.auth.getUser();
     if (!auth.user) { setBusy(false); return setErr("Session expirée, reconnecte-toi."); }
     // one transaction, all or nothing: sets the role + creates the Linker fiche together, so the account can
     // never end up "half-registered" (which used to cause an accueil ⇄ inscription loop)
-    const { error } = await supabase.rpc("claim_linker", { p_city_id: d.cityId, p_character: d.character, p_full_name: d.name.trim() });
+    const { error } = await supabase.rpc("claim_linker", { p_city_id: d.cityId, p_character: d.character, p_full_name: d.name.trim(), p_phone: d.phone.trim() });
     setBusy(false);
-    if (error) return setErr("Inscription impossible : " + error.message + " (les migrations 020 à 022 sont-elles passées ?)");
+    if (error) return setErr("Inscription impossible : " + error.message + " (les migrations 020 à 023 sont-elles passées ?)");
     try { window.localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
     router.replace("/linker/profil?bienvenue=1");
   }
@@ -155,6 +156,8 @@ export default function LinkerInscriptionPage() {
         )}
         <label className={labelCls + (showAuthFields ? "" : " mt-4")}>Ton prénom</label>
         <input className={fieldCls} value={d.name} onChange={(e) => setD({ ...d, name: e.target.value })} placeholder="Léa" />
+        <label className={labelCls}>Ton téléphone <span className="font-semibold text-[var(--muted)]">(pour qu&apos;on puisse te joindre si besoin)</span></label>
+        <input type="tel" className={fieldCls} value={d.phone} onChange={(e) => setD({ ...d, phone: e.target.value })} placeholder="06 12 34 56 78" />
         <label className={labelCls}>Ta ville</label>
         <select className={fieldCls} value={d.cityId} onChange={(e) => setD({ ...d, cityId: e.target.value })}>
           {cities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}

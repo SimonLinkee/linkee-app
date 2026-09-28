@@ -273,6 +273,15 @@ function Page() {
         </span>
       </header>
 
+      <Link href="/mobile/links" className="mb-4 flex items-center gap-3 rounded-[18px] px-4 py-3 text-white shadow-[var(--shadow)]" style={{ background: "#eb6834" }}>
+        <span className="text-[22px]">🔗</span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-display text-[15px] font-extrabold">Links Bénévoles</span>
+          <span className="block text-[11.5px] opacity-90">Demandés, en cours, livrés — et le téléphone du Linker</span>
+        </span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 flex-none opacity-80"><path d="M9 5 L16 12 L9 19" /></svg>
+      </Link>
+
       {msg && (
         <div className="mb-3 flex items-start justify-between gap-3 rounded-xl bg-[var(--critical-bg)] px-3.5 py-2.5 text-[13px] font-semibold text-[var(--critical)]">
           <span>{msg}</span>

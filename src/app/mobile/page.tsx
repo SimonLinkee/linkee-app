@@ -37,6 +37,14 @@ const BUTTONS = [
     fg: "#2b1c00",
     icon: <><rect x="4" y="3.5" width="16" height="17" rx="1.5" /><path d="M4 9.5 H20 M4 14.5 H20" /></>,
   },
+  {
+    href: "/mobile/links",
+    title: "Links Bénévoles",
+    sub: "Demandés, en cours, livrés — et le téléphone du Linker",
+    bg: "#eb6834",
+    fg: "#ffffff",
+    icon: <><path d="M12 21 C 8 16.5, 5 13, 5 9.5 A7 7 0 0 1 19 9.5 C 19 13, 16 16.5, 12 21 Z" /><circle cx="12" cy="9.5" r="2.3" /></>,
+  },
 ];
 
 export default function MobileHome() {
