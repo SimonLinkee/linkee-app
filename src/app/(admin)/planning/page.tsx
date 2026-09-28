@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { geocode, toKm, type LatLng } from "@/lib/geocode";
 import { signedUrls } from "@/lib/photos";
 import { useCity } from "@/components/admin/CityContext";
+import { PassageBadges, type Passage } from "@/components/PassageIcons";
 import dynamic from "next/dynamic";
 import type { MapPoint } from "@/components/RouteMap";
 
@@ -31,12 +32,13 @@ type Stop = {
   beneficiaryId: string | null;
   label: string | null;
   photoPaths: string[];
+  passage?: Passage;
 };
 type StopC = Stop & { coords: Coords };
 type EnrichedStop = StopC & { scheduledTime: string | null; travelFromPrev: number; travelKmFromPrev: number; arrivalMin?: number };
 type ChecklistItem = { id: string; label: string };
-type Place = { key: string; kind: "partner" | "dropoff" | "stock"; name: string; cat: string; address: string; partnerId: string | null; beneficiaryId: string | null };
-type DbRel = { name: string; category: string | null; address: string | null };
+type Place = { key: string; kind: "partner" | "dropoff" | "stock"; name: string; cat: string; address: string; partnerId: string | null; beneficiaryId: string | null; passage?: Passage };
+type DbRel = { name: string; category: string | null; address: string | null; passage?: Passage | null };
 type DbCollecte = {
   id: string;
   kind: Kind;
@@ -126,6 +128,7 @@ function rowToStop(r: DbCollecte, depotAddress: string): Stop {
     beneficiaryId: r.beneficiary_id,
     label: r.label,
     photoPaths: r.photo_paths ?? [],
+    passage: p?.passage ?? undefined,
   };
 }
 
@@ -198,7 +201,7 @@ const KIND_BADGE_CLS: Record<string, string> = {
 };
 
 const SELECT_DAY =
-  "id,kind,partner_id,beneficiary_id,label,comment,status,duration_min,photo_paths,scheduled_time,partners(name,category,address),beneficiaries(name,category,address)";
+  "id,kind,partner_id,beneficiary_id,label,comment,status,duration_min,photo_paths,scheduled_time,partners(name,category,address,passage:fiche->passage),beneficiaries(name,category,address)";
 
 export default function PlanningPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -333,13 +336,13 @@ export default function PlanningPage() {
   useEffect(() => {
     (async () => {
       const [ps, bs, tpl] = await Promise.all([
-        supabase.from("partners").select("id,name,category,address").eq("city_id", cityId ?? "").eq("active", true).order("name"),
+        supabase.from("partners").select("id,name,category,address,passage:fiche->passage").eq("city_id", cityId ?? "").eq("active", true).order("name"),
         supabase.from("beneficiaries").select("id,name,category,address").eq("city_id", cityId ?? "").eq("active", true).order("name"),
         supabase.from("checklist_templates").select("weekday,items").eq("city_id", cityId ?? ""),
       ]);
       const list: Place[] = [
-        ...((ps.data ?? []) as { id: string; name: string; category: string | null; address: string | null }[]).map((p) => ({
-          key: "p:" + p.id, kind: "partner" as const, name: p.name, cat: p.category ?? "", address: p.address ?? "", partnerId: p.id, beneficiaryId: null,
+        ...((ps.data ?? []) as unknown as { id: string; name: string; category: string | null; address: string | null; passage: Passage | null }[]).map((p) => ({
+          key: "p:" + p.id, kind: "partner" as const, name: p.name, cat: p.category ?? "", address: p.address ?? "", partnerId: p.id, beneficiaryId: null, passage: p.passage ?? undefined,
         })),
         ...((bs.data ?? []) as { id: string; name: string; category: string | null; address: string | null }[]).map((b) => ({
           key: "b:" + b.id, kind: "dropoff" as const, name: b.name, cat: b.category ?? "", address: b.address ?? "", partnerId: null, beneficiaryId: b.id,
@@ -531,6 +534,7 @@ export default function PlanningPage() {
       comment: extra.comment || undefined, address: place.address, partnerId: place.partnerId, beneficiaryId: place.beneficiaryId,
       label: place.key === "depot" ? place.name : null,
       photoPaths: [],
+      passage: place.passage,
     };
     editStops((prev) => {
       const next = [...prev];
@@ -983,6 +987,7 @@ export default function PlanningPage() {
                     <span className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className={`truncate text-[13.5px] font-bold text-[var(--navy)] ${cancelled ? "line-through" : ""}`}>{s.name}</span>
+                        <PassageBadges passage={s.passage} size={24} />
                         {s.photoPaths.length > 0 && (
                           <button
                             type="button"

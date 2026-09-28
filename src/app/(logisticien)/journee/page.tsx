@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { signedUrls, uploadPrivatePhoto } from "@/lib/photos";
 import { geocode } from "@/lib/geocode";
 import NotificationBell from "@/components/NotificationBell";
+import { PASSAGE_ITEMS, PassageBadges, PassageIcon, type Passage } from "@/components/PassageIcons";
 import dynamic from "next/dynamic";
 import type { MapPoint } from "@/components/RouteMap";
 
@@ -51,6 +52,7 @@ type Stop = {
   allowedTypes?: string[];
   presetItems?: { id: string; name: string; category: string; colis: number; upc: number; grammage: number }[];
   planned?: { id: string; name: string; colis: number }[]; // stock outflow planned by the admin (pick-up stop)
+  passage?: Passage; // partner's "Checklist de passage" (key, isothermal boxes, containers rotation)
   result?: StopResult;
 };
 
@@ -87,6 +89,7 @@ function rowToStop(r: DbStop, all: DbStop[], depotAddress: string): Stop {
     address: rel?.address ?? (r.kind === "stock" ? depotAddress : ""),
     accessDetails: fiche.accessNote || undefined,
     planned: r.planned_items?.map((p) => ({ id: p.id, name: p.name, colis: p.colis })),
+    passage: ((one(r.partners)?.fiche ?? {}) as { passage?: Passage }).passage,
     sitePhoto: one(r.partners)?.photo_url || undefined,
     comment: r.comment || undefined,
     allowedTypes: kind === "dropoff" ? Object.entries(fiche.denrees ?? {}).filter(([, on]) => on).map(([k]) => k) : undefined,
@@ -486,10 +489,11 @@ function StopPanel({ stops, index, onDone, onUpload }: { stops: Stop[]; index: n
   );
 }
 
-function CheckRow({ label, sub, checked, onChange }: { label: string; sub?: string; checked: boolean; onChange: () => void }) {
+function CheckRow({ label, sub, checked, onChange, icon }: { label: string; sub?: string; checked: boolean; onChange: () => void; icon?: ReactNode }) {
   return (
     <label className="flex cursor-pointer items-center gap-[11px] rounded-xl border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-[13px] py-[11px]">
       <input type="checkbox" checked={checked} onChange={onChange} className="h-[19px] w-[19px] flex-none accent-[var(--good)]" />
+      {icon}
       <span className={`flex-1 text-[13px] font-semibold ${checked ? "text-[var(--slate)] line-through decoration-[var(--border)]" : "text-[var(--navy)]"}`}>
         {label}
         {sub && <small className="mt-px block text-[11px] font-medium text-[var(--slate)]">{sub}</small>}
@@ -520,7 +524,7 @@ export default function JourneePage() {
   const [depotAddr, setDepotAddr] = useState(DEFAULT_DEPOT_ADDRESS);
   const [vehicle, setVehicle] = useState<{ id: string; name: string; plate: string | null } | null>(null);
   const [openIdx, setOpenIdx] = useState<number | null>(null);
-  const [depChecked, setDepChecked] = useState<Set<number>>(new Set());
+  const [depChecked, setDepChecked] = useState<Set<string>>(new Set());
   const [mapOpen, setMapOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState<Set<number>>(new Set());
   const [startedAt, setStartedAt] = useState<string | null>(null); // "HH:MM" the day was started
@@ -535,7 +539,43 @@ export default function JourneePage() {
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const truckPhotoCount = truckPaths.filter(Boolean).length;
 
-  const depDone = depChecked.size === checklist.length;
+  // extra checklist points coming from the partners' "Checklist de passage" (key, isothermal boxes, containers rotation)
+  const passageChecks = stops
+    .filter((s) => s.status !== "annule" && s.passage)
+    .flatMap((s) =>
+      PASSAGE_ITEMS.filter((it) => s.passage![it.k]).map((it) => ({
+        id: `${s.id}:${it.k}`,
+        k: it.k,
+        label: it.checklist,
+        sub: it.k === "rotation" && s.passage!.rotationNote ? `${s.name} — ${s.passage!.rotationNote}` : s.name,
+      })),
+    );
+  const allChecks = [...checklist.map((c) => ({ id: c.id })), ...passageChecks.map((c) => ({ id: c.id }))];
+  const depDone = allChecks.every((c) => depChecked.has(c.id));
+  // ticked points are remembered for the day on this phone
+  const depKey = `linkee.dep.${isoDate(new Date())}`;
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(depKey) ?? "[]") as string[];
+      setDepChecked(new Set(saved));
+    } catch {
+      /* no storage */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  function toggleDep(id: string) {
+    setDepChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        window.localStorage.setItem(depKey, JSON.stringify(Array.from(next)));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
   const doneCount = stops.filter((s) => s.status !== "todo").length;
   const remaining = stops.length - doneCount;
   const breakIdx = stops.findIndex((s) => s.time >= "13:30");
@@ -651,7 +691,7 @@ export default function JourneePage() {
     if (!userId || !cityId) return showToast("Compte sans ville : contacte l'administrateur.");
     const { error } = await supabase
       .from("day_sessions")
-      .upsert({ city_id: cityId, logisticien_id: userId, day: iso, checklist_done: checklist.map((c) => c.id), started_at: new Date().toISOString(), closed_at: null }, { onConflict: "logisticien_id,day" });
+      .upsert({ city_id: cityId, logisticien_id: userId, day: iso, checklist_done: allChecks.map((c) => c.id), started_at: new Date().toISOString(), closed_at: null }, { onConflict: "logisticien_id,day" });
     if (error) return showToast("Démarrage impossible : " + error.message);
     setDayState("running");
     const n = new Date();
@@ -864,16 +904,42 @@ export default function JourneePage() {
 
           {loading && <div className="py-6 text-center text-[13px] text-[var(--slate)]">Chargement de ta journée…</div>}
 
-          {!loading && dayState === "idle" && checklist.length > 0 && (
+          {!loading && dayState === "idle" && allChecks.length > 0 && (
             <div className="mb-[14px] rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-[18px] shadow-[var(--shadow)]">
               <span className="mb-2 inline-block rounded-[40px] bg-[var(--good-bg)] px-2.5 py-1 text-[10.5px] font-bold tracking-[0.03em] text-[var(--good)] uppercase">À faire avant de commencer</span>
               <h3 className="mb-2 font-display text-[17px] font-extrabold">Checklist de départ</h3>
-              <div className="flex flex-col gap-2">
-                {checklist.map((item, idx) => (
-                  <CheckRow key={item.id} label={item.label} checked={depChecked.has(idx)} onChange={() => setDepChecked(toggle(depChecked, idx))} />
-                ))}
-              </div>
-              <div className="mt-2 text-center text-[11.5px] text-[var(--slate)]">{depDone ? "Checklist complète — prête à démarrer." : `${depChecked.size} / ${checklist.length} points validés.`}</div>
+              {checklist.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {checklist.map((item) => (
+                    <CheckRow key={item.id} label={item.label} checked={depChecked.has(item.id)} onChange={() => toggleDep(item.id)} />
+                  ))}
+                </div>
+              )}
+              {passageChecks.length > 0 && (
+                <>
+                  <div className="mt-3.5 mb-2 text-[12px] font-bold text-[var(--slate)]">Pour les partenaires d&apos;aujourd&apos;hui</div>
+                  <div className="flex flex-col gap-2">
+                    {passageChecks.map((item) => {
+                      const meta = PASSAGE_ITEMS.find((p) => p.k === item.k)!;
+                      return (
+                        <CheckRow
+                          key={item.id}
+                          label={item.label}
+                          sub={item.sub}
+                          checked={depChecked.has(item.id)}
+                          onChange={() => toggleDep(item.id)}
+                          icon={
+                            <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full" style={{ background: meta.bg, color: meta.fg }}>
+                              <PassageIcon k={item.k} size={16} />
+                            </span>
+                          }
+                        />
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+              <div className="mt-2 text-center text-[11.5px] text-[var(--slate)]">{depDone ? "Checklist complète — prête à démarrer." : `${allChecks.filter((c) => depChecked.has(c.id)).length} / ${allChecks.length} points validés.`}</div>
             </div>
           )}
 
@@ -976,7 +1042,10 @@ export default function JourneePage() {
                       <span className="min-w-0 flex-1">
                         <div className="mb-0.5 text-[9.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">{s.kind === "dropoff" ? "Dépose prévue à" : s.kind === "stock" ? "Prise prévue à" : "Collecte prévue à"}</div>
                         <div className="font-display text-[19px] leading-none font-black text-[var(--navy)]">{s.time || "—"}</div>
-                        <div className="mt-1 text-[15.5px] leading-tight font-bold text-[var(--navy)]">{s.name}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[15.5px] leading-tight font-bold text-[var(--navy)]">
+                          <span>{s.name}</span>
+                          <PassageBadges passage={s.passage} size={22} />
+                        </div>
                         <div className="text-[12px] text-[var(--slate)]">{s.cat}</div>
                         {!done && dayState === "running" && openIdx !== i && <div className="mt-1 text-[11.5px] font-bold text-[var(--turquoise)]">Touchez pour saisir cet arrêt</div>}
                       </span>

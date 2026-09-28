@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
+import { PASSAGE_ITEMS, PassageIcon, type Passage } from "@/components/PassageIcons";
 
 type AccessKey = "digicode" | "quai" | "camion" | "etage" | "horaire";
 type AccessFlags = Record<AccessKey, boolean>;
@@ -27,6 +28,7 @@ type PartnerEntity = {
   slotDisplay?: string;
   volumeRange?: string;
   partnerComment?: string;
+  passage?: Passage;
   logoUrl?: string | null;
   dureeCollecte?: number;
   history: HistoryEntry[];
@@ -605,6 +607,50 @@ export default function PartenairesPage() {
                         onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, dureeCollecte: +e.target.value || 10 } : entity))}
                       />
                     </div>
+                  </div>
+                </AccordionSection>
+              )}
+
+              {current.kind === "partner" && (
+                <AccordionSection title="Checklist de passage" sectionKey="passage" open={openSections.has("passage")} onToggle={toggleSection}>
+                  <p className="mb-3 text-[11.5px] text-[var(--slate)]">
+                    Ce qui est coché apparaît dans la checklist d&apos;Akram les jours où ce partenaire est au planning, et sous forme d&apos;icône après son nom dans le Planning.
+                  </p>
+                  <div className="flex flex-col">
+                    {PASSAGE_ITEMS.map((it) => {
+                      const on = !!current.passage?.[it.k];
+                      return (
+                        <div key={it.k} className="border-t border-[var(--border)] py-3 first:border-t-0">
+                          <div className="flex items-center gap-3">
+                            <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full" style={{ background: it.bg, color: it.fg }}>
+                              <PassageIcon k={it.k} size={18} />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-[13.5px] font-bold text-[var(--navy)]">{it.label}</span>
+                              <span className="block text-[11.5px] text-[var(--slate)]">{it.hint}</span>
+                            </span>
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={on}
+                              aria-label={it.label}
+                              onClick={() => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, passage: { ...entity.passage, [it.k]: !on } } : entity))}
+                              className={`relative h-[22px] w-[38px] flex-none rounded-full transition-colors ${on ? "bg-[var(--good)]" : "bg-[var(--border)]"}`}
+                            >
+                              <span className={`absolute top-[2px] h-[18px] w-[18px] rounded-full bg-white shadow transition-all ${on ? "left-[18px]" : "left-[2px]"}`} />
+                            </button>
+                          </div>
+                          {it.k === "rotation" && on && (
+                            <input
+                              className={`${inputCls} mt-2.5`}
+                              placeholder="Commentaire : ex. 3 bacs gris à rendre, en récupérer 3 propres au comptoir"
+                              value={current.passage?.rotationNote ?? ""}
+                              onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, passage: { ...entity.passage, rotationNote: e.target.value } } : entity))}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </AccordionSection>
               )}
