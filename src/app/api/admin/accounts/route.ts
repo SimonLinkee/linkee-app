@@ -59,6 +59,29 @@ export async function POST(request: Request) {
   return NextResponse.json({ id });
 }
 
+// Permanently delete an account (main admin only). Accounts with recorded work days must be deactivated instead,
+// so the working-time history of the dashboard stays intact.
+export async function DELETE(request: Request) {
+  const me = await requireMainAdmin();
+  if (!me) return NextResponse.json({ error: "Réservé à l'administrateur principal." }, { status: 403 });
+  const admin = adminClient();
+  if (!admin) return NextResponse.json({ error: "La clé serveur SUPABASE_SERVICE_ROLE_KEY n'est pas configurée sur Vercel." }, { status: 500 });
+  const body = (await request.json().catch(() => null)) as { id?: string } | null;
+  if (!body?.id) return NextResponse.json({ error: "Compte manquant." }, { status: 400 });
+  if (body.id === me.id) return NextResponse.json({ error: "Tu ne peux pas supprimer ton propre compte." }, { status: 400 });
+
+  const { count } = await admin.from("day_sessions").select("id", { count: "exact", head: true }).eq("logisticien_id", body.id);
+  if (count && count > 0) {
+    return NextResponse.json(
+      { error: `Ce compte a ${count} journée(s) de travail enregistrée(s). Pour conserver l'historique, désactive-le plutôt que de le supprimer.` },
+      { status: 409 },
+    );
+  }
+  const res = await admin.auth.admin.deleteUser(body.id);
+  if (res.error) return NextResponse.json({ error: res.error.message }, { status: 400 });
+  return NextResponse.json({ ok: true });
+}
+
 // Set a new password for an existing account (the admin passes it on to the person).
 export async function PATCH(request: Request) {
   if (!(await requireMainAdmin())) return NextResponse.json({ error: "Réservé à l'administrateur principal." }, { status: 403 });

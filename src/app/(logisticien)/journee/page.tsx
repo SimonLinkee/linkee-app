@@ -522,8 +522,8 @@ export default function JourneePage() {
   const [depChecked, setDepChecked] = useState<Set<number>>(new Set());
   const [mapOpen, setMapOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState<Set<number>>(new Set());
-  const [elapsed, setElapsed] = useState(0);
-  const [closedText, setClosedText] = useState("");
+  const [startedAt, setStartedAt] = useState<string | null>(null); // "HH:MM" the day was started
+  const [endedAt, setEndedAt] = useState<string | null>(null); // "HH:MM" the day was closed
   const [toast, setToast] = useState<string | null>(null);
   const [weekOpen, setWeekOpen] = useState<number | null>(null);
   const [truckPaths, setTruckPaths] = useState<(string | null)[]>(TRUCK_SLOTS.map(() => null));
@@ -533,14 +533,12 @@ export default function JourneePage() {
   const [doneChecks, setDoneChecks] = useState<Record<string, string>>({}); // key -> vehicle_events.id (this week)
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const truckPhotoCount = truckPaths.filter(Boolean).length;
-  const timer = useRef<number | null>(null);
 
   const depDone = depChecked.size === checklist.length;
   const doneCount = stops.filter((s) => s.status !== "todo").length;
   const remaining = stops.length - doneCount;
   const breakIdx = stops.findIndex((s) => s.time >= "13:30");
   const pad = (n: number) => (n < 10 ? "0" + n : "" + n);
-  const timerText = `${pad(Math.floor(elapsed / 3600))}:${pad(Math.floor((elapsed % 3600) / 60))}:${pad(elapsed % 60)}`;
   const [now] = useState(() => new Date());
   const today = now.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
   const iso = isoDate(now);
@@ -571,12 +569,21 @@ export default function JourneePage() {
       .filter((w) => w.dow !== "Dim" || w.stops.length > 0);
   })();
 
-  function startTimer(fromSeconds: number) {
-    if (timer.current) window.clearInterval(timer.current);
-    setElapsed(fromSeconds);
-    timer.current = window.setInterval(() => setElapsed((e) => e + 1), 1000);
-  }
-  useEffect(() => () => { if (timer.current) window.clearInterval(timer.current); }, []);
+  const hhmm = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const [plannedStart, setPlannedStart] = useState<string | null>(null); // start time planned by the admin
+  useEffect(() => {
+    if (!cityId) return;
+    supabase
+      .from("day_settings")
+      .select("start_min")
+      .eq("day", iso)
+      .maybeSingle()
+      .then(({ data }) => {
+        const m = data?.start_min ?? 540;
+        setPlannedStart(`${pad(Math.floor(m / 60))}:${pad(m % 60)}`);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cityId]);
 
   useEffect(() => {
     (async () => {
@@ -620,11 +627,11 @@ export default function JourneePage() {
       const s = ses.data as { started_at: string | null; closed_at: string | null } | null;
       if (s?.closed_at) {
         setDayState("closed");
-        const secs = s.started_at ? Math.floor((new Date(s.closed_at).getTime() - new Date(s.started_at).getTime()) / 1000) : 0;
-        setClosedText(`Journée clôturée — ${pad(Math.floor(secs / 3600))}:${pad(Math.floor((secs % 3600) / 60))}:${pad(secs % 60)} travaillées.`);
+        if (s.started_at) setStartedAt(hhmm(new Date(s.started_at)));
+        setEndedAt(hhmm(new Date(s.closed_at)));
       } else if (s?.started_at) {
         setDayState("running");
-        startTimer(Math.max(0, Math.floor((Date.now() - new Date(s.started_at).getTime()) / 1000)));
+        setStartedAt(hhmm(new Date(s.started_at)));
       }
       setLoading(false);
     })();
@@ -642,16 +649,15 @@ export default function JourneePage() {
       .upsert({ city_id: cityId, logisticien_id: userId, day: iso, checklist_done: checklist.map((c) => c.id), started_at: new Date().toISOString(), closed_at: null }, { onConflict: "logisticien_id,day" });
     if (error) return showToast("Démarrage impossible : " + error.message);
     setDayState("running");
-    startTimer(0);
     const n = new Date();
-    showToast(`Journée démarrée à ${pad(n.getHours())}:${pad(n.getMinutes())}.`);
+    setStartedAt(hhmm(n));
+    showToast(`Journée démarrée à ${hhmm(n)}.`);
   }
   async function closeDay() {
     if (!userId) return;
     const { error } = await supabase.from("day_sessions").update({ closed_at: new Date().toISOString() }).eq("logisticien_id", userId).eq("day", iso);
     if (error) return showToast("Clôture impossible : " + error.message);
-    if (timer.current) window.clearInterval(timer.current);
-    setClosedText(`Journée clôturée — ${timerText} travaillées. La journée de demain reste verrouillée jusqu'à son ouverture.`);
+    setEndedAt(hhmm(new Date()));
     setDayState("closed");
     setOpenIdx(null);
   }
@@ -845,7 +851,9 @@ export default function JourneePage() {
           {dayState === "closed" && (
             <div className="mb-4 flex items-start gap-2.5 rounded-2xl bg-[var(--good-bg)] px-4 py-3.5 text-[13px] font-semibold text-[var(--good)]">
               <CheckIcon className="mt-px h-[18px] w-[18px] flex-none" />
-              <span>{closedText}</span>
+              <span>
+                Journée terminée. <span className="font-bold">Démarrée à {startedAt ?? "—"}</span> · <span className="font-bold">terminée à {endedAt ?? "—"}</span>. Bonne soirée !
+              </span>
             </div>
           )}
 
@@ -869,9 +877,14 @@ export default function JourneePage() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="font-display text-base font-extrabold">{dayState === "running" ? "Journée en cours" : "Journée pas encore démarrée"}</div>
-                  <div className="mt-[3px] text-xs text-[var(--panel-fg-dim)]">{stops.length === 0 && !loading ? "Aucun arrêt planifié aujourd'hui" : `${stops.length} arrêts prévus aujourd'hui`}</div>
+                  <div className="mt-[3px] text-xs text-[var(--panel-fg-dim)]">{stops.length === 0 && !loading ? "Aucun arrêt planifié aujourd'hui" : `${stops.length} arrêts prévus aujourd'hui`}{plannedStart ? ` · départ prévu à ${plannedStart}` : ""}</div>
                 </div>
-                {dayState === "running" && <div className="font-display text-[26px] font-extrabold tabular-nums">{timerText}</div>}
+                {dayState === "running" && startedAt && (
+                  <div className="text-right">
+                    <div className="text-[10.5px] font-bold tracking-[0.04em] text-[var(--panel-fg-dim)] uppercase">Démarrée à</div>
+                    <div className="font-display text-[26px] leading-none font-extrabold tabular-nums">{startedAt}</div>
+                  </div>
+                )}
               </div>
               {dayState === "idle" ? (
                 <>
@@ -956,6 +969,7 @@ export default function JourneePage() {
                         </span>
                       </span>
                       <span className="min-w-0 flex-1">
+                        <div className="mb-0.5 text-[9.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">{s.kind === "dropoff" ? "Dépose prévue à" : s.kind === "stock" ? "Prise prévue à" : "Collecte prévue à"}</div>
                         <div className="font-display text-[19px] leading-none font-black text-[var(--navy)]">{s.time || "—"}</div>
                         <div className="mt-1 text-[15.5px] leading-tight font-bold text-[var(--navy)]">{s.name}</div>
                         <div className="text-[12px] text-[var(--slate)]">{s.cat}</div>

@@ -144,7 +144,23 @@ export default function VillesComptesPage() {
     showToast("Compte mis à jour.");
   }
 
-  async function callApi(method: "POST" | "PATCH", payload: object) {
+  const [confirmDelete, setConfirmDelete] = useState<Account | null>(null);
+  async function deleteAccount() {
+    if (!confirmDelete) return;
+    setBusy(true);
+    try {
+      await callApi("DELETE", { id: confirmDelete.id });
+      showToast(`Compte de ${confirmDelete.name || confirmDelete.email} supprimé.`);
+      setConfirmDelete(null);
+      await load();
+    } catch (e) {
+      showToast((e as Error).message);
+      setConfirmDelete(null);
+    }
+    setBusy(false);
+  }
+
+  async function callApi(method: "POST" | "PATCH" | "DELETE", payload: object) {
     const res = await fetch("/api/admin/accounts", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const json = (await res.json().catch(() => ({}))) as { error?: string; id?: string };
     if (!res.ok) throw new Error(json.error ?? "Erreur inconnue");
@@ -490,11 +506,20 @@ export default function VillesComptesPage() {
                     {a.active ? "Actif" : "Inactif"}
                   </td>
                   <td className="border-b border-[var(--border)] px-3 py-2.5">
-                    <button type="button" onClick={() => startEdit(a)} title="Modifier" className="flex h-[26px] w-[26px] items-center justify-center rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
-                        <path d="M4 20 L4.8 16.5 L16 5.3 C16.8 4.5,18 4.5,18.8 5.3 L18.7 5.2 C19.5 6,19.5 7.2,18.7 8 L7.5 19.2 Z M14 7 L17 10" />
-                      </svg>
-                    </button>
+                    <div className="flex gap-1.5">
+                      <button type="button" onClick={() => startEdit(a)} title="Modifier" className="flex h-[26px] w-[26px] items-center justify-center rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                          <path d="M4 20 L4.8 16.5 L16 5.3 C16.8 4.5,18 4.5,18.8 5.3 L18.7 5.2 C19.5 6,19.5 7.2,18.7 8 L7.5 19.2 Z M14 7 L17 10" />
+                        </svg>
+                      </button>
+                      {a.id !== me && (
+                        <button type="button" onClick={() => setConfirmDelete(a)} title="Supprimer ce compte" className="flex h-[26px] w-[26px] items-center justify-center rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                            <path d="M4 7 H20 M9 7 V4 H15 V7 M6 7 L7 20 H17 L18 7 M10 11 V16 M14 11 V16" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
@@ -510,6 +535,30 @@ export default function VillesComptesPage() {
         ne donne accès à rien.
       </div>
 
+      {confirmDelete && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/55 p-4" onClick={() => !busy && setConfirmDelete(null)}>
+          <div className="w-full max-w-[420px] rounded-[20px] bg-[var(--card)] p-6 shadow-[var(--shadow)]" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-[var(--critical-bg)] text-[var(--critical)]">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                <path d="M4 7 H20 M9 7 V4 H15 V7 M6 7 L7 20 H17 L18 7" />
+              </svg>
+            </div>
+            <h3 className="font-display text-[20px] font-black text-[var(--navy)]">Supprimer ce compte ?</h3>
+            <p className="mt-2 text-[13.5px] leading-[1.5] text-[var(--slate)]">
+              <strong className="text-[var(--navy)]">{confirmDelete.name || "Sans nom"}</strong> ({confirmDelete.email}) — {ROLE_LABELS[confirmDelete.role]}.
+            </p>
+            <p className="mt-2 text-[12.5px] leading-[1.5] text-[var(--slate)]">Cette action est <strong>définitive</strong> : la personne ne pourra plus se connecter. Si elle a déjà travaillé, désactive-la plutôt pour garder l&apos;historique.</p>
+            <div className="mt-5 flex gap-2.5">
+              <button type="button" autoFocus disabled={busy} onClick={() => setConfirmDelete(null)} className="flex-1 rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-3 font-display text-[14px] font-bold text-[var(--navy)]">
+                Annuler
+              </button>
+              <button type="button" disabled={busy} onClick={deleteAccount} className="flex-1 rounded-[40px] bg-[var(--critical)] px-4 py-3 font-display text-[14px] font-bold text-white disabled:opacity-60">
+                {busy ? "Suppression…" : "Oui, supprimer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {toast && <div className="fixed bottom-[26px] left-1/2 z-[999] max-w-[420px] -translate-x-1/2 rounded-[14px] bg-[var(--navy-deep)] px-[18px] py-3 text-center text-[13px] font-semibold text-[var(--panel-fg)] shadow-[var(--shadow)]">{toast}</div>}
     </div>
   );

@@ -62,7 +62,7 @@ type PartnerReq = {
   partners: { name: string } | { name: string }[] | null;
 };
 
-const DAY_START = 9 * 60;
+const DEFAULT_DAY_START = 9 * 60; // 09:00, adjustable per day (day_settings)
 const LUNCH_START = 12 * 60 + 30;
 const LUNCH_END = 13 * 60 + 30;
 const HARD_LIMIT = 18 * 60;
@@ -137,8 +137,8 @@ function pseudoCoords(seed: string): Coords {
 /** Real road legs (minutes, km), one per active stop in order, plus the return leg to the depot at the end. */
 type Leg = { min: number; km: number };
 
-function computeSchedule(stops: StopC[], legs?: Leg[]) {
-  let t = DAY_START;
+function computeSchedule(stops: StopC[], legs?: Leg[], dayStart: number = DEFAULT_DAY_START) {
+  let t = dayStart;
   let totalTravel = 0;
   let totalKm = 0;
   let totalDuration = 0;
@@ -280,7 +280,8 @@ export default function PlanningPage() {
   }, [stops, geo, depotGeo]);
   const routeKey = routePts ? routePts.map((p) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join("|") : null;
   const activeRoute = route && route.key === routeKey ? route : null;
-  const sched = useMemo(() => computeSchedule(stopsC, activeRoute?.legs), [stopsC, activeRoute]);
+  const [dayStart, setDayStart] = useState(DEFAULT_DAY_START);
+  const sched = useMemo(() => computeSchedule(stopsC, activeRoute?.legs, dayStart), [stopsC, activeRoute, dayStart]);
 
   useEffect(() => {
     if (!routePts || !routeKey || route?.key === routeKey) return;
@@ -395,6 +396,17 @@ export default function PlanningPage() {
     setPendingReqs((prev) => prev.filter((x) => x.id !== r.id));
     showToast("Demande refusée.");
   }
+  async function loadDayStart() {
+    const { data } = await supabase.from("day_settings").select("start_min").eq("day", iso).maybeSingle();
+    setDayStart(data?.start_min ?? DEFAULT_DAY_START);
+  }
+  async function changeDayStart(min: number) {
+    setDayStart(min);
+    dirty.current = true; // arrival times shift: write them back for the logisticien
+    if (!cityId) return;
+    const { error } = await supabase.from("day_settings").upsert({ city_id: cityId, day: iso, start_min: min });
+    if (error) fail("Heure de départ non enregistrée", error.message + " (la migration 010 est-elle passée ?)");
+  }
   async function loadOverride() {
     const { data } = await supabase.from("checklist_overrides").select("items").eq("day", iso).maybeSingle();
     setChecklistOverride((data?.items as ChecklistItem[] | undefined) ?? null);
@@ -423,6 +435,7 @@ export default function PlanningPage() {
   useEffect(() => {
     if (!cityId) return;
     loadDay();
+    loadDayStart();
     loadOverride();
     loadWeek();
     loadRequests();
@@ -613,7 +626,7 @@ export default function PlanningPage() {
   /* ---------- map projection (km → svg) ---------- */
   const KIND_HEX: Record<Kind, string> = { partner: "#0a1a3f", stock: "#b97600", dropoff: "#1a8f68", exceptionnel: "#1f93a8", demande_client: "#7c5cd9" };
   const mapPoints: MapPoint[] = [];
-  if (depotGeo) mapPoints.push({ lat: depotGeo.lat, lng: depotGeo.lng, label: "Entrepôt Linkee — départ", color: "#4FC1D6", num: "home", time: `Départ ${fmtTime(DAY_START)}` });
+  if (depotGeo) mapPoints.push({ lat: depotGeo.lat, lng: depotGeo.lng, label: "Entrepôt Linkee — départ", color: "#4FC1D6", num: "home", time: `Début de journée ${fmtTime(dayStart)}` });
   activeStops.forEach((s) => {
     const g = geo[s.address];
     if (g) mapPoints.push({ lat: g.lat, lng: g.lng, label: s.name, color: KIND_HEX[s.kind], num: sched.stops.findIndex((x) => x.id === s.id) + 1, time: s.scheduledTime ?? undefined });
@@ -877,10 +890,22 @@ export default function PlanningPage() {
             <div className="mb-0.5 flex items-center gap-3 rounded-2xl bg-[var(--navy-deep)] px-3.5 py-3 text-[var(--panel-fg)]">
               <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full bg-white/14 text-base">🏠</span>
               <span className="min-w-0 flex-1">
-                <div className="text-[13.5px] font-bold">Départ — Entrepôt Linkee</div>
+                <div className="text-[13.5px] font-bold">Début de journée — départ de l&apos;Entrepôt Linkee</div>
                 <div className="text-[11.5px] text-[var(--panel-fg-dim)]">{DEPOT.address}</div>
               </span>
-              <span className="font-display text-[15px] font-extrabold text-[var(--turquoise)]">{fmtTime(DAY_START)}</span>
+              <label className="flex flex-none flex-col items-end gap-0.5">
+                <span className="text-[9.5px] font-bold tracking-[0.05em] text-[var(--panel-fg-dim)] uppercase">Heure de départ</span>
+                <input
+                  type="time"
+                  value={fmtTime(dayStart)}
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    const [h, m] = e.target.value.split(":").map(Number);
+                    changeDayStart(h * 60 + m);
+                  }}
+                  className="rounded-lg border-[1.5px] border-white/25 bg-white/10 px-2 py-1 font-display text-[16px] font-extrabold text-[var(--turquoise)] outline-none focus:border-[var(--turquoise)]"
+                />
+              </label>
             </div>
 
             {loadingDay && <div className="py-6 text-center text-[13px] text-[var(--slate)]">Chargement…</div>}
@@ -947,7 +972,11 @@ export default function PlanningPage() {
                       </svg>
                     </span>
                     <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-full bg-[var(--track)] font-display text-xs font-extrabold text-[var(--navy)]">{i + 1}</span>
-                    <span className={`w-[52px] flex-none font-display text-[15px] font-extrabold text-[var(--navy)] ${cancelled ? "opacity-60" : ""}`}>{s.scheduledTime || "—"}</span>
+                    <span className={`w-[70px] flex-none leading-tight ${cancelled ? "opacity-60" : ""}`}>
+                      <span className="block text-[9.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">{s.kind === "dropoff" ? "Dépose" : s.kind === "stock" ? "Prise stock" : "Collecte"}</span>
+                      <span className="block font-display text-[18px] font-extrabold text-[var(--navy)]">{s.scheduledTime || "—"}</span>
+                      {s.arrivalMin !== undefined && <span className="block text-[10.5px] text-[var(--slate)]">→ {fmtTime(s.arrivalMin + s.duration)}</span>}
+                    </span>
                     <span className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className={`truncate text-[13.5px] font-bold text-[var(--navy)] ${cancelled ? "line-through" : ""}`}>{s.name}</span>
@@ -1081,9 +1110,9 @@ export default function PlanningPage() {
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow)]">
               <span className="mb-1.5 block text-[11px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">Amplitude horaire</span>
               <span className={`font-display text-2xl font-black ${overflow > 0 ? "text-[var(--critical)]" : "text-[var(--good)]"}`}>
-                {fmtTime(DAY_START)} → {fmtTime(sched.dayEnd)}
+                {fmtTime(dayStart)} → {fmtTime(sched.dayEnd)}
               </span>
-              <div className="mt-1 text-[11.5px] text-[var(--slate)]">{fmtDuration(sched.dayEnd - DAY_START)} au total</div>
+              <div className="mt-1 text-[11.5px] text-[var(--slate)]">{fmtDuration(sched.dayEnd - dayStart)} au total</div>
             </div>
             <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow)]">
               <span className="mb-1.5 block text-[11px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">{overflow > 0 ? "Dépassement" : "Marge disponible"}</span>
