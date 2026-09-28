@@ -94,6 +94,18 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: "/links-benevoles",
+    label: "Links Bénévoles",
+    icon: (
+      <>
+        <circle cx="8" cy="8" r="2.6" />
+        <circle cx="17" cy="9" r="2.2" />
+        <path d="M3 19 C 3.4 15.5 5.4 13.6 8 13.6 C 10.6 13.6 12.6 15.5 13 19" />
+        <path d="M14.2 14.2 C 15.2 13.5 16.1 13.4 17 13.4 C 19 13.4 20.4 15 20.8 18.5" />
+      </>
+    ),
+  },
+  {
     href: "/profil",
     label: "Profil",
     icon: (
@@ -116,19 +128,6 @@ const SUPER_ITEM = {
   ),
 };
 
-const LINKS_BENEVOLES_ITEM = {
-  href: "/links-benevoles",
-  label: "Links Bénévoles",
-  icon: (
-    <>
-      <circle cx="8" cy="8" r="2.6" />
-      <circle cx="17" cy="9" r="2.2" />
-      <path d="M3 19 C 3.4 15.5 5.4 13.6 8 13.6 C 10.6 13.6 12.6 15.5 13 19" />
-      <path d="M14.2 14.2 C 15.2 13.5 16.1 13.4 17 13.4 C 19 13.4 20.4 15 20.8 18.5" />
-    </>
-  ),
-};
-
 const ROLE_SHORT: Record<string, string> = { admin_principal: "Superadmin", admin_local: "Responsable d'antenne", resp_distribution: "Resp. Distribution", logisticien: "Logisticien" };
 
 export function Sidebar() {
@@ -141,7 +140,7 @@ export function Sidebar() {
   const NATIONAL_BG = "linear-gradient(120deg,#2a78d6,#7C5CD9 45%,#eb6834)";
   // only Dashboard and Fleet exist in the national view (all cities)
   // Superadmin: everything · Responsable d'antenne: Distribution, Stock, Planning · Resp. Distribution: Distribution only
-  const rolePaths: string[] | null = me.role === "admin_local" ? ["/distributions", "/stock", "/planning", "/profil"] : me.role === "resp_distribution" ? ["/distributions", "/profil"] : null;
+  const rolePaths: string[] | null = me.role === "admin_local" ? ["/distributions", "/stock", "/planning", "/profil", "/links-benevoles"] : me.role === "resp_distribution" ? ["/distributions", "/profil"] : null;
   const visibleNav = (isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/flotte", "/profil"].includes(n.href)) : NAV_ITEMS).filter((n) => (me.role ? !rolePaths || rolePaths.includes(n.href) : false));
 
   useEffect(() => {
@@ -256,7 +255,7 @@ export function Sidebar() {
 
         <nav className="flex flex-col gap-[3px]">
           {visibleNav.map((item) => {
-            const active = pathname === item.href || (item.href === "/distributions" && pathname.startsWith("/distributions"));
+            const active = pathname === item.href || pathname.startsWith(item.href + "/") || (item.href === "/links-benevoles" && pathname.startsWith("/linker"));
             return (
               <Link
                 key={item.href}
@@ -311,19 +310,6 @@ export function Sidebar() {
               {SUPER_ITEM.icon}
             </svg>
             <span>{SUPER_ITEM.label}</span>
-          </Link>
-          <Link
-            href={LINKS_BENEVOLES_ITEM.href}
-            className={`flex items-center gap-[11px] rounded-xl px-3 py-[11px] text-sm font-semibold ${
-              pathname === LINKS_BENEVOLES_ITEM.href || pathname.startsWith("/linker")
-                ? "bg-[var(--turquoise)] text-[#04262e]"
-                : "text-[var(--panel-fg-dim)] hover:bg-white/8 hover:text-[var(--panel-fg)]"
-            }`}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px] flex-none">
-              {LINKS_BENEVOLES_ITEM.icon}
-            </svg>
-            <span>{LINKS_BENEVOLES_ITEM.label}</span>
           </Link>
           <Link
             href="/historique"

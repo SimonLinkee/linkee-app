@@ -7,6 +7,7 @@ import { compressImage } from "@/lib/photos";
 import { CAT_LABELS, DEFAULT_EUR_PER_KG, SUBCAT_SELECT, buildEvo, isCollectKind, isoOf, rse, subMap, summarize, type CatKey, type StatRow, type SubCat } from "@/lib/stats";
 import PartnerDocuments from "@/components/partner/PartnerDocuments";
 import PartnerValuation from "@/components/partner/PartnerValuation";
+import PartnerLinks from "@/components/partner/PartnerLinks";
 
 /* ---------------- types ---------------- */
 type Contact = { type: string; nom: string; tel: string; mail: string };
@@ -130,6 +131,7 @@ const GRID = <><rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.5" /><rect x
 const CLOCK = <><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5 V12 L15 14" /></>;
 const STORE = <><path d="M4 8 L8 4 H16 L20 8" /><rect x="4" y="8" width="16" height="11" rx="1.5" /><path d="M4 8 H20" /></>;
 const DOC = <><path d="M7 3 H14 L19 8 V21 H7 Z" /><path d="M14 3 V8 H19" /></>;
+const LINKS_ICON = <><circle cx="8" cy="8" r="2.6" /><circle cx="17" cy="9" r="2.2" /><path d="M3 19 C 3.4 15.5 5.4 13.6 8 13.6 C 10.6 13.6 12.6 15.5 13 19" /><path d="M14.2 14.2 C 15.2 13.5 16.1 13.4 17 13.4 C 19 13.4 20.4 15 20.8 18.5" /></>;
 
 function Wordmark({ size = "text-[22px]", color = "text-[var(--panel-fg)]" }: { size?: string; color?: string }) {
   return (
@@ -352,7 +354,7 @@ function EvoChart({ data }: { data: { l: string; v: number }[] }) {
 
 /* ---------------- page ---------------- */
 type Mode = "choice" | "desktop" | "mobile";
-type Tab = "activite" | "fiche" | "dashboard" | "documents" | "valorisation";
+type Tab = "activite" | "fiche" | "dashboard" | "documents" | "valorisation" | "links";
 
 export default function EspacePartenairePage() {
   const router = useRouter();
@@ -667,6 +669,10 @@ export default function EspacePartenairePage() {
             <ExcForm key={siteKey} siteName={site.name} onSubmit={addRequest} />
           </Card>
 
+          <Card title="Links Bénévoles" icon={LINKS_ICON} note="Petit volume à faire partir vite ? En complément du logisticien, un bénévole peut le collecter — jusqu'à 80 kg.">
+            {siteKey && <PartnerLinks key={siteKey} partnerId={siteKey} />}
+          </Card>
+
           <Card title="Historique des collectes" icon={CLOCK} note="Quantités collectées lors de vos dernières collectes.">
             {site.history.length ? site.history.map((h, i) => (
               <CollectRow key={i} date={h.date} time={h.time} note={h.denree} badge={h.status === "annulee" ? "Annulée" : `${h.kg} kg`} badgeCls={h.status === "annulee" ? "bg-[var(--critical-bg)] text-[var(--critical)]" : "bg-[var(--good-bg)] text-[var(--good)]"} />
@@ -694,6 +700,7 @@ export default function EspacePartenairePage() {
     { k: "dashboard", l: "Tableau de bord", icon: GRID },
     { k: "documents", l: "Mes documents", icon: DOC },
     { k: "valorisation", l: "Valorisation RSE", icon: GRID },
+    { k: "links", l: "Links Bénévoles", icon: LINKS_ICON },
   ];
   const maxPct = Math.max(...dash.denrees.map((x) => x.pct), 1);
 
@@ -896,6 +903,13 @@ export default function EspacePartenairePage() {
             <div>
               <PanelHead title="Valorisation RSE" sub="Vos sous-catégories de produits et leur valeur unitaire : elles servent à calculer la valeur de vos dons." />
               {siteKey && <PartnerValuation key={siteKey} partnerId={siteKey} />}
+            </div>
+          )}
+
+          {tab === "links" && (
+            <div>
+              <PanelHead title="Links Bénévoles" sub="Un petit volume à faire partir vite ? Demande un bénévole, en complément de la tournée du logisticien." />
+              {siteKey && <PartnerLinks key={siteKey} partnerId={siteKey} />}
             </div>
           )}
         </div>

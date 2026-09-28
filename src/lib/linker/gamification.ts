@@ -2,7 +2,7 @@
 // Pure data + pure functions, no React/DOM dependency: portable as-is to a future mobile build.
 
 export type CatKey = "chapeau" | "lunettes" | "haut" | "bas" | "chaussures" | "echarpe" | "sac" | "gants" | "badge" | "objet";
-export type StyleKey = "cowboy" | "chef" | "magicien";
+export type StyleKey = "cowboy" | "chef" | "magicien" | "pirate" | "ninja" | "astronaute" | "jardinier" | "superheros" | "robot" | "fee";
 export type Mode = "walk" | "car";
 
 export const STAGES = [
@@ -33,33 +33,57 @@ export const CATS: { k: CatKey; n: string; e: string }[] = [
   { k: "objet", n: "Objet en main", e: "🪄" },
 ];
 
-// Only these 3 styles have real accessory art for now (see characters.ts). The other 7 are announced but locked.
-export const STYLE_KEYS: StyleKey[] = ["cowboy", "chef", "magicien"];
+// All 10 styles now have real accessory art (see characters.ts).
+export const STYLE_KEYS: StyleKey[] = ["cowboy", "chef", "magicien", "pirate", "ninja", "astronaute", "jardinier", "superheros", "robot", "fee"];
 export const STYLE_META: Record<StyleKey, { n: string; e: string; bg: string }> = {
   cowboy: { n: "Cowboy", e: "🤠", bg: "linear-gradient(180deg,#ffd9a0 0%,#f7a56b 55%,#d98a4e 100%)" },
   chef: { n: "Chef cuisinier", e: "👨‍🍳", bg: "repeating-conic-gradient(#fff8ec 0 25%,#f3e6d3 0 50%) 0 0/34px 34px" },
   magicien: { n: "Magicien", e: "🧙", bg: "radial-gradient(circle at 30% 20%,#5b3fa6 0%,#2a1a5e 60%,#150c33 100%)" },
+  pirate: { n: "Pirate", e: "🏴‍☠️", bg: "linear-gradient(180deg,#8fd0e8 0%,#4a90a8 60%,#2c6478 100%)" },
+  ninja: { n: "Ninja", e: "🥷", bg: "linear-gradient(180deg,#3a3a4a 0%,#1e1e2a 70%,#101018 100%)" },
+  astronaute: { n: "Astronaute", e: "👩‍🚀", bg: "radial-gradient(circle at 30% 20%,#1c2a6e 0%,#0a1030 70%,#05081c 100%)" },
+  jardinier: { n: "Jardinier", e: "🧑‍🌾", bg: "linear-gradient(180deg,#eaf7d8 0%,#cdeeb0 55%,#a8d97e 100%)" },
+  superheros: { n: "Super-héros", e: "🦸", bg: "linear-gradient(180deg,#ffe08a 0%,#e24b4a 60%,#a3201f 100%)" },
+  robot: { n: "Robot / Cyber", e: "🤖", bg: "linear-gradient(180deg,#dbe4ec 0%,#aab8c4 60%,#7c8b9c 100%)" },
+  fee: { n: "Fée / Elfe", e: "🧚", bg: "radial-gradient(circle at 30% 20%,#ffe0f5 0%,#d6b8ff 60%,#a88ae0 100%)" },
 };
-export const FUTURE_STYLES = [
-  { n: "Pirate", e: "🏴‍☠️" }, { n: "Ninja", e: "🥷" }, { n: "Astronaute", e: "👩‍🚀" }, { n: "Jardinier", e: "🧑‍🌾" },
-  { n: "Super-héros", e: "🦸" }, { n: "Robot / Cyber", e: "🤖" }, { n: "Fée / Elfe", e: "🧚" },
-];
 
 const TIER = { m: ["classique", "renforcé", "de qualité", "d'élite", "doré"], f: ["classique", "renforcée", "de qualité", "d'élite", "dorée"] };
 const NOUN: Record<StyleKey, ([string, "m" | "f"] | null)[]> = {
   cowboy: [null, ["Lunettes", "f"], ["Gilet", "m"], ["Jean", "m"], ["Bottes", "f"], ["Foulard", "m"], ["Sacoche", "f"], ["Gants", "m"], ["Étoile de shérif", "f"], ["Lasso", "m"]],
   chef: [null, ["Lunettes", "f"], ["Veste", "f"], ["Pantalon", "m"], ["Sabots", "m"], ["Torchon", "m"], ["Panier", "m"], ["Maniques", "f"], ["Pin's", "m"], ["Ustensile", "m"]],
   magicien: [null, ["Lunettes", "f"], ["Veste", "f"], ["Pantalon", "m"], ["Chaussons", "m"], ["Cape", "f"], ["Bourse", "f"], ["Gants", "m"], ["Médaillon", "m"], ["Baguette", "f"]],
+  pirate: [null, ["Cache-œil", "m"], ["Gilet", "m"], ["Pantalon", "m"], ["Bottes", "f"], ["Ceinture", "f"], ["Sac au trésor", "m"], ["Gants", "m"], ["Médaillon", "m"], ["Sabre", "m"]],
+  ninja: [null, ["Bandeau", "m"], ["Kimono", "m"], ["Pantalon", "m"], ["Chaussons", "m"], ["Écharpe", "f"], ["Sac à shurikens", "m"], ["Gants", "m"], ["Emblème", "m"], ["Shuriken", "m"]],
+  astronaute: [null, ["Visière", "f"], ["Combinaison", "f"], ["Pantalon", "m"], ["Bottes", "f"], ["Écharpe thermique", "f"], ["Sac à air", "m"], ["Gants", "m"], ["Insigne", "m"], ["Sonde", "f"]],
+  jardinier: [null, ["Lunettes", "f"], ["Tablier", "m"], ["Pantalon", "m"], ["Bottes", "f"], ["Écharpe", "f"], ["Panier", "m"], ["Gants", "m"], ["Badge", "m"], ["Arrosoir", "m"]],
+  superheros: [null, ["Masque", "m"], ["Combinaison", "f"], ["Collant", "m"], ["Bottes", "f"], ["Cape", "f"], ["Sac", "m"], ["Gants", "m"], ["Blason", "m"], ["Bouclier", "m"]],
+  robot: [null, ["Visière", "f"], ["Plastron", "m"], ["Jambières", "f"], ["Bottes", "f"], ["Câble", "m"], ["Sac à outils", "m"], ["Gants", "m"], ["Module", "m"], ["Télécommande", "f"]],
+  fee: [null, ["Lunettes", "f"], ["Robe", "f"], ["Collant", "m"], ["Chaussons", "m"], ["Ailes", "f"], ["Bourse", "f"], ["Gants", "m"], ["Médaillon", "m"], ["Baguette", "f"]],
 };
 const HAT_NAMES: Record<StyleKey, string[]> = {
   cowboy: ["Bandana", "Chapeau de paille", "Stetson", "Stetson shérif", "Stetson doré"],
   chef: ["Bandana", "Toque courte", "Grande toque", "Toque étoilée", "Toque dorée 3 étoiles"],
   magicien: ["Bandeau étoilé", "Petit chapeau pointu", "Grand chapeau étoilé", "Chapeau de mage", "Chapeau astral doré"],
+  pirate: ["Bandana", "Tricorne", "Tricorne à plume", "Tricorne du capitaine", "Tricorne doré"],
+  ninja: ["Bandeau simple", "Bandeau à symbole", "Capuche", "Capuche du clan", "Capuche dorée"],
+  astronaute: ["Bonnet thermique", "Casque simple", "Casque à visière", "Casque de mission", "Casque doré étoilé"],
+  jardinier: ["Bandana", "Chapeau de paille", "Grand chapeau de paille", "Chapeau fleuri", "Chapeau doré fleuri"],
+  superheros: ["Bandeau", "Masque", "Masque à ailerons", "Masque de la ligue", "Masque doré"],
+  robot: ["Antenne simple", "Casque à antenne", "Casque lumineux", "Casque à visière HUD", "Casque doré"],
+  fee: ["Serre-tête feuille", "Petite couronne", "Couronne fleurie", "Couronne scintillante", "Couronne dorée"],
 };
 const OBJ_NAMES: Record<StyleKey, string[]> = {
   cowboy: ["Corde en pelote", "Lasso", "Lasso étoilé", "Lasso de shérif", "Lasso doré"],
   chef: ["Cuillère en bois", "Fouet", "Louche", "Poêle", "Cocotte dorée"],
   magicien: ["Bâton en bois", "Baguette étoilée", "Baguette scintillante", "Sceptre de cristal", "Sceptre doré"],
+  pirate: ["Longue-vue", "Sabre", "Sabre à garde", "Sabre du second", "Sabre doré du capitaine"],
+  ninja: ["Shuriken en bois", "Shuriken", "Double shuriken", "Kunai", "Shuriken doré"],
+  astronaute: ["Lampe torche", "Sonde", "Sonde à antenne", "Sonde scientifique", "Sonde dorée"],
+  jardinier: ["Petite pelle", "Arrosoir", "Arrosoir fleuri", "Sécateur", "Arrosoir doré"],
+  superheros: ["Poing levé", "Bouclier", "Bouclier à emblème", "Bouclier de la ligue", "Bouclier doré"],
+  robot: ["Pince simple", "Télécommande", "Module clignotant", "Module à antenne", "Module doré"],
+  fee: ["Brindille", "Baguette étoilée", "Baguette à ruban", "Baguette scintillante", "Baguette dorée"],
 };
 /** Display name of one accessory (category index 0-9, version 1-5) in a given style. */
 export function itemName(style: StyleKey, catIndex: number, v: number): string {

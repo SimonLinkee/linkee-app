@@ -4,7 +4,7 @@ import { useState } from "react";
 import CharSvg from "@/components/linker/CharSvg";
 import { useLinker } from "@/components/linker/LinkerContext";
 import { CATS, characterSVG } from "@/lib/linker/characters";
-import { FUTURE_STYLES, STYLE_META, computeOutfit, fullSetStyle, itemName, versionOf, type StyleKey } from "@/lib/linker/gamification";
+import { STYLE_META, computeOutfit, fullSetStyle, itemName, versionOf, type StyleKey } from "@/lib/linker/gamification";
 
 export default function GardeRobePage() {
   const { ready, linker, patchLinker } = useLinker();
@@ -75,12 +75,7 @@ export default function GardeRobePage() {
 
       <div className="rounded-[16px] border border-dashed border-[var(--border)] bg-[var(--input-bg)] p-3">
         <div className="text-[11.5px] font-bold text-[var(--muted)]">🔒 Prochain déblocage : level {nextLvl} → {CATS[(nextLvl - 1) % 10].e} {CATS[(nextLvl - 1) % 10].n}</div>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {FUTURE_STYLES.slice(0, 5).map((f) => (
-            <span key={f.n} className="rounded-[40px] bg-[var(--track)] px-2.5 py-1 text-[10.5px] font-bold text-[var(--muted)]">{f.e} {f.n}</span>
-          ))}
-        </div>
-        <p className="mt-1.5 text-[10.5px] font-semibold text-[var(--muted)]">Bientôt disponibles — pour l&apos;instant, choisis parmi Cowboy, Chef cuisinier et Magicien.</p>
+        <p className="mt-1.5 text-[10.5px] font-semibold text-[var(--muted)]">10 styles au choix à chaque récompense : Cowboy, Chef cuisinier, Magicien, Pirate, Ninja, Astronaute, Jardinier, Super-héros, Robot/Cyber, Fée/Elfe.</p>
       </div>
     </div>
   );

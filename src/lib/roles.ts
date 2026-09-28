@@ -7,7 +7,7 @@ export type Role = 'en_attente' | 'admin_principal' | 'admin_local' | 'resp_dist
 //   linker             = Linker (bénévole)       : espace 100% client sous /linker (signup, carte, missions, gamification)
 // After sign-in the last two roles land on /version: full PC version or quick mobile entry (/saisie-mobile).
 const SUPER_ONLY = ['/dashboard', '/partenaires', '/beneficiaires', '/flotte', '/todo', '/villes-comptes', '/historique', '/journee', '/espace-partenaire', '/mobile', '/links-benevoles', '/linker']
-const ANTENNE_PATHS = ['/distributions', '/stock', '/planning', '/profil', '/version', '/saisie-mobile']
+const ANTENNE_PATHS = ['/distributions', '/stock', '/planning', '/profil', '/version', '/saisie-mobile', '/links-benevoles']
 const DISTRIB_PATHS = ['/distributions', '/profil', '/version', '/saisie-mobile']
 const LINKER_PATHS = ['/linker']
 

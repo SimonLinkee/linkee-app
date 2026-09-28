@@ -164,9 +164,99 @@ const STYLE_ART: Record<StyleKey, { main: string[]; acc: string[]; cloth: string
   cowboy: { main: ["#c0392b", "#e9c96a", "#8b5a2b", "#6b4423", "#e8b923"], acc: ["#ffffff", "#8b5a2b", "#d9b26f", "#e8b923", "#fff3b0"], cloth: ["#c9a06a", "#b98a4a", "#9a6a2f", "#7a4f22", "#d9a92a"], pants: ["#7c9cc4", "#5b80b0", "#446a9c", "#33578a", "#e8b923"] },
   chef: { main: ["#ffffff", "#ffffff", "#ffffff", "#ffffff", "#fffbe8"], acc: ["#4f6df5", "#90a4ae", "#2a3a8f", "#c62828", "#e8b923"], cloth: ["#ffffff", "#ffffff", "#ffffff", "#ffffff", "#fffbe8"], pants: ["#e9eef5", "#d5dde8", "#c3cfdf", "#aebbd0", "#f0e3ad"] },
   magicien: { main: ["#7b57c9", "#6a44b8", "#4f2f9a", "#3a2280", "#3a2280"], acc: ["#f6d55c", "#f6d55c", "#ffe27a", "#ffe27a", "#fff3b0"], cloth: ["#8a66d6", "#7650c4", "#5f3fae", "#4a2c94", "#3a2280"], pants: ["#6a4bb0", "#5a3da0", "#4b3190", "#3c2680", "#2f1c70"] },
+  pirate: { main: ["#8b5a2b", "#6b4423", "#5c3b1a", "#4a2c12", "#e8b923"], acc: ["#c0392b", "#c0392b", "#e8b923", "#e8b923", "#fff3b0"], cloth: ["#3a3f47", "#30343b", "#282b30", "#1e2024", "#3a3f47"], pants: ["#4a3520", "#3a2a18", "#2e2010", "#22180a", "#e8b923"] },
+  ninja: { main: ["#3a3a44", "#2e2e37", "#232329", "#18181c", "#3a3a44"], acc: ["#c0392b", "#c0392b", "#e8302e", "#e8302e", "#e8b923"], cloth: ["#2e2e37", "#26262d", "#1e1e23", "#141417", "#2e2e37"], pants: ["#26262d", "#1e1e23", "#18181c", "#101012", "#e8b923"] },
+  astronaute: { main: ["#f0f0f2", "#e4e6e8", "#d6dadd", "#c6ccd1", "#fffbe8"], acc: ["#4f6df5", "#3a56d4", "#2a3a8f", "#1c2a6e", "#e8b923"], cloth: ["#f0f0f2", "#e4e6e8", "#d6dadd", "#c6ccd1", "#fffbe8"], pants: ["#c9d3df", "#b8c4d2", "#a5b2c2", "#93a2b5", "#f0e3ad"] },
+  jardinier: { main: ["#8fd68a", "#6cc76a", "#4fb752", "#3ea34a", "#e8b923"], acc: ["#7a4c1e", "#8b5a2b", "#8b5a2b", "#6b4423", "#e8b923"], cloth: ["#c9a06a", "#b98a4a", "#9a6a2f", "#7a4f22", "#d9a92a"], pants: ["#7a9e4a", "#6a8a3c", "#5a7830", "#4a6626", "#e8b923"] },
+  superheros: { main: ["#e24b4a", "#d33a39", "#c22928", "#a3201f", "#e8b923"], acc: ["#2a78d6", "#2a78d6", "#1c5aa8", "#1c5aa8", "#e8b923"], cloth: ["#e24b4a", "#d33a39", "#c22928", "#a3201f", "#e8b923"], pants: ["#1c2a6e", "#16215c", "#101a4a", "#0a1238", "#e8b923"] },
+  robot: { main: ["#b8c4d2", "#9aa8b8", "#7c8b9c", "#5e6d7e", "#e8e8e8"], acc: ["#4fc1d6", "#4fc1d6", "#1f93a8", "#1f93a8", "#fff3b0"], cloth: ["#b8c4d2", "#9aa8b8", "#7c8b9c", "#5e6d7e", "#e8e8e8"], pants: ["#5e6d7e", "#4a5866", "#3a4652", "#2a3440", "#c9c9c9"] },
+  fee: { main: ["#ffd6f0", "#f9b6e6", "#e896d8", "#d476c8", "#fff3b0"], acc: ["#8fd68a", "#6cc76a", "#4fb752", "#3ea34a", "#e8b923"], cloth: ["#c9a8ff", "#b58aef", "#a06fdd", "#8a56c8", "#fff3b0"], pants: ["#a8d8ff", "#8ac2f5", "#6cabe8", "#5094d8", "#fff3b0"] },
 };
+const NEW_STYLES = new Set<StyleKey>(["pirate", "ninja", "astronaute", "jardinier", "superheros", "robot", "fee"]);
+
+// Signature hat shape per new style (v escalates 1→5: sobre → doré, same idiom as the 3 flagship styles).
+const HAT_KIND: Record<string, "band" | "brim" | "dome" | "cowl" | "crown"> = { pirate: "brim", ninja: "cowl", astronaute: "dome", jardinier: "brim", superheros: "cowl", robot: "dome", fee: "crown" };
+// A small themed glyph used on the top, badge and handheld object so each style reads consistently.
+const GLYPH: Record<string, (x: number, y: number, r: number, fill: string) => string> = {
+  pirate: (x, y, r, fill) => `<path d="M${x - r} ${y} L${x + r} ${y} M${x - r * 0.7} ${y - r * 0.7} L${x + r * 0.7} ${y + r * 0.7} M${x - r * 0.7} ${y + r * 0.7} L${x + r * 0.7} ${y - r * 0.7}" stroke="${fill}" stroke-width="${Math.max(1.6, r * 0.28)}" stroke-linecap="round"/><circle cx="${x}" cy="${y - r * 0.15}" r="${r * 0.55}" fill="none" stroke="${fill}" stroke-width="${Math.max(1.4, r * 0.22)}"/>`,
+  ninja: (x, y, r, fill) => star(x, y, r, fill, 45),
+  astronaute: (x, y, r, fill) => `<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="${fill}" stroke-width="${Math.max(1.4, r * 0.24)}"/><ellipse cx="${x}" cy="${y}" rx="${r * 1.5}" ry="${r * 0.45}" fill="none" stroke="${fill}" stroke-width="${Math.max(1.2, r * 0.2)}" transform="rotate(-18 ${x} ${y})"/>`,
+  jardinier: (x, y, r, fill) => `${star(x, y, r * 0.9, fill)}<circle cx="${x}" cy="${y}" r="${r * 0.32}" fill="#fffbe8"/>`,
+  superheros: (x, y, r, fill) => star(x, y, r, fill),
+  robot: (x, y, r, fill) => `<rect x="${x - r}" y="${y - r * 0.6}" width="${r * 2}" height="${r * 1.2}" rx="${r * 0.25}" fill="${fill}"/><circle cx="${x - r * 0.45}" cy="${y}" r="${r * 0.22}" fill="#fff"/><circle cx="${x + r * 0.45}" cy="${y}" r="${r * 0.22}" fill="#fff"/>`,
+  fee: (x, y, r, fill) => sparkle(x, y, r, fill),
+};
+function genericAcc(cat: number, style: StyleKey, v: number, c: CharDef): string | { behind: string } {
+  const S = STYLE_ART[style], A = c.A, cx = c.cx, m = S.main[v - 1], a = S.acc[v - 1], gold = v === 5, gd = "#e8b923", cloth = S.cloth[v - 1], glyph = GLYPH[style];
+  const sp = (x: number, y: number, r = 4) => (gold ? sparkle(x, y, r, "#fff7b0") : "");
+  switch (cat) {
+    case 0: {
+      const x = cx, y = A.headY, w = A.hatW, kind = HAT_KIND[style];
+      const col = gold ? gd : m;
+      if (v === 1) {
+        // every style starts with a simple band/bandana, escalating into its signature shape from v2
+        return `<g><path d="M${x - w * 0.47} ${y + 20} Q${x} ${y - 4} ${x + w * 0.47} ${y + 20} L${x + w * 0.47} ${y + 30} Q${x} ${y + 10} ${x - w * 0.47} ${y + 30}Z" fill="${col}"/>${glyph(x, y + 12, 6, a)}</g>`;
+      }
+      if (kind === "dome")
+        return `<g><path d="M${x - w * 0.4} ${y + 16} A${w * 0.4} ${w * 0.4} 0 0 1 ${x + w * 0.4} ${y + 16} Z" fill="${col}" stroke="${a}" stroke-width="2"/><path d="M${x - w * 0.42} ${y + 14} Q${x} ${y + 24} ${x + w * 0.42} ${y + 14}" fill="none" stroke="${a}" stroke-width="${v >= 3 ? 4 : 2.4}" opacity="${v >= 3 ? 0.9 : 0.5}"/>${v >= 4 ? glyph(x + w * 0.3, y - 2, 4, gold ? "#fff3b0" : a) : ""}${sp(x, y - w * 0.3, 5)}</g>`;
+      if (kind === "cowl")
+        return `<g><path d="M${x - w * 0.44} ${y + 22} Q${x - w * 0.5} ${y - w * 0.2} ${x} ${y - w * 0.24} Q${x + w * 0.5} ${y - w * 0.2} ${x + w * 0.44} ${y + 22} Q${x} ${y + 30} ${x - w * 0.44} ${y + 22}Z" fill="${col}"/>${v >= 3 ? `<path d="M${x - w * 0.3} ${y - w * 0.16} L${x - w * 0.1} ${y - w * 0.3} L${x} ${y - w * 0.14}Z M${x + w * 0.3} ${y - w * 0.16} L${x + w * 0.1} ${y - w * 0.3} L${x} ${y - w * 0.14}Z" fill="${col}"/>` : ""}<path d="M${x - w * 0.2} ${y + 6} Q${x} ${y + 16} ${x + w * 0.2} ${y + 6}" fill="none" stroke="${a}" stroke-width="2.2"/>${sp(x + w * 0.4, y - 4, 5)}</g>`;
+      if (kind === "crown")
+        return `<g><path d="M${x - w * 0.4} ${y + 18} L${x - w * 0.4} ${y + 4} L${x - w * 0.2} ${y + 14} L${x} ${y - 6} L${x + w * 0.2} ${y + 14} L${x + w * 0.4} ${y + 4} L${x + w * 0.4} ${y + 18}Z" fill="${col}" stroke="${a}" stroke-width="1.6"/>${v >= 3 ? `<circle cx="${x}" cy="${y + 2}" r="4.5" fill="${gold ? '#fff3b0' : a}"/>` : ""}${sp(x - w * 0.3, y - 2, 4)}${sp(x + w * 0.3, y + 6, 4)}</g>`;
+      // brim (pirate tricorne / jardinier straw hat)
+      return `<g><ellipse cx="${x}" cy="${y + 16}" rx="${w * 0.64}" ry="${w * 0.14}" fill="${style === "jardinier" ? "#e6c25f" : col}"/><path d="M${x - w * 0.3} ${y + 16} Q${x - w * 0.34} ${y - w * 0.16} ${x} ${y - w * 0.18} Q${x + w * 0.34} ${y - w * 0.16} ${x + w * 0.3} ${y + 16}Z" fill="${col}"/>${v >= 3 && style === "pirate" ? `<path d="M${x - w * 0.28} ${y + 4} Q${x} ${y - w * 0.1} ${x + w * 0.28} ${y + 4}" fill="none" stroke="${a}" stroke-width="2"/>${glyph(x, y + 4, 6, a)}` : ""}${sp(x, y - w * 0.18, 5)}</g>`;
+    }
+    case 1: {
+      const y = A.eyeY, dx = A.eyeDX, r = 14;
+      const rim = gold ? gd : a, lens = m, op = 0.4;
+      const square = v === 4;
+      const one = (x: number) => (square
+        ? `<rect x="${x - r}" y="${y - r + 3}" width="${r * 2}" height="${r * 1.5}" rx="4" fill="${lens}" fill-opacity="${op}" stroke="${rim}" stroke-width="3"/>`
+        : `<circle cx="${x}" cy="${y}" r="${r}" fill="${lens}" fill-opacity="${op}" stroke="${rim}" stroke-width="${v >= 3 ? 4 : 3}"/>`);
+      return `<g>${one(c.cx - dx)}${one(c.cx + dx)}<path d="M${c.cx - dx + r} ${y} Q${c.cx} ${y - 5} ${c.cx + dx - r} ${y}" fill="none" stroke="${rim}" stroke-width="3"/>${sp(c.cx + dx + r, y - r, 5)}</g>`;
+    }
+    case 2: {
+      const y0 = A.neckY, y1 = A.waistY;
+      return `<g clip-path="url(#clip)"><rect x="0" y="${y0}" width="200" height="${y1 - y0}" fill="${cloth}"/><rect x="0" y="${y0}" width="200" height="4" fill="${gold ? gd : a}"/><path d="M${cx} ${y0} V${y1}" stroke="${a}" stroke-width="2" opacity=".6"/>${[[-24, 12], [22, 18], [0, 26]].map(([dx, dy]) => glyph(cx + dx, y0 + dy, 4.4, a)).join("")}${sp(cx + 30, y0 + 24, 5)}</g>`;
+    }
+    case 3: {
+      const y0 = A.waistY, y1 = A.gr + 6;
+      const belt = `<rect x="0" y="${y0}" width="200" height="5" fill="${gold ? gd : "#2b2b2b"}" opacity=".85"/><rect x="${cx - 6}" y="${y0 - 1}" width="12" height="7" rx="2" fill="${gold ? "#fff3b0" : a}"/>`;
+      return `<g clip-path="url(#clip)"><rect x="0" y="${y0}" width="200" height="${y1 - y0}" fill="${S.pants[v - 1]}"/><path d="M${cx} ${y0 + 6} V${y1}" stroke="${a}" stroke-width="2" opacity=".4"/>${belt}</g>`;
+    }
+    case 4: {
+      const y = A.feetY, dx = A.feetDX;
+      const shoe = (x: number) => `<g><path d="M${x - 13} ${y - 6} q 0 -8 10 -8 h 8 q 8 0 8 8 v 8 h -26 z" fill="${m}"/><rect x="${x - 13}" y="${y + 2}" width="26" height="5" rx="2" fill="${gold ? gd : a}"/>${gold ? sparkle(x + 10, y - 10, 4, "#fff7b0") : ""}</g>`;
+      return `<g>${shoe(c.cx - dx)}${shoe(c.cx + dx)}</g>`;
+    }
+    case 5: {
+      const y = A.neckY, w = A.bodyW * 0.55;
+      if (style === "superheros" || style === "fee")
+        return { behind: `<path d="M${cx - w} ${y - 6} Q${cx - w - 20} ${A.gr - 24} ${cx - w - 10} ${A.gr + 4} L${cx + w + 10} ${A.gr + 4} Q${cx + w + 20} ${A.gr - 24} ${cx + w} ${y - 6}Z" fill="${m}"/><path d="M${cx - w - 6} ${A.gr - 2} L${cx + w + 6} ${A.gr - 2}" stroke="${gold ? gd : a}" stroke-width="4"/>${gold ? sparkle(cx, A.gr - 40, 6, "#fff7b0") : ""}` };
+      return `<g><path d="M${cx - w * 0.7} ${y - 2} Q${cx} ${y + 14} ${cx + w * 0.7} ${y - 2} L${cx + 8} ${y + 30} Q${cx} ${y + 38} ${cx - 8} ${y + 30}Z" fill="${m}"/>${sp(cx + w * 0.65, y, 4)}</g>`;
+    }
+    case 6: {
+      const x = cx - A.bodyW * 0.5 - 6, y = A.waistY - 4;
+      return `<g><path d="M${cx + A.bodyW * 0.3} ${A.neckY - 6} L${x + 6} ${y}" stroke="${a}" stroke-width="4" clip-path="url(#clip)"/><path d="M${x - 14} ${y + 8} q 0 -6 14 -6 q 14 0 14 6 l -3 16 h -22z" fill="${m}"/>${sp(x + 12, y + 16, 4)}</g>`;
+    }
+    case 7: {
+      const g = ([x, y]: [number, number]) => `<circle cx="${x}" cy="${y}" r="11" fill="${m}" stroke="${a}" stroke-width="2"/>${gold ? sparkle(x, y - 2, 4, "#fff3b0") : ""}`;
+      return `<g>${g(A.hL)}${g(A.hR)}</g>`;
+    }
+    case 8: {
+      const x = cx + A.bodyW * 0.3, y = A.chest[1] - 8, R = 9 + v;
+      return `<g><circle cx="${x}" cy="${y}" r="${R}" fill="#fff" stroke="${gold ? gd : a}" stroke-width="3"/>${glyph(x, y, R * 0.6, m)}</g>`;
+    }
+    default: {
+      const [x, y] = A.hR;
+      const len = 30 + v * 5;
+      return `<g transform="translate(${x + 8} ${y + 2}) rotate(16)"><rect x="-3" y="${-len}" width="6" height="${len + 12}" rx="3" fill="${v >= 4 ? (gold ? gd : m) : m}"/>${v > 1 ? glyph(0, -len - 6, 7 + v, gold ? gd : a) : ""}${gold ? sparkle(16, -len - 16, 5, "#fff7b0") : ""}</g>`;
+    }
+  }
+}
 
 function acc(cat: number, style: StyleKey, v: number, c: CharDef): string | { behind: string } {
+  if (NEW_STYLES.has(style)) return genericAcc(cat, style, v, c);
   const S = STYLE_ART[style], A = c.A, cx = c.cx, m = S.main[v - 1], a = S.acc[v - 1], gold = v === 5, gd = "#e8b923", trim = gold ? gd : a, cloth = S.cloth[v - 1];
   const sp = (x: number, y: number, r = 4) => (gold ? sparkle(x, y, r, "#fff7b0") : "");
   switch (cat) {
