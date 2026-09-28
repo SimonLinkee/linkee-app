@@ -116,6 +116,19 @@ const SUPER_ITEM = {
   ),
 };
 
+const LINKS_BENEVOLES_ITEM = {
+  href: "/links-benevoles",
+  label: "Links Bénévoles",
+  icon: (
+    <>
+      <circle cx="8" cy="8" r="2.6" />
+      <circle cx="17" cy="9" r="2.2" />
+      <path d="M3 19 C 3.4 15.5 5.4 13.6 8 13.6 C 10.6 13.6 12.6 15.5 13 19" />
+      <path d="M14.2 14.2 C 15.2 13.5 16.1 13.4 17 13.4 C 19 13.4 20.4 15 20.8 18.5" />
+    </>
+  ),
+};
+
 const ROLE_SHORT: Record<string, string> = { admin_principal: "Superadmin", admin_local: "Responsable d'antenne", resp_distribution: "Resp. Distribution", logisticien: "Logisticien" };
 
 export function Sidebar() {
@@ -298,6 +311,19 @@ export function Sidebar() {
               {SUPER_ITEM.icon}
             </svg>
             <span>{SUPER_ITEM.label}</span>
+          </Link>
+          <Link
+            href={LINKS_BENEVOLES_ITEM.href}
+            className={`flex items-center gap-[11px] rounded-xl px-3 py-[11px] text-sm font-semibold ${
+              pathname === LINKS_BENEVOLES_ITEM.href || pathname.startsWith("/linker")
+                ? "bg-[var(--turquoise)] text-[#04262e]"
+                : "text-[var(--panel-fg-dim)] hover:bg-white/8 hover:text-[var(--panel-fg)]"
+            }`}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px] flex-none">
+              {LINKS_BENEVOLES_ITEM.icon}
+            </svg>
+            <span>{LINKS_BENEVOLES_ITEM.label}</span>
           </Link>
           <Link
             href="/historique"

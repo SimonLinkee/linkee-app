@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -20,6 +21,12 @@ export default function EnAttentePage() {
         <p className="mt-2 text-[13px] leading-relaxed text-[var(--slate)]">
           Votre compte est bien créé, mais aucun rôle ne lui a encore été attribué. Un administrateur Linkee va
           l&apos;activer — vous pourrez ensuite vous reconnecter.
+        </p>
+        <p className="mt-4 text-[12.5px] leading-relaxed text-[var(--slate)]">
+          Tu t&apos;es inscrit·e comme <strong className="text-[var(--navy)]">Linker bénévole</strong> ?{" "}
+          <Link href="/linker/inscription" className="font-bold text-[var(--turquoise)] underline">
+            Termine ton inscription
+          </Link>
         </p>
         <button
           type="button"

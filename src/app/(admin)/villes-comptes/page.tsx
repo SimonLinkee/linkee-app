@@ -4,7 +4,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { CITY_PALETTE, DEFAULT_DEPOT, useCity } from "@/components/admin/CityContext";
 
-type Role = "en_attente" | "admin_principal" | "admin_local" | "resp_distribution" | "logisticien" | "partenaire" | "beneficiaire";
+type Role = "en_attente" | "admin_principal" | "admin_local" | "resp_distribution" | "logisticien" | "partenaire" | "beneficiaire" | "linker";
 type City = { id: string; name: string; color?: string | null; depot_address?: string | null };
 type PartnerLite = { id: string; name: string; city_id: string };
 type Account = { id: string; name: string; email: string; role: Role; city: string | null; active: boolean; partnerIds: string[] };
@@ -25,9 +25,10 @@ const ROLE_LABELS: Record<Role, string> = {
   logisticien: "Logisticien",
   partenaire: "Partenaire",
   beneficiaire: "Bénéficiaire",
+  linker: "Linker (bénévole)",
   en_attente: "En attente",
 };
-const ROLE_ORDER: Role[] = ["admin_principal", "admin_local", "resp_distribution", "logisticien", "partenaire", "beneficiaire", "en_attente"];
+const ROLE_ORDER: Role[] = ["admin_principal", "admin_local", "resp_distribution", "logisticien", "partenaire", "beneficiaire", "linker", "en_attente"];
 
 // One colour per role, used for the badge, the filter chips and the left edge of each row.
 const ROLE_COLOR: Record<Role, { solid: string; soft: string; text: string }> = {
@@ -37,6 +38,7 @@ const ROLE_COLOR: Record<Role, { solid: string; soft: string; text: string }> = 
   logisticien: { solid: "var(--stock-accent)", soft: "var(--stock-accent-bg)", text: "var(--stock-accent)" },
   partenaire: { solid: "var(--client-req)", soft: "var(--client-req-bg)", text: "var(--client-req)" },
   beneficiaire: { solid: "var(--dropoff)", soft: "var(--dropoff-bg)", text: "var(--dropoff)" },
+  linker: { solid: "#eb6834", soft: "rgba(235,104,52,0.16)", text: "#eb6834" },
   en_attente: { solid: "var(--muted)", soft: "var(--track)", text: "var(--slate)" },
 };
 
