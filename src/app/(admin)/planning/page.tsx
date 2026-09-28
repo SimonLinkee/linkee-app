@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { geocode, toKm, type LatLng } from "@/lib/geocode";
 import { signedUrls } from "@/lib/photos";
-import { flushNotificationEmails } from "@/lib/notify";
 import dynamic from "next/dynamic";
 import type { MapPoint } from "@/components/RouteMap";
 
@@ -446,10 +445,7 @@ export default function PlanningPage() {
       }));
       const { error } = await supabase.from("collectes").upsert(rows);
       if (error) fail("Enregistrement impossible", error.message);
-      else {
-        loadWeek();
-        flushNotificationEmails(); // the logisticien is notified (in-app by the database, e-mail from here)
-      }
+      else loadWeek(); // the logisticien's notification is created by a database trigger
     }, 800);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sched]);

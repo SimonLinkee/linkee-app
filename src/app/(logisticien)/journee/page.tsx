@@ -6,7 +6,6 @@ import { createClient } from "@/lib/supabase/client";
 import { signedUrls, uploadPrivatePhoto } from "@/lib/photos";
 import { geocode } from "@/lib/geocode";
 import NotificationBell from "@/components/NotificationBell";
-import { flushNotificationEmails } from "@/lib/notify";
 import dynamic from "next/dynamic";
 import type { MapPoint } from "@/components/RouteMap";
 
@@ -575,7 +574,6 @@ export default function JourneePage() {
     setClosedText(`Journée clôturée — ${timerText} travaillées. La journée de demain reste verrouillée jusqu'à son ouverture.`);
     setDayState("closed");
     setOpenIdx(null);
-    flushNotificationEmails();
   }
   async function uploadStopPhoto(stopId: string, file: File): Promise<string | null> {
     if (!cityId) {
@@ -695,9 +693,7 @@ export default function JourneePage() {
       if (e2) return showToast("Poids non enregistrés : " + e2.message);
     }
     setStops((prev) => prev.map((x, idx) => (idx === i ? { ...x, status, result } : x)));
-    setOpenIdx(null);
-    if (status === "annule") flushNotificationEmails(); // the admins are notified of the cancellation
-  }
+    setOpenIdx(null);  }
   async function logout() {
     await createClient().auth.signOut();
     router.push("/login");
