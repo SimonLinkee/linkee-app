@@ -20,7 +20,7 @@ type Person = { id: string; name: string; role: string };
 type Draft = { id?: string; title: string; comment: string; importance: number; deadline: string; assigned_to: string };
 
 const EMPTY: Draft = { title: "", comment: "", importance: 3, deadline: "", assigned_to: "" };
-const ROLE_SHORT: Record<string, string> = { admin_principal: "Admin principal", admin_local: "Admin local", logisticien: "Logisticien" };
+const ROLE_SHORT: Record<string, string> = { admin_principal: "Superadmin", admin_local: "Responsable d'antenne", logisticien: "Logisticien" };
 const fieldCls = "w-full rounded-[11px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-3 py-2.5 text-[13.5px] font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]";
 const labelCls = "mb-1.5 block text-[11.5px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase";
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();

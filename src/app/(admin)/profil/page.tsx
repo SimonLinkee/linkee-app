@@ -19,8 +19,9 @@ export default function ProfilPage() {
   const [toast, setToast] = useState<string | null>(null);
 
   const ROLE_TEXT: Record<string, string> = {
-    admin_principal: "Administrateur principal",
-    admin_local: "Administrateur local",
+    admin_principal: "Superadmin",
+    admin_local: "Responsable d'antenne",
+    resp_distribution: "Resp. Distribution",
     logisticien: "Logisticien",
     partenaire: "Partenaire",
     beneficiaire: "Bénéficiaire",

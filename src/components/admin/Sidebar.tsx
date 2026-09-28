@@ -116,7 +116,7 @@ const SUPER_ITEM = {
   ),
 };
 
-const ROLE_SHORT: Record<string, string> = { admin_principal: "Admin principal", admin_local: "Admin local", logisticien: "Logisticien" };
+const ROLE_SHORT: Record<string, string> = { admin_principal: "Superadmin", admin_local: "Responsable d'antenne", resp_distribution: "Resp. Distribution", logisticien: "Logisticien" };
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -127,7 +127,9 @@ export function Sidebar() {
   const [lateDist, setLateDist] = useState(0); // distributions not closed after D-day
   const NATIONAL_BG = "linear-gradient(120deg,#2a78d6,#7C5CD9 45%,#eb6834)";
   // only Dashboard and Fleet exist in the national view (all cities)
-  const visibleNav = isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/flotte", "/profil"].includes(n.href)) : NAV_ITEMS;
+  // Superadmin: everything · Responsable d'antenne: Distribution, Stock, Planning · Resp. Distribution: Distribution only
+  const rolePaths: string[] | null = me.role === "admin_local" ? ["/distributions", "/stock", "/planning", "/profil"] : me.role === "resp_distribution" ? ["/distributions", "/profil"] : null;
+  const visibleNav = (isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/flotte", "/profil"].includes(n.href)) : NAV_ITEMS).filter((n) => (me.role ? !rolePaths || rolePaths.includes(n.href) : false));
 
   useEffect(() => {
     (async () => {
@@ -274,7 +276,7 @@ export function Sidebar() {
             <>
           <div className="my-2.5 h-px bg-white/12" />
           <div className="px-3 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--panel-fg-dim)]">
-            Admin principal
+            Superadmin
           </div>
           <Link
             href={SUPER_ITEM.href}

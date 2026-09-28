@@ -4,7 +4,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { CITY_PALETTE, DEFAULT_DEPOT, useCity } from "@/components/admin/CityContext";
 
-type Role = "en_attente" | "admin_principal" | "admin_local" | "logisticien" | "partenaire" | "beneficiaire";
+type Role = "en_attente" | "admin_principal" | "admin_local" | "resp_distribution" | "logisticien" | "partenaire" | "beneficiaire";
 type City = { id: string; name: string; color?: string | null; depot_address?: string | null };
 type PartnerLite = { id: string; name: string; city_id: string };
 type Account = { id: string; name: string; email: string; role: Role; city: string | null; active: boolean; partnerIds: string[] };
@@ -19,19 +19,21 @@ type ProfileRow = {
 };
 
 const ROLE_LABELS: Record<Role, string> = {
-  admin_principal: "Admin principal",
-  admin_local: "Admin local",
+  admin_principal: "Superadmin",
+  admin_local: "Responsable d'antenne",
+  resp_distribution: "Resp. Distribution",
   logisticien: "Logisticien",
   partenaire: "Partenaire",
   beneficiaire: "Bénéficiaire",
   en_attente: "En attente",
 };
-const ROLE_ORDER: Role[] = ["admin_principal", "admin_local", "logisticien", "partenaire", "beneficiaire", "en_attente"];
+const ROLE_ORDER: Role[] = ["admin_principal", "admin_local", "resp_distribution", "logisticien", "partenaire", "beneficiaire", "en_attente"];
 
 // One colour per role, used for the badge, the filter chips and the left edge of each row.
 const ROLE_COLOR: Record<Role, { solid: string; soft: string; text: string }> = {
   admin_principal: { solid: "var(--navy-deep)", soft: "var(--navy-deep)", text: "var(--panel-fg)" },
   admin_local: { solid: "var(--turquoise)", soft: "var(--turquoise)", text: "#04262e" },
+  resp_distribution: { solid: "#2a78d6", soft: "rgba(42,120,214,0.16)", text: "#2a78d6" },
   logisticien: { solid: "var(--stock-accent)", soft: "var(--stock-accent-bg)", text: "var(--stock-accent)" },
   partenaire: { solid: "var(--client-req)", soft: "var(--client-req-bg)", text: "var(--client-req)" },
   beneficiaire: { solid: "var(--dropoff)", soft: "var(--dropoff-bg)", text: "var(--dropoff)" },
@@ -262,7 +264,7 @@ export default function VillesComptesPage() {
           <path d="M8 10 V7 A4 4 0 0 1 16 7 V10" />
         </svg>
         <span>
-          Réservé à l&apos;<strong>admin principal</strong> — un admin local ne voit ni cet écran, ni les autres villes.
+          Réservé au <strong>Superadmin</strong> — un responsable d&apos;antenne ne voit ni cet écran, ni les autres villes.
         </span>
       </div>
 
@@ -306,7 +308,7 @@ export default function VillesComptesPage() {
                   ["Partenaires", nPartners],
                   ["Bénéficiaires", benefByCity[c.id] ?? 0],
                   ["Logisticiens", countByCity(c.id, "logisticien")],
-                  ["Admins locaux", countByCity(c.id, "admin_local")],
+                  ["Resp. d'antenne", countByCity(c.id, "admin_local")],
                 ].map(([label, n]) => (
                   <div key={label as string} className="text-[11px] text-[var(--slate)]">
                     {label}
@@ -643,8 +645,8 @@ export default function VillesComptesPage() {
       </div>
 
       <div className="mt-[26px] rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card)] px-5 py-4 text-xs leading-[1.6] text-[var(--slate)]">
-        <strong className="text-[var(--navy)]">Comment ça fonctionne :</strong> l&apos;<strong className="text-[var(--navy)]">Admin principal</strong> accède à toutes les villes ; sa « ville de travail » sert seulement à créer
-        les nouveaux éléments. Un <strong className="text-[var(--navy)]">Admin local</strong> ou un <strong className="text-[var(--navy)]">Logisticien</strong> est rattaché à une seule ville et ne voit
+        <strong className="text-[var(--navy)]">Comment ça fonctionne :</strong> le <strong className="text-[var(--navy)]">Superadmin</strong> accède à toutes les villes ; sa « ville de travail » sert seulement à créer
+        les nouveaux éléments. Un <strong className="text-[var(--navy)]">Responsable d&apos;antenne</strong>, un <strong className="text-[var(--navy)]">Resp. Distribution</strong> ou un <strong className="text-[var(--navy)]">Logisticien</strong> est rattaché à une seule ville et ne voit
         que celle-ci. Un <strong className="text-[var(--navy)]">Partenaire</strong> voit uniquement les sites cochés. Un compte <strong className="text-[var(--navy)]">En attente</strong> ou <strong className="text-[var(--navy)]">Inactif</strong>{" "}
         ne donne accès à rien.
       </div>

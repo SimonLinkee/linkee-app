@@ -206,7 +206,8 @@ const SELECT_DAY =
 
 export default function PlanningPage() {
   const supabase = useMemo(() => createClient(), []);
-  const { cityId, depotAddress } = useCity(); // the page remounts when the city changes
+  const { cityId, depotAddress, role } = useCity(); // the page remounts when the city changes
+  const ro = role !== "admin_principal"; // Responsable d'antenne: the planning is read only
   const DEPOT = { name: DEPOT_NAME, address: depotAddress };
   const DEPOT_PLACE = depotPlace(depotAddress);
   const [places, setPlaces] = useState<Place[]>([depotPlace(depotAddress)]);
@@ -477,6 +478,7 @@ export default function PlanningPage() {
   }, [sched]);
 
   function editStops(fn: (prev: Stop[]) => Stop[]) {
+    if (ro) return; // read only
     dirty.current = true;
     setStops(fn);
   }
@@ -716,7 +718,13 @@ export default function PlanningPage() {
 
       {view === "jour" ? (
         <div>
-          {pendingReqs.length > 0 && (
+          {ro && (
+            <div className="mb-3 flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--input-bg)] px-4 py-2.5 text-[12.5px] font-semibold text-[var(--slate)]">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 flex-none"><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10 V7 A4 4 0 0 1 16 7 V10" /></svg>
+              Planning en lecture seule — seul le Superadmin peut le modifier.
+            </div>
+          )}
+          {!ro && pendingReqs.length > 0 && (
             <div className="mb-3 rounded-2xl border-[1.5px] border-[var(--client-req)] bg-[var(--client-req-bg)] p-4">
               <h4 className="mb-2.5 font-display text-[15px] font-extrabold text-[var(--client-req)]">Demandes des partenaires en attente ({pendingReqs.length})</h4>
               <div className="flex flex-col gap-2">
@@ -744,6 +752,7 @@ export default function PlanningPage() {
               </div>
             </div>
           )}
+          {!ro && (
           <button
             type="button"
             onClick={() => {
@@ -760,7 +769,8 @@ export default function PlanningPage() {
               <path d="M6 9 L12 15 L18 9" />
             </svg>
           </button>
-          {excOpen && (
+          )}
+          {!ro && excOpen && (
             <div className="mb-[18px] rounded-2xl border-[1.5px] border-[var(--exc-accent)] bg-[var(--card)] p-[18px] shadow-[var(--shadow)]">
               <h4 className="mb-3 font-display text-[15px] font-extrabold text-[var(--navy)]">Nouvelle collecte exceptionnelle</h4>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -812,6 +822,7 @@ export default function PlanningPage() {
             </div>
           )}
 
+          {!ro && (
           <button
             type="button"
             onClick={() => setChecklistOpen((v) => !v)}
@@ -826,7 +837,8 @@ export default function PlanningPage() {
               <path d="M6 9 L12 15 L18 9" />
             </svg>
           </button>
-          {checklistOpen && (
+          )}
+          {!ro && checklistOpen && (
             <div className="mb-[18px] rounded-2xl border-[1.5px] border-[var(--good)] bg-[var(--card)] p-[18px] shadow-[var(--shadow)]">
               <h4 className="mb-3 font-display text-[15px] font-extrabold text-[var(--navy)]">
                 Checklist de départ — <span>{DOW_NAMES[currentDate.getDay()]}</span>
@@ -908,6 +920,7 @@ export default function PlanningPage() {
                 <span className="text-[9.5px] font-bold tracking-[0.05em] text-[var(--panel-fg-dim)] uppercase">Heure de départ</span>
                 <input
                   type="time"
+                  disabled={ro}
                   value={fmtTime(dayStart)}
                   onChange={(e) => {
                     if (!e.target.value) return;
@@ -925,9 +938,11 @@ export default function PlanningPage() {
               <div className="rounded-2xl border-[1.5px] border-dashed border-[var(--border)] bg-[var(--card)] px-4 py-8 text-center text-[13px] text-[var(--slate)]">
                 Aucune collecte planifiée ce jour.
                 <div className="mt-3 flex flex-wrap justify-center gap-2.5">
-                  <button type="button" onClick={copyFromLastWeek} className="rounded-[40px] bg-[var(--navy-deep)] px-4 py-2 font-display text-[13px] font-bold text-[var(--panel-fg)]">
-                    Recopier la tournée de la semaine dernière
-                  </button>
+                  {!ro && (
+                    <button type="button" onClick={copyFromLastWeek} className="rounded-[40px] bg-[var(--navy-deep)] px-4 py-2 font-display text-[13px] font-bold text-[var(--panel-fg)]">
+                      Recopier la tournée de la semaine dernière
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -958,7 +973,7 @@ export default function PlanningPage() {
                     </div>
                   )}
                   <div
-                    draggable
+                    draggable={!ro}
                     onDragStart={() => (dragSrcId.current = s.id)}
                     onDragEnd={() => setDragOverId(null)}
                     onDragOver={(e) => {
@@ -1024,13 +1039,14 @@ export default function PlanningPage() {
                         step={5}
                         value={s.duration}
                         onClick={(e) => e.stopPropagation()}
+                        disabled={ro}
                         onChange={(e) => updateDuration(i, +e.target.value || 0)}
                         className="w-11 rounded-[8px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-1.5 py-1 text-center text-xs font-semibold text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
                       />
                       <small className="text-[11px] text-[var(--slate)]">min</small>
                     </span>
                     <span className="flex flex-none gap-1.5">
-                      {!done && (
+                      {!done && !ro && (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1046,7 +1062,7 @@ export default function PlanningPage() {
                           Renseigner
                         </button>
                       )}
-                      {!done && (
+                      {!done && !ro && (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1061,7 +1077,7 @@ export default function PlanningPage() {
                           </svg>
                         </button>
                       )}
-                      {!done && (
+                      {!done && !ro && (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1092,6 +1108,7 @@ export default function PlanningPage() {
               </div>
             )}
 
+            {!ro && (
             <div className="mt-1 flex flex-wrap items-center gap-2.5 rounded-2xl border border-[var(--border)] bg-[var(--card)] px-3.5 py-3">
               <span className="text-[12.5px] font-bold text-[var(--navy)]">Ajouter un point à la tournée</span>
               <select value={addPlaceKey} onChange={(e) => setAddPlaceKey(e.target.value)} className={`${inputCls} !w-auto min-w-[220px] flex-1`}>
@@ -1105,6 +1122,7 @@ export default function PlanningPage() {
                 + Ajouter
               </button>
             </div>
+            )}
           </div>
 
           <div className="mb-[18px] grid grid-cols-2 gap-3.5 lg:grid-cols-5">

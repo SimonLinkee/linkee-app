@@ -1,12 +1,30 @@
-export type Role = 'en_attente' | 'admin_principal' | 'admin_local' | 'logisticien' | 'partenaire' | 'beneficiaire'
+export type Role = 'en_attente' | 'admin_principal' | 'admin_local' | 'resp_distribution' | 'logisticien' | 'partenaire' | 'beneficiaire'
 
-const ADMIN_PATHS = ['/dashboard', '/partenaires', '/beneficiaires', '/planning', '/distributions', '/stock', '/flotte', '/todo', '/profil']
+// Screen access per role (data rules are enforced again in the database, see migration 018):
+//   admin_principal   = Superadmin              : everything
+//   admin_local       = Responsable d'antenne   : Distribution + Stock (edit), Planning (read only)
+//   resp_distribution = Resp. Distribution      : Distribution only
+const SUPER_ONLY = ['/dashboard', '/partenaires', '/beneficiaires', '/flotte', '/todo', '/villes-comptes', '/historique', '/journee', '/espace-partenaire']
+const ANTENNE_PATHS = ['/distributions', '/stock', '/planning', '/profil']
+const DISTRIB_PATHS = ['/distributions', '/profil']
+
+export const ROLE_LABEL: Record<string, string> = {
+  admin_principal: 'Superadmin',
+  admin_local: "Responsable d'antenne",
+  resp_distribution: 'Resp. Distribution',
+  logisticien: 'Logisticien',
+  partenaire: 'Partenaire',
+  beneficiaire: 'Bénéficiaire',
+  en_attente: 'En attente',
+}
 
 export function homeForRole(role: string): string {
   switch (role) {
     case 'admin_principal':
-    case 'admin_local':
       return '/dashboard'
+    case 'admin_local':
+    case 'resp_distribution':
+      return '/distributions'
     case 'logisticien':
       return '/journee'
     case 'partenaire':
@@ -20,14 +38,14 @@ function under(path: string, base: string) {
   return path === base || path.startsWith(base + '/')
 }
 
-/** Which routes a role may open. Admins can also preview the mobile spaces. */
+/** Which routes a role may open. The Superadmin can also preview the mobile spaces. */
 export function isAllowed(role: string, path: string): boolean {
-  const isAdmin = role === 'admin_principal' || role === 'admin_local'
   if (under(path, '/api')) return true // API routes check the caller's role themselves
-  if (under(path, '/villes-comptes') || under(path, '/historique')) return role === 'admin_principal'
-  if (ADMIN_PATHS.some((p) => under(path, p))) return isAdmin
-  if (under(path, '/journee')) return isAdmin || role === 'logisticien'
-  if (under(path, '/espace-partenaire')) return isAdmin || role === 'partenaire'
   if (under(path, '/en-attente')) return true
+  if (role === 'admin_principal') return [...SUPER_ONLY, ...ANTENNE_PATHS].some((p) => under(path, p))
+  if (role === 'admin_local') return ANTENNE_PATHS.some((p) => under(path, p))
+  if (role === 'resp_distribution') return DISTRIB_PATHS.some((p) => under(path, p))
+  if (role === 'logisticien') return under(path, '/journee')
+  if (role === 'partenaire') return under(path, '/espace-partenaire')
   return false
 }
