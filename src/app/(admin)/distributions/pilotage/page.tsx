@@ -278,7 +278,7 @@ export default function PilotagePage() {
                 ["Distributions", fmt(t.count), `${fmt(t.registered)} inscrits au total`, "#2a78d6"],
                 ["Paniers distribués", fmt(t.baskets), t.registered ? `présence réelle ${fmt(t.presence)} %` : "présence non calculable", "var(--cat-3)"],
                 ["Poids distribué", `${fmt(t.distributed, 1)} kg`, "sur la période", "var(--cat-4)"],
-                ["Poids moyen du colis", t.avgBasket ? `${fmt(t.avgBasket, 2)} kg` : "—", "kg distribués par panier", "var(--cat-2)"],
+                ["Poids moyen par colis (théorique)", t.avgBasket ? `${fmt(t.avgBasket, 2)} kg` : "—", "kg du tableau ÷ paniers", "var(--cat-2)"],
                 ["F&L par personne", t.flPer ? `${fmt(t.flPer, 2)} kg` : "—", t.flTarget ? `cible moyenne ${fmt(t.flTarget, 2)} kg` : `${fmt(t.fl, 1)} kg de F&L`, "var(--cat-3)"],
                 ["Part de dons", t.donPct ? `${fmt(t.donPct)} %` : "—", "du poids reçu", "var(--good)"],
                 ["Associations présentes", fmt(t.presences), `${t.assoDistinct} différente${t.assoDistinct > 1 ? "s" : ""} · ${fmt(t.assoAvg, 1)} par distribution`, ORANGE],

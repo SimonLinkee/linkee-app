@@ -96,8 +96,10 @@ const STOCK_SUPPLIER = "Stock Linkee";
 const blankLine = (): Line => ({ key: uid(), category: "F&L", product: "", nb_colis: "", colis_weight_kg: "", weight_kg: "", supplier: "", don_pct: "", delivery_mode: "", eco_label: "", geo_label: "", source_collecte_id: null });
 
 const fieldCls = "w-full rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[13px] font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]";
+// light green = a box to fill in
+const fillCls = "w-full rounded-[10px] border-[1.5px] border-[var(--good)]/40 bg-[var(--good-bg)] px-2.5 py-2 text-[13px] font-medium text-[var(--navy)] outline-none focus:border-[var(--good)]";
 const labelCls = "mb-1 block text-[11.5px] font-semibold text-[var(--slate)]";
-const cellCls = "w-full rounded-lg border border-transparent bg-transparent px-1.5 py-1.5 text-[12.5px] text-[var(--navy)] outline-none hover:border-[var(--border)] focus:border-[var(--turquoise)] focus:bg-[var(--input-bg)]";
+const cellCls = "w-full rounded-lg border border-transparent bg-[var(--good-bg)] px-1.5 py-1.5 text-[12.5px] text-[var(--navy)] outline-none hover:border-[var(--good)]/50 focus:border-[var(--good)]";
 
 function DistribBadge() {
   return (
@@ -559,30 +561,27 @@ export default function DistributionsPage() {
                 </div>
               </div>
 
-              {/* key figures */}
+              {/* key figures: green = to fill in, grey = calculated */}
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
                   <label className={labelCls}>Nombre d&apos;inscrits</label>
-                  <input type="number" min={0} className={`${fieldCls} font-display !text-[22px] font-black`} value={draft.registered} onChange={(e) => edit((d) => ({ ...d, registered: e.target.value }))} placeholder="0" />
-                  <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">≈ {fig.expected} présents attendus</p>
+                  <input type="number" min={0} className={`${fillCls} font-display !text-[22px] font-black`} value={draft.registered} onChange={(e) => edit((d) => ({ ...d, registered: e.target.value }))} placeholder="0" />
+                  <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">À compléter</p>
                 </div>
                 <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
-                  <label className={labelCls}>Présence estimée</label>
-                  <div className="relative">
-                    <input type="number" min={0} max={100} className={`${fieldCls} !pr-7 font-display !text-[22px] font-black`} value={draft.presence} onChange={(e) => edit((d) => ({ ...d, presence: e.target.value }))} />
-                    <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-[13px] font-bold text-[var(--slate)]">%</span>
-                  </div>
-                  <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">Réelle : {fig.presence ? `${fmt(fig.presence, 0)} %` : "—"}</p>
+                  <label className={labelCls}>Nombre de paniers distribués</label>
+                  <input type="number" min={0} className={`${fillCls} font-display !text-[22px] font-black`} value={draft.baskets} onChange={(e) => edit((d) => ({ ...d, baskets: e.target.value }))} placeholder="0" />
+                  <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">À compléter à la fin de la distribution</p>
                 </div>
-                <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
-                  <label className={labelCls}>Paniers distribués</label>
-                  <input type="number" min={0} className={`${fieldCls} font-display !text-[22px] font-black`} value={draft.baskets} onChange={(e) => edit((d) => ({ ...d, baskets: e.target.value }))} placeholder="0" />
-                  <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">Ce que le responsable compte à la fin</p>
+                <div className="rounded-2xl border border-[var(--border)] bg-[var(--track)] p-4">
+                  <span className={labelCls}>Taux de présence</span>
+                  <div className="rounded-[10px] bg-[var(--input-bg)] px-2.5 py-1.5 font-display text-[22px] font-black text-[var(--slate)] tabular-nums">{fig.presence ? `${fmt(fig.presence, 0)} %` : "—"}</div>
+                  <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">Calculé : paniers ÷ inscrits</p>
                 </div>
-                <div className="rounded-2xl border-[1.5px] border-[#2a78d6] bg-[var(--card)] p-4">
-                  <span className={labelCls}>Poids moyen du colis</span>
-                  <div className="font-display text-[26px] leading-tight font-black text-[var(--navy)] tabular-nums">{fig.avgBasket ? `${fmt(fig.avgBasket, 2)} kg` : "—"}</div>
-                  <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">{fmt(fig.distributed)} kg distribués</p>
+                <div className="rounded-2xl border border-[var(--border)] bg-[var(--track)] p-4">
+                  <span className={labelCls}>Poids moyen par colis théorique</span>
+                  <div className="rounded-[10px] bg-[var(--input-bg)] px-2.5 py-1.5 font-display text-[22px] font-black text-[var(--slate)] tabular-nums">{fig.avgBasket ? `${fmt(fig.avgBasket, 2)} kg` : "—"}</div>
+                  <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">Calculé : {fmt(fig.weight)} kg du tableau ÷ paniers</p>
                 </div>
               </div>
               {/* volunteers */}
@@ -602,11 +601,11 @@ export default function DistributionsPage() {
                 </div>
                 <div className="w-[190px]">
                   <label className={labelCls}>Bénévoles présents (total)</label>
-                  <input type="number" min={0} className={`${fieldCls} font-display !text-[20px] font-black`} value={draft.volunteers} onChange={(e) => edit((d) => ({ ...d, volunteers: e.target.value }))} placeholder="0" />
+                  <input type="number" min={0} className={`${fillCls} font-display !text-[20px] font-black`} value={draft.volunteers} onChange={(e) => edit((d) => ({ ...d, volunteers: e.target.value }))} placeholder="0" />
                 </div>
                 <div className="w-[190px]">
                   <label className={labelCls}>dont coordinateurs</label>
-                  <input type="number" min={0} className={`${fieldCls} font-display !text-[20px] font-black`} value={draft.coordinators} onChange={(e) => edit((d) => ({ ...d, coordinators: e.target.value }))} placeholder="0" />
+                  <input type="number" min={0} className={`${fillCls} font-display !text-[20px] font-black`} value={draft.coordinators} onChange={(e) => edit((d) => ({ ...d, coordinators: e.target.value }))} placeholder="0" />
                 </div>
                 {num(draft.coordinators) > num(draft.volunteers) && <span className="text-[12px] font-semibold text-[var(--critical)]">Les coordinateurs sont comptés dans le total : vérifie les chiffres.</span>}
               </div>
@@ -693,10 +692,10 @@ export default function DistributionsPage() {
                     Commentaire de la distribution
                   </h3>
                   <p className="mb-2 text-[11.5px] text-[var(--slate)]">Affluence, imprévus, retours des bénéficiaires… il apparaît aussi dans l&apos;historique du pilotage.</p>
-                  <textarea className={`${fieldCls} min-h-[90px] resize-y`} placeholder="Ex : rupture de pain, forte affluence…" value={draft.comment} onChange={(e) => edit((d) => ({ ...d, comment: e.target.value }))} />
+                  <textarea className={`${fillCls} min-h-[90px] resize-y`} placeholder="Ex : rupture de pain, forte affluence…" value={draft.comment} onChange={(e) => edit((d) => ({ ...d, comment: e.target.value }))} />
                   <div className="mt-2 flex items-center gap-2">
                     <label className="text-[11.5px] font-semibold text-[var(--slate)]">Cible F&amp;L par personne</label>
-                    <input type="number" min={0} step="0.1" className={`${fieldCls} !w-[90px]`} value={draft.flTarget} onChange={(e) => edit((d) => ({ ...d, flTarget: e.target.value }))} placeholder="kg" />
+                    <input type="number" min={0} step="0.1" className={`${fillCls} !w-[90px]`} value={draft.flTarget} onChange={(e) => edit((d) => ({ ...d, flTarget: e.target.value }))} placeholder="kg" />
                   </div>
                 </div>
               </div>
@@ -746,7 +745,7 @@ export default function DistributionsPage() {
                             <span className="text-[13.5px] font-semibold text-[var(--navy)]">{a?.name ?? "Association"}{a?.activity_type ? <span className="ml-2 text-[11.5px] font-normal text-[var(--slate)]">{a.activity_type}</span> : null}</span>
                             <button type="button" onClick={() => edit((d) => ({ ...d, interventions: d.interventions.filter((i) => i.associationId !== iv.associationId) }))} className="text-[12px] font-semibold text-[var(--slate)] hover:text-[var(--critical)]">Retirer</button>
                           </div>
-                          <textarea className={`${fieldCls} min-h-[64px] resize-y`} placeholder="Ce que l'association a fait, retour sur son intervention…" value={iv.comment} onChange={(e) => edit((d) => ({ ...d, interventions: d.interventions.map((i) => (i.associationId === iv.associationId ? { ...i, comment: e.target.value } : i)) }))} />
+                          <textarea className={`${fillCls} min-h-[64px] resize-y`} placeholder="Ce que l'association a fait, retour sur son intervention…" value={iv.comment} onChange={(e) => edit((d) => ({ ...d, interventions: d.interventions.map((i) => (i.associationId === iv.associationId ? { ...i, comment: e.target.value } : i)) }))} />
                           <div className="mt-2">
                             <PhotoStrip paths={iv.photoPaths} folder={`${cityId}/dist-${draft.beneficiaryId}-${draft.date}`} onChange={(p) => edit((d) => ({ ...d, interventions: d.interventions.map((i) => (i.associationId === iv.associationId ? { ...i, photoPaths: p } : i)) }))} accent="#eb6834" size={72} label="Photos" />
                           </div>
