@@ -29,6 +29,7 @@ type DbStop = {
   motif: string | null;
   photos_count: number;
   photo_paths: string[] | null;
+  planned_items: { id: string; name: string; category: string; colis: number }[] | null;
   scheduled_time: string | null;
   partners: Rel | Rel[] | null;
   beneficiaries: Rel | Rel[] | null;
@@ -48,7 +49,8 @@ type Stop = {
   sitePhoto?: string;
   comment?: string;
   allowedTypes?: string[];
-  presetItems?: { id: string; name: string; colis: number; upc: number; grammage: number }[];
+  presetItems?: { id: string; name: string; category: string; colis: number; upc: number; grammage: number }[];
+  planned?: { id: string; name: string; colis: number }[]; // stock outflow planned by the admin (pick-up stop)
   result?: StopResult;
 };
 
@@ -84,6 +86,7 @@ function rowToStop(r: DbStop, all: DbStop[]): Stop {
     kind,
     address: rel?.address ?? (r.kind === "stock" ? DEPOT_ADDRESS : ""),
     accessDetails: fiche.accessNote || undefined,
+    planned: r.planned_items?.map((p) => ({ id: p.id, name: p.name, colis: p.colis })),
     sitePhoto: one(r.partners)?.photo_url || undefined,
     comment: r.comment || undefined,
     allowedTypes: kind === "dropoff" ? Object.entries(fiche.denrees ?? {}).filter(([, on]) => on).map(([k]) => k) : undefined,
@@ -167,7 +170,7 @@ function summary(s: Stop) {
   const r = s.result!;
   const photos = r.photos ?? 0;
   if (s.kind === "stock") return <><strong className="text-[var(--navy)]">{r.totalKg} kg pris</strong> · {r.items!.length} item(s) : {r.items!.map((i) => i.name).join(", ")} · {photos} photo(s)</>;
-  if (s.kind === "dropoff") return <><strong className="text-[var(--navy)]">{r.totalKg} kg déposés</strong> · {r.items!.map((i) => `${i.denree} (${i.from})`).join(", ")} · {photos} photo(s)</>;
+  if (s.kind === "dropoff") return <><strong className="text-[var(--navy)]">{r.totalKg} kg déposés</strong> · {r.items!.map((i) => `${i.name ?? i.denree} (${i.from})`).join(", ")} · {photos} photo(s)</>;
   return <><strong className="text-[var(--navy)]">{r.totalKg} kg</strong> · {r.items!.length} item(s) ({r.items!.map((i) => i.denree).join(", ")}) · {photos} photo(s)</>;
 }
 
@@ -237,7 +240,8 @@ function StopPanel({ stops, index, onDone, onUpload }: { stops: Stop[]; index: n
       setPreviews((p) => [...p, URL.createObjectURL(file)]);
     }
   }
-  const [stockCounts, setStockCounts] = useState<Record<string, number>>({});
+  // quantities planned by the admin are pre-filled (the logisticien can still adjust them)
+  const [stockCounts, setStockCounts] = useState<Record<string, number>>(() => Object.fromEntries((s.planned ?? []).map((p) => [p.id, p.colis])));
   const [dropChecked, setDropChecked] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [motif, setMotif] = useState("");
@@ -245,21 +249,21 @@ function StopPanel({ stops, index, onDone, onUpload }: { stops: Stop[]; index: n
   const [errAnnule, setErrAnnule] = useState("");
 
   const okLabel = s.kind === "stock" ? "Pris" : s.kind === "dropoff" ? "Déposé" : "Collecté";
-  const earlier = stops.map((st, idx) => ({ st, idx })).filter(({ st, idx }) => idx < index && st.kind === "partner" && st.status === "collecte" && st.result?.items?.length);
+  const earlier = stops.map((st, idx) => ({ st, idx })).filter(({ st, idx }) => idx < index && (st.kind === "partner" || st.kind === "stock") && st.status === "collecte" && st.result?.items?.length);
   const allowed = s.allowedTypes || [];
 
   function validateCollecte() {
     if (s.kind === "stock") {
       const taken = (s.presetItems ?? []).filter((it) => (stockCounts[it.id] ?? 0) > 0);
       if (taken.length < 1 || photos < 1) return setErrCollecte("Indiquez au moins un produit pris en stock (nombre de colis) et ajoutez une photo.");
-      const items: ResultItem[] = taken.map((it) => ({ name: it.name, kg: Math.round(((stockCounts[it.id] ?? 0) * it.upc * it.grammage) / 10) / 100, stockId: it.id, colis: stockCounts[it.id] }));
+      const items: ResultItem[] = taken.map((it) => ({ name: it.name, denree: it.category || undefined, kg: Math.round(((stockCounts[it.id] ?? 0) * it.upc * it.grammage) / 10) / 100, stockId: it.id, colis: stockCounts[it.id] }));
       onDone({ items, totalKg: Math.round(items.reduce((sum, it) => sum + it.kg, 0) * 100) / 100, photos, photoPaths }, "collecte");
     } else if (s.kind === "dropoff") {
       const dropped: ResultItem[] = [];
       dropChecked.forEach((key) => {
         const [p, it] = key.split(":").map(Number);
         const src = stops[p].result!.items![it];
-        dropped.push({ denree: src.denree, kg: src.kg, from: stops[p].name, sourceId: stops[p].id });
+        dropped.push({ denree: src.denree, name: src.name, kg: src.kg, from: stops[p].name, sourceId: stops[p].id });
       });
       if (dropped.length < 1 || photos < 1) return setErrCollecte("Cochez au moins un produit à laisser ici, et ajoutez une photo.");
       onDone({ items: dropped, totalKg: Math.round(dropped.reduce((sum, it) => sum + it.kg, 0) * 10) / 10, photos, photoPaths }, "collecte");
@@ -361,7 +365,12 @@ function StopPanel({ stops, index, onDone, onUpload }: { stops: Stop[]; index: n
           ) : s.kind === "stock" ? (
             <div>
               <label className="mb-1.5 block text-xs font-bold text-[var(--navy)]">Produits du stock — indiquez le nombre de colis pris</label>
-              {(s.presetItems ?? []).length === 0 && <p className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--input-bg)] px-3.5 py-3 text-[12.5px] text-[var(--slate)]">Le stock est vide : rien à prendre ici.</p>}
+              {(s.planned ?? []).length > 0 && (
+                <p className="mb-2.5 rounded-xl bg-[var(--stock-accent-bg)] px-3 py-2.5 text-[12.5px] leading-[1.4] font-semibold text-[var(--navy)]">
+                  Prévu par l&apos;équipe : {s.planned!.map((p) => `${p.name} (${p.colis} colis)`).join(", ")}. Les quantités sont déjà remplies — ajuste-les si besoin.
+                </p>
+              )}
+              {(s.presetItems ?? []).length === 0 &&<p className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--input-bg)] px-3.5 py-3 text-[12.5px] text-[var(--slate)]">Le stock est vide : rien à prendre ici.</p>}
               <div className="flex flex-col gap-2">
                 {(s.presetItems ?? []).map((it) => (
                   <div key={it.id} className="flex items-center gap-2.5 rounded-xl border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-[13px] py-[9px]">
@@ -391,7 +400,8 @@ function StopPanel({ stops, index, onDone, onUpload }: { stops: Stop[]; index: n
               <div className="flex flex-col gap-2">
                 {earlier.map(({ st, idx }, n) => {
                   const pointItems = st.result!.items!;
-                  const allowedIdx = pointItems.map((it, j) => (allowed.includes(it.denree!) ? j : -1)).filter((j) => j >= 0);
+                  const fromStock = st.kind === "stock"; // goods the admin chose to send here: always accepted
+                  const allowedIdx = pointItems.map((it, j) => (fromStock || allowed.includes(it.denree!) ? j : -1)).filter((j) => j >= 0);
                   const pointChecked = allowedIdx.length > 0 && allowedIdx.every((j) => dropChecked.has(`${idx}:${j}`));
                   return (
                     <div key={idx} className="overflow-hidden rounded-xl border-[1.5px] border-[var(--border)] bg-[var(--input-bg)]">
@@ -421,7 +431,7 @@ function StopPanel({ stops, index, onDone, onUpload }: { stops: Stop[]; index: n
                       {expanded.has(idx) && (
                         <div className="flex flex-col gap-px border-t border-[var(--border)]">
                           {pointItems.map((it, j) => {
-                            const ok = allowed.includes(it.denree!);
+                            const ok = fromStock || allowed.includes(it.denree!);
                             return (
                               <label key={j} className={`flex items-center gap-[9px] bg-[var(--card)] py-[9px] pr-3 pl-[34px] text-[12.5px] font-semibold ${ok ? "cursor-pointer text-[var(--navy)]" : "cursor-not-allowed text-[var(--slate)] opacity-65"}`}>
                                 <input
@@ -431,7 +441,7 @@ function StopPanel({ stops, index, onDone, onUpload }: { stops: Stop[]; index: n
                                   onChange={() => setDropChecked((prev) => { const nx = new Set(prev); const key = `${idx}:${j}`; if (nx.has(key)) nx.delete(key); else nx.add(key); return nx; })}
                                   className="h-4 w-4 accent-[var(--dropoff)]"
                                 />
-                                <span className="flex-1">{it.denree}</span>
+                                <span className="flex-1">{it.name ?? it.denree}</span>
                                 <span className="text-[var(--slate)] tabular-nums">{it.kg} kg</span>
                                 {!ok && <span className="flex-none text-[10.5px] font-normal italic text-[var(--slate)]">non accepté ici</span>}
                               </label>
@@ -582,12 +592,12 @@ export default function JourneePage() {
         supabase.from("profiles").select("city_id,full_name,email").eq("id", uid).maybeSingle(),
         supabase
           .from("collectes")
-          .select("id,kind,label,comment,status,motif,photos_count,photo_paths,scheduled_time,partners(name,category,address,fiche,photo_url),beneficiaries(name,category,address,fiche),collecte_items!collecte_id(denree,name,kg,source_collecte_id)")
+          .select("id,kind,label,comment,status,motif,photos_count,photo_paths,planned_items,scheduled_time,partners(name,category,address,fiche,photo_url),beneficiaries(name,category,address,fiche),collecte_items!collecte_id(denree,name,kg,source_collecte_id)")
           .eq("scheduled_date", iso)
           .order("sort_order"),
         supabase.from("checklist_templates").select("items").eq("weekday", dbWeekday(now)).maybeSingle(),
         supabase.from("checklist_overrides").select("items").eq("day", iso).maybeSingle(),
-        supabase.from("stock_items").select("id,name,colis,upc,grammage").gt("colis", 0).order("name"),
+        supabase.from("stock_items").select("id,name,category,colis,upc,grammage").gt("colis", 0).order("name"),
         supabase.from("vehicles").select("id,name,plate").limit(1).maybeSingle(),
         supabase.from("day_sessions").select("started_at,closed_at").eq("logisticien_id", uid).eq("day", iso).maybeSingle(),
         supabase
@@ -602,7 +612,7 @@ export default function JourneePage() {
       setFirstName(((prof.data?.full_name || prof.data?.email?.split("@")[0] || "") as string).split(" ")[0]);
       if (col.error) showToast("Chargement impossible : " + col.error.message);
       const rows = (col.data ?? []) as unknown as DbStop[];
-      const presets = ((stock.data ?? []) as { id: string; name: string; colis: number; upc: number; grammage: number | string }[]).map((s) => ({ id: s.id, name: s.name, colis: s.colis, upc: s.upc, grammage: Number(s.grammage) }));
+      const presets = ((stock.data ?? []) as { id: string; name: string; category: string | null; colis: number; upc: number; grammage: number | string }[]).map((s) => ({ id: s.id, name: s.name, category: s.category ?? "", colis: s.colis, upc: s.upc, grammage: Number(s.grammage) }));
       setStops(rows.map((r) => rowToStop(r, rows)).map((s) => (s.kind === "stock" ? { ...s, presetItems: presets } : s)));
       setChecklist((ovr.data?.items ?? tpl.data?.items ?? []) as ChecklistItem[]);
       setVehicle((veh.data as { id: string; name: string; plate: string | null } | null) ?? null);

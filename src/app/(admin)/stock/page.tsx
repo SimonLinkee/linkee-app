@@ -19,6 +19,7 @@ type MoveItem = { produit: string; colis: number; unites: number; kg: number };
 type HistoryEntry = { id: string; type: "sortie" | "entree"; date: string; time: string; destination: string; items: MoveItem[] };
 type OutLine = { uid: string; productId: string | null; colisCount: number };
 type DbStock = { id: string; name: string; category: string | null; provenance: string | null; grammage: number | string; colis: number; upc: number; kg: number | string; ddm: string | null; dlc: string | null };
+type Dest = { id: string | null; name: string };
 type DbMove = { id: string; type: "sortie" | "entree"; day: string; time: string | null; destination: string | null; items: MoveItem[] };
 
 const TODAY = new Date();
@@ -56,7 +57,19 @@ export default function StockPage() {
   const [cityId, setCityId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [destinations, setDestinations] = useState<string[]>(["Autre bénéficiaire / à préciser"]);
+  const [destinations, setDestinations] = useState<Dest[]>([{ id: null, name: "Autre bénéficiaire / à préciser" }]);
+  const [outDay, setOutDay] = useState<string | null>(null);
+  const [planned, setPlanned] = useState<{ id: string; label: string | null; scheduled_date: string; planned_items: { name: string; colis: number }[] | null }[]>([]);
+  async function loadPlanned() {
+    const { data } = await supabase
+      .from("collectes")
+      .select("id,label,scheduled_date,planned_items")
+      .eq("kind", "stock")
+      .eq("status", "todo")
+      .not("planned_items", "is", null)
+      .order("scheduled_date");
+    setPlanned((data ?? []) as typeof planned);
+  }
   const [toast, setToast] = useState<string | null>(null);
   const [tab, setTab] = useState<"out" | "in" | "history">("out");
   const [search, setSearch] = useState("");
@@ -107,12 +120,12 @@ export default function StockPage() {
       setUserId(auth.user?.id ?? null);
       const { data: prof } = await supabase.from("profiles").select("city_id").eq("id", auth.user?.id ?? "").maybeSingle();
       setCityId(prof?.city_id ?? null);
-      const { data: bs } = await supabase.from("beneficiaries").select("name").eq("active", true).order("name");
-      const names = ((bs ?? []) as { name: string }[]).map((b) => b.name);
-      const dest = [...names, "Autre bénéficiaire / à préciser"];
+      const { data: bs } = await supabase.from("beneficiaries").select("id,name").eq("active", true).order("name");
+      const dest: Dest[] = [...((bs ?? []) as Dest[]), { id: null, name: "Autre bénéficiaire / à préciser" }];
       setDestinations(dest);
-      setOutDestination(dest[0]);
+      setOutDestination(dest[0].name);
       await reload();
+      await loadPlanned();
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -205,20 +218,45 @@ export default function StockPage() {
     }
     setOutError("");
 
-    const dateLabel = outDate ? new Date(outDate + "T00:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "2-digit", month: "long" }) : "";
-    // one atomic call: decrements the stock and writes the movement (see take_stock in migration 006)
+    if (!cityId) return setOutError("Aucune ville n'est associée à ton compte.");
+
+    // The outflow is PLANNED: two stops land in the Planning of the chosen day (pick-up at the depot, drop-off at the
+    // beneficiary). The stock is decreased when the logisticien confirms he took the boxes (take_stock, migration 006).
+    const day = outDate || todayIso();
+    const time = outTime || null;
+    const planned = validLines.map((l) => {
+      const it = stock.find((x) => x.id === l.productId)!;
+      const units = l.colisCount * it.upc;
+      return { id: it.id, name: it.produit, category: it.categorie, colis: l.colisCount, unites: units, kg: Math.round((units * it.grammage) / 10) / 100 };
+    });
+    const totalUnits = planned.reduce((s, x) => s + x.unites, 0);
+    const totalKg = planned.reduce((s, x) => s + x.kg, 0);
+    const summaryText = planned.map((p) => `${p.name} (${p.colis} colis)`).join(", ");
+    const dest = destinations.find((d) => d.name === outDestination);
+    const dateLabel = new Date(day + "T00:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "2-digit", month: "long" });
+
     supabase
-      .rpc("take_stock", { p_items: validLines.map((l) => ({ id: l.productId, colis: l.colisCount })), p_destination: outDestination, p_day: outDate || todayIso(), p_time: outTime || null })
-      .then(async ({ data, error }) => {
-        if (error) return setOutError(error.message);
-        const res = data as { items: MoveItem[]; total_kg: number };
-        const totalUnits = res.items.reduce((s, x) => s + x.unites, 0);
+      .from("collectes")
+      .insert([
+        {
+          city_id: cityId, kind: "stock", label: `Sortie de stock — ${outDestination}`, scheduled_date: day, scheduled_time: time, sort_order: 98, status: "todo",
+          duration_min: 15, planned_items: planned, comment: `À prendre au dépôt pour ${outDestination} : ${summaryText}`,
+        },
+        {
+          city_id: cityId, kind: "dropoff", beneficiary_id: dest?.id ?? null, label: dest?.id ? null : outDestination, scheduled_date: day, scheduled_time: time, sort_order: 99, status: "todo",
+          duration_min: 10, comment: `Livraison du stock : ${summaryText}`,
+        },
+      ])
+      .then(async ({ error }) => {
+        if (error) return setOutError("Planification impossible : " + error.message + " (la migration 009 est-elle passée ?)");
+        setOutDay(day);
         setOutConfirm({
-          name: "Sortie de stock — " + outDestination,
-          sub: `${dateLabel} à ${outTime} · ${res.items.length} produit(s) · ${fmtNum(totalUnits)} unités · ${fmtNum(res.total_kg)} kg`,
-          items: res.items,
+          name: `Sortie planifiée — ${outDestination}`,
+          sub: `${dateLabel}${time ? ` vers ${time}` : ""} · ${planned.length} produit(s) · ${fmtNum(totalUnits)} unités · ${fmtNum(totalKg)} kg`,
+          items: planned.map((p) => ({ produit: p.name, colis: p.colis, unites: p.unites, kg: p.kg })),
         });
-        await reload();
+        setOutLines([{ uid: "ol" + Date.now(), productId: stock[0]?.id ?? null, colisCount: 1 }]);
+        await loadPlanned();
       });
   }
 
@@ -407,12 +445,12 @@ export default function StockPage() {
               <label className={labelCls}>Destination (bénéficiaire)</label>
               <select value={outDestination} onChange={(e) => setOutDestination(e.target.value)} className={inputCls}>
                 {destinations.map((d) => (
-                  <option key={d}>{d}</option>
+                  <option key={d.name}>{d.name}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className={labelCls}>Date souhaitée</label>
+              <label className={labelCls}>Jour de la sortie (Planning)</label>
               <input type="date" value={outDate} onChange={(e) => setOutDate(e.target.value)} className={inputCls} />
             </div>
             <div>
@@ -422,8 +460,19 @@ export default function StockPage() {
           </div>
           {outError && <p className="mb-2 text-xs text-[var(--critical)]">{outError}</p>}
           <button type="button" onClick={validateOut} className="rounded-[40px] bg-[var(--critical)] px-5 py-2.5 font-display text-sm font-bold text-white">
-            Valider la sortie du stock
+            Planifier la sortie du stock
           </button>
+          <p className="mt-2 text-[11.5px] text-[var(--slate)]">Cela ajoute une prise au dépôt et une dépose chez le bénéficiaire dans le Planning du jour choisi.</p>
+          {planned.length > 0 && (
+            <div className="mt-4 rounded-xl border border-dashed border-[var(--stock-accent)] bg-[var(--stock-accent-bg)] px-4 py-3">
+              <div className="mb-1 text-[12px] font-bold text-[var(--stock-accent)]">Sorties planifiées, en attente du logisticien ({planned.length})</div>
+              {planned.map((p) => (
+                <div key={p.id} className="text-[12px] text-[var(--navy)]">
+                  <strong>{new Date(p.scheduled_date + "T00:00:00").toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}</strong> — {p.label?.replace("Sortie de stock — ", "")} : {(p.planned_items ?? []).map((i) => `${i.name} (${i.colis} colis)`).join(", ")}
+                </div>
+              ))}
+            </div>
+          )}
 
           {outConfirm && (
             <div className="mt-4 rounded-2xl bg-[var(--good-bg)] p-4">
@@ -431,7 +480,7 @@ export default function StockPage() {
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-[17px] w-[17px]">
                   <path d="M20 6 L9 17 L4 12" />
                 </svg>
-                <span>Sortie de stock enregistrée — le stock a été mis à jour</span>
+                <span>Sortie planifiée — 2 arrêts ajoutés au Planning (prise au dépôt, puis dépose)</span>
               </div>
               <div className="flex items-center gap-3 rounded-2xl border-[1.5px] border-l-4 border-[var(--stock-accent)] bg-[var(--card)] px-3.5 py-3">
                 <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full bg-[var(--stock-accent-bg)] text-[var(--stock-accent)]">
@@ -454,7 +503,14 @@ export default function StockPage() {
                   </label>
                 ))}
               </div>
-              <p className="mt-2.5 text-[11.5px] leading-[1.5] text-[var(--slate)] italic">Le mouvement est visible dans l&apos;onglet Historique.</p>
+              <p className="mt-2.5 text-[11.5px] leading-[1.5] text-[var(--slate)]">
+                Le stock sera décompté quand le logisticien confirmera avoir pris les colis ; le mouvement apparaîtra alors dans l&apos;onglet Historique.
+              </p>
+              {outDay && (
+                <a href={`/planning?date=${outDay}`} className="mt-2.5 inline-flex rounded-[40px] bg-[var(--navy-deep)] px-4 py-2 font-display text-[13px] font-bold text-[var(--panel-fg)]">
+                  Voir dans le Planning
+                </a>
+              )}
             </div>
           )}
         </div>

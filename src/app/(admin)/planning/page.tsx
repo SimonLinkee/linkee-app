@@ -205,6 +205,11 @@ export default function PlanningPage() {
   const [places, setPlaces] = useState<Place[]>([DEPOT_PLACE]);
   const [view, setView] = useState<"jour" | "semaine">("jour");
   const [currentDate, setCurrentDate] = useState(() => new Date());
+  // deep link from the Stock screen: /planning?date=YYYY-MM-DD
+  useEffect(() => {
+    const d = new URLSearchParams(window.location.search).get("date");
+    if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) setCurrentDate(new Date(d + "T00:00:00"));
+  }, []);
   const [stops, setStops] = useState<Stop[]>([]);
   const [loadingDay, setLoadingDay] = useState(true);
   const [geo, setGeo] = useState<Record<string, LatLng>>({});
@@ -966,6 +971,7 @@ export default function PlanningPage() {
                         )}
                       </div>
                       <div className="text-[11.5px] text-[var(--slate)]">{s.cat}</div>
+                      {s.comment && (s.kind === "stock" || s.kind === "dropoff") && <div className="truncate text-[11px] text-[var(--stock-accent)] italic" title={s.comment}>{s.comment}</div>}
                     </span>
                     <span className={`flex-none rounded-[40px] px-2 py-[3px] text-[9.5px] font-bold tracking-[0.03em] uppercase ${cancelled ? "bg-[var(--critical-bg)] text-[var(--critical)]" : done ? "bg-[var(--good-bg)] text-[var(--good)]" : KIND_BADGE_CLS[s.kind] || "bg-[var(--track)] text-[var(--slate)]"}`}>
                       {cancelled ? "Annulé" : done ? "Réalisée" : KIND_BADGE[s.kind] || "Collecte"}
