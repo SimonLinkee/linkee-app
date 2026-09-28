@@ -617,22 +617,6 @@ export default function DistributionsPage() {
                   <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">{fmt(fig.distributed)} kg distribués</p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-                {[
-                  ["Coût par personne", fig.costPer ? eur(fig.costPer) : "—", `${eur(fig.cost)} au total`],
-                  ["F&L par personne", fig.flPer ? `${fmt(fig.flPer, 2)} kg` : "—", draft.flTarget ? `cible ${draft.flTarget} kg` : `${fmt(fig.fl)} kg de F&L`],
-                  ["Pertes", `${fmt(fig.lossPct, 1)} %`, `sur ${fmt(fig.weight)} kg reçus`],
-                  ["Poids total reçu", `${fmt(fig.weight)} kg`, `${draft.lines.length} ligne${draft.lines.length > 1 ? "s" : ""} produit`],
-                  ["Associations présentes", String(draft.interventions.length), draft.interventions.length ? "voir plus bas" : "Village associatif"],
-                ].map(([l, v, sub]) => (
-                  <div key={l} className="rounded-2xl bg-[var(--track)] px-4 py-3">
-                    <div className="text-[11.5px] font-semibold text-[var(--slate)]">{l}</div>
-                    <div className="font-display text-[21px] font-black text-[var(--navy)] tabular-nums">{v}</div>
-                    <div className="text-[11.5px] text-[var(--slate)]">{sub}</div>
-                  </div>
-                ))}
-              </div>
-
               {/* volunteers */}
               <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3.5" style={{ borderTop: "4px solid var(--client-req)" }}>
                 <div className="flex items-center gap-2.5">
@@ -657,78 +641,6 @@ export default function DistributionsPage() {
                   <input type="number" min={0} className={`${fieldCls} font-display !text-[20px] font-black`} value={draft.coordinators} onChange={(e) => edit((d) => ({ ...d, coordinators: e.target.value }))} placeholder="0" />
                 </div>
                 {num(draft.coordinators) > num(draft.volunteers) && <span className="text-[12px] font-semibold text-[var(--critical)]">Les coordinateurs sont comptés dans le total : vérifie les chiffres.</span>}
-              </div>
-
-              {/* photos: parcel and event are two separate spaces */}
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4" style={{ borderTop: "4px solid var(--cat-4)" }}>
-                  <h3 className="text-[14.5px] font-semibold text-[var(--navy)]">Photos du colis</h3>
-                  <p className="mb-2.5 text-[11.5px] text-[var(--slate)]">Le contenu type d&apos;un panier distribué.</p>
-                  <PhotoStrip paths={draft.photoPaths} folder={`${cityId}/dist-${draft.beneficiaryId}-${draft.date}`} onChange={(p) => edit((d) => ({ ...d, photoPaths: p }))} accent="var(--cat-4)" />
-                </div>
-                <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4" style={{ borderTop: "4px solid #2a78d6" }}>
-                  <h3 className="text-[14.5px] font-semibold text-[var(--navy)]">Photos de la distribution</h3>
-                  <p className="mb-2.5 text-[11.5px] text-[var(--slate)]">Ambiance, stand, bénéficiaires, bénévoles…</p>
-                  <PhotoStrip paths={draft.eventPhotos} folder={`${cityId}/dist-${draft.beneficiaryId}-${draft.date}`} onChange={(p) => edit((d) => ({ ...d, eventPhotos: p }))} accent="#2a78d6" />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-3">                <div className="rounded-2xl border-[1.5px] border-[#2a78d6] bg-[var(--card)] p-4">
-                  <h3 className="mb-0.5 flex items-center gap-2 text-[14.5px] font-semibold text-[var(--navy)]">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px] text-[#2a78d6]">
-                      <path d="M4 5 H20 V16 H10 L5.5 20 V16 H4 Z" />
-                    </svg>
-                    Commentaire de la distribution
-                  </h3>
-                  <p className="mb-2 text-[11.5px] text-[var(--slate)]">Affluence, imprévus, retours des bénéficiaires… il apparaît aussi dans l&apos;historique du pilotage.</p>
-                  <textarea className={`${fieldCls} min-h-[90px] resize-y`} placeholder="Ex : rupture de pain, forte affluence…" value={draft.comment} onChange={(e) => edit((d) => ({ ...d, comment: e.target.value }))} />
-                  <div className="mt-2 flex items-center gap-2">
-                    <label className="text-[11.5px] font-semibold text-[var(--slate)]">Cible F&amp;L par personne</label>
-                    <input type="number" min={0} step="0.1" className={`${fieldCls} !w-[90px]`} value={draft.flTarget} onChange={(e) => edit((d) => ({ ...d, flTarget: e.target.value }))} placeholder="kg" />
-                  </div>
-                </div>
-              </div>
-
-              {/* associations present (external interventions) */}
-              <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4" style={{ borderTop: "4px solid #eb6834" }}>
-                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="flex items-center gap-2 text-[14.5px] font-semibold text-[var(--navy)]">
-                    Associations présentes
-                    <span className="rounded-[40px] bg-[#eb6834] px-2.5 py-0.5 text-[12px] font-bold text-white">{draft.interventions.length}</span>
-                  </h3>
-                  <Link href="/distributions/village" className="text-[12px] font-semibold text-[#eb6834]">Ouvrir le Village associatif →</Link>
-                </div>
-                <p className="mb-3 text-[11.5px] text-[var(--slate)]">Choisis dans la liste celles qui sont intervenues. Chaque intervention apparaît aussi dans la fiche de l&apos;association.</p>
-                <select
-                  value=""
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    if (id) edit((d) => (d.interventions.some((i) => i.associationId === id) ? d : { ...d, interventions: [...d.interventions, { associationId: id, comment: "", photoPaths: [] }] }));
-                  }}
-                  className={`${fieldCls} max-w-[420px]`}
-                >
-                  <option value="">{assocs.filter((a) => !a.archived && !draft.interventions.some((i) => i.associationId === a.id)).length ? "Ajouter une association présente…" : assocs.length ? "Toutes les associations sont déjà ajoutées" : "Aucune association dans le Village associatif"}</option>
-                  {assocs.filter((a) => !a.archived && !draft.interventions.some((i) => i.associationId === a.id)).map((a) => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
-                  ))}
-                </select>                {draft.interventions.length > 0 && (
-                  <div className="mt-4 flex flex-col gap-3">
-                    {draft.interventions.map((iv) => {
-                      const a = assocs.find((x) => x.id === iv.associationId);
-                      return (
-                        <div key={iv.associationId} className="rounded-xl border border-[var(--border)] bg-[var(--input-bg)] p-3">
-                          <div className="mb-2 flex items-center justify-between">
-                            <span className="text-[13.5px] font-semibold text-[var(--navy)]">{a?.name ?? "Association"}{a?.activity_type ? <span className="ml-2 text-[11.5px] font-normal text-[var(--slate)]">{a.activity_type}</span> : null}</span>
-                            <button type="button" onClick={() => edit((d) => ({ ...d, interventions: d.interventions.filter((i) => i.associationId !== iv.associationId) }))} className="text-[12px] font-semibold text-[var(--slate)] hover:text-[var(--critical)]">Retirer</button>
-                          </div>
-                          <textarea className={`${fieldCls} min-h-[64px] resize-y`} placeholder="Ce que l'association a fait, retour sur son intervention…" value={iv.comment} onChange={(e) => edit((d) => ({ ...d, interventions: d.interventions.map((i) => (i.associationId === iv.associationId ? { ...i, comment: e.target.value } : i)) }))} />
-                          <div className="mt-2">
-                            <PhotoStrip paths={iv.photoPaths} folder={`${cityId}/dist-${draft.beneficiaryId}-${draft.date}`} onChange={(p) => edit((d) => ({ ...d, interventions: d.interventions.map((i) => (i.associationId === iv.associationId ? { ...i, photoPaths: p } : i)) }))} accent="#eb6834" size={72} label="Photos" />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
 
               {/* products */}              <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
@@ -810,6 +722,79 @@ export default function DistributionsPage() {
                   </table>
                 </div>
               </div>
+
+              <div className="grid grid-cols-1 gap-3">                <div className="rounded-2xl border-[1.5px] border-[#2a78d6] bg-[var(--card)] p-4">
+                  <h3 className="mb-0.5 flex items-center gap-2 text-[14.5px] font-semibold text-[var(--navy)]">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px] text-[#2a78d6]">
+                      <path d="M4 5 H20 V16 H10 L5.5 20 V16 H4 Z" />
+                    </svg>
+                    Commentaire de la distribution
+                  </h3>
+                  <p className="mb-2 text-[11.5px] text-[var(--slate)]">Affluence, imprévus, retours des bénéficiaires… il apparaît aussi dans l&apos;historique du pilotage.</p>
+                  <textarea className={`${fieldCls} min-h-[90px] resize-y`} placeholder="Ex : rupture de pain, forte affluence…" value={draft.comment} onChange={(e) => edit((d) => ({ ...d, comment: e.target.value }))} />
+                  <div className="mt-2 flex items-center gap-2">
+                    <label className="text-[11.5px] font-semibold text-[var(--slate)]">Cible F&amp;L par personne</label>
+                    <input type="number" min={0} step="0.1" className={`${fieldCls} !w-[90px]`} value={draft.flTarget} onChange={(e) => edit((d) => ({ ...d, flTarget: e.target.value }))} placeholder="kg" />
+                  </div>
+                </div>
+              </div>
+
+              {/* photos: parcel and event are two separate spaces */}
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4" style={{ borderTop: "4px solid var(--cat-4)" }}>
+                  <h3 className="text-[14.5px] font-semibold text-[var(--navy)]">Photos du colis</h3>
+                  <p className="mb-2.5 text-[11.5px] text-[var(--slate)]">Le contenu type d&apos;un panier distribué.</p>
+                  <PhotoStrip paths={draft.photoPaths} folder={`${cityId}/dist-${draft.beneficiaryId}-${draft.date}`} onChange={(p) => edit((d) => ({ ...d, photoPaths: p }))} accent="var(--cat-4)" />
+                </div>
+                <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4" style={{ borderTop: "4px solid #2a78d6" }}>
+                  <h3 className="text-[14.5px] font-semibold text-[var(--navy)]">Photos de la distribution</h3>
+                  <p className="mb-2.5 text-[11.5px] text-[var(--slate)]">Ambiance, stand, bénéficiaires, bénévoles…</p>
+                  <PhotoStrip paths={draft.eventPhotos} folder={`${cityId}/dist-${draft.beneficiaryId}-${draft.date}`} onChange={(p) => edit((d) => ({ ...d, eventPhotos: p }))} accent="#2a78d6" />
+                </div>
+              </div>
+              {/* associations present (external interventions) */}
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4" style={{ borderTop: "4px solid #eb6834" }}>
+                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="flex items-center gap-2 text-[14.5px] font-semibold text-[var(--navy)]">
+                    Associations présentes
+                    <span className="rounded-[40px] bg-[#eb6834] px-2.5 py-0.5 text-[12px] font-bold text-white">{draft.interventions.length}</span>
+                  </h3>
+                  <Link href="/distributions/village" className="text-[12px] font-semibold text-[#eb6834]">Ouvrir le Village associatif →</Link>
+                </div>
+                <p className="mb-3 text-[11.5px] text-[var(--slate)]">Choisis dans la liste celles qui sont intervenues. Chaque intervention apparaît aussi dans la fiche de l&apos;association.</p>
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    if (id) edit((d) => (d.interventions.some((i) => i.associationId === id) ? d : { ...d, interventions: [...d.interventions, { associationId: id, comment: "", photoPaths: [] }] }));
+                  }}
+                  className={`${fieldCls} max-w-[420px]`}
+                >
+                  <option value="">{assocs.filter((a) => !a.archived && !draft.interventions.some((i) => i.associationId === a.id)).length ? "Ajouter une association présente…" : assocs.length ? "Toutes les associations sont déjà ajoutées" : "Aucune association dans le Village associatif"}</option>
+                  {assocs.filter((a) => !a.archived && !draft.interventions.some((i) => i.associationId === a.id)).map((a) => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>                {draft.interventions.length > 0 && (
+                  <div className="mt-4 flex flex-col gap-3">
+                    {draft.interventions.map((iv) => {
+                      const a = assocs.find((x) => x.id === iv.associationId);
+                      return (
+                        <div key={iv.associationId} className="rounded-xl border border-[var(--border)] bg-[var(--input-bg)] p-3">
+                          <div className="mb-2 flex items-center justify-between">
+                            <span className="text-[13.5px] font-semibold text-[var(--navy)]">{a?.name ?? "Association"}{a?.activity_type ? <span className="ml-2 text-[11.5px] font-normal text-[var(--slate)]">{a.activity_type}</span> : null}</span>
+                            <button type="button" onClick={() => edit((d) => ({ ...d, interventions: d.interventions.filter((i) => i.associationId !== iv.associationId) }))} className="text-[12px] font-semibold text-[var(--slate)] hover:text-[var(--critical)]">Retirer</button>
+                          </div>
+                          <textarea className={`${fieldCls} min-h-[64px] resize-y`} placeholder="Ce que l'association a fait, retour sur son intervention…" value={iv.comment} onChange={(e) => edit((d) => ({ ...d, interventions: d.interventions.map((i) => (i.associationId === iv.associationId ? { ...i, comment: e.target.value } : i)) }))} />
+                          <div className="mt-2">
+                            <PhotoStrip paths={iv.photoPaths} folder={`${cityId}/dist-${draft.beneficiaryId}-${draft.date}`} onChange={(p) => edit((d) => ({ ...d, interventions: d.interventions.map((i) => (i.associationId === iv.associationId ? { ...i, photoPaths: p } : i)) }))} accent="#eb6834" size={72} label="Photos" />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
             </div>
           )}
         </div>
