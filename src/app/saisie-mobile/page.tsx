@@ -70,7 +70,7 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
 
 function Page() {
   const supabase = useMemo(() => createClient(), []);
-  const { ready, cityId, city } = useCity();
+  const { ready, cityId, city, role } = useCity();
   const [places, setPlaces] = useState<Place[]>([]);
   const [assocs, setAssocs] = useState<Assoc[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -269,7 +269,7 @@ function Page() {
         </div>
         <span className="flex items-center gap-3 text-[12px] font-semibold text-[var(--slate)]">
           {city && <span className="rounded-[40px] px-2.5 py-1 text-white" style={{ background: city.color }}>{city.name}</span>}
-          <Link href="/version" className="underline">Changer de version</Link>
+          <Link href={role === "admin_principal" ? "/mobile" : "/version"} className="underline">{role === "admin_principal" ? "Accueil" : "Changer de version"}</Link>
         </span>
       </header>
 

@@ -41,7 +41,7 @@ export default function VersionPage() {
       <p className="mt-1 mb-7 text-center text-[14px] text-[var(--slate)]">{ROLE_LABEL[role] ? `${ROLE_LABEL[role]} · ` : ""}Quelle version veux-tu utiliser ?</p>
 
       <div className="grid w-full max-w-[640px] grid-cols-1 gap-4 sm:grid-cols-2">
-        <Link href="/distributions" className="flex flex-col items-start gap-3 rounded-[22px] border-2 border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)] transition-transform hover:-translate-y-0.5 hover:border-[var(--navy-deep)]">
+        <Link href={role === "admin_principal" ? "/dashboard" : "/distributions"} className="flex flex-col items-start gap-3 rounded-[22px] border-2 border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)] transition-transform hover:-translate-y-0.5 hover:border-[var(--navy-deep)]">
           <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--navy-deep)] text-[var(--panel-fg)]">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-8 w-8">
               <rect x="2.5" y="4" width="19" height="13" rx="2" />
@@ -50,10 +50,10 @@ export default function VersionPage() {
           </span>
           <span>
             <span className="block font-display text-[24px] font-black text-[var(--navy)]">Version PC</span>
-            <span className="block text-[13px] leading-[1.45] text-[var(--slate)]">L&apos;interface complète : tableau détaillé, pilotage, village associatif…</span>
+            <span className="block text-[13px] leading-[1.45] text-[var(--slate)]">L&apos;interface complète, avec tous les écrans.</span>
           </span>
         </Link>
-        <Link href="/saisie-mobile" className="flex flex-col items-start gap-3 rounded-[22px] border-2 border-[#2a78d6] bg-[var(--card)] p-6 shadow-[var(--shadow)] transition-transform hover:-translate-y-0.5">
+        <Link href={role === "admin_principal" ? "/mobile" : "/saisie-mobile"} className="flex flex-col items-start gap-3 rounded-[22px] border-2 border-[#2a78d6] bg-[var(--card)] p-6 shadow-[var(--shadow)] transition-transform hover:-translate-y-0.5">
           <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2a78d6] text-white">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-8 w-8">
               <rect x="6" y="2.5" width="12" height="19" rx="2.5" />
@@ -62,7 +62,7 @@ export default function VersionPage() {
           </span>
           <span>
             <span className="block font-display text-[24px] font-black text-[var(--navy)]">Version mobile</span>
-            <span className="block text-[13px] leading-[1.45] text-[var(--slate)]">Saisie rapide sur téléphone : chiffres, kilos, photos, associations.</span>
+            <span className="block text-[13px] leading-[1.45] text-[var(--slate)]">{role === "admin_principal" ? "L'essentiel sur téléphone : fiches, planning, distribution, stock." : "Saisie rapide sur téléphone : chiffres, kilos, photos, associations."}</span>
           </span>
         </Link>
       </div>

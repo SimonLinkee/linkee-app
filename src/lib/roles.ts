@@ -1,11 +1,11 @@
 export type Role = 'en_attente' | 'admin_principal' | 'admin_local' | 'resp_distribution' | 'logisticien' | 'partenaire' | 'beneficiaire'
 
 // Screen access per role (data rules are enforced again in the database, see migration 018):
-//   admin_principal   = Superadmin              : everything
+//   admin_principal   = Superadmin              : everything (mobile version: /mobile, reduced)
 //   admin_local       = Responsable d'antenne   : Distribution + Stock (edit), Planning (read only)
 //   resp_distribution = Resp. Distribution      : Distribution only
 // After sign-in the last two roles land on /version: full PC version or quick mobile entry (/saisie-mobile).
-const SUPER_ONLY = ['/dashboard', '/partenaires', '/beneficiaires', '/flotte', '/todo', '/villes-comptes', '/historique', '/journee', '/espace-partenaire']
+const SUPER_ONLY = ['/dashboard', '/partenaires', '/beneficiaires', '/flotte', '/todo', '/villes-comptes', '/historique', '/journee', '/espace-partenaire', '/mobile']
 const ANTENNE_PATHS = ['/distributions', '/stock', '/planning', '/profil', '/version', '/saisie-mobile']
 const DISTRIB_PATHS = ['/distributions', '/profil', '/version', '/saisie-mobile']
 
@@ -22,7 +22,7 @@ export const ROLE_LABEL: Record<string, string> = {
 export function homeForRole(role: string): string {
   switch (role) {
     case 'admin_principal':
-      return '/dashboard'
+      return '/version' // choice between the PC version and the mobile version
     case 'admin_local':
     case 'resp_distribution':
       return '/version' // choice between the PC version and the quick mobile entry
