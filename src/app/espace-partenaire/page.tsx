@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode 
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { compressImage } from "@/lib/photos";
+import { flushNotificationEmails } from "@/lib/notify";
 import { CAT_LABELS, buildEvo, isCollectKind, isoOf, rse, summarize, type CatKey, type StatRow } from "@/lib/stats";
 
 /* ---------------- types ---------------- */
@@ -550,6 +551,7 @@ export default function EspacePartenairePage() {
       return false;
     }
     setReqRows((prev) => [...prev, data as DbReq]);
+    flushNotificationEmails(); // e-mail the admins (the in-app notification is created by the database)
     showToast("Demande envoyée — elle apparaîtra en violet dans le Planning Linkee, en attente de validation.");
     return true;
   }

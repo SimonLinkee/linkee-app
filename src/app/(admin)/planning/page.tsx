@@ -4,6 +4,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { geocode, toKm, type LatLng } from "@/lib/geocode";
 import { signedUrls } from "@/lib/photos";
+import { flushNotificationEmails } from "@/lib/notify";
+import dynamic from "next/dynamic";
+import type { MapPoint } from "@/components/RouteMap";
+
+const RouteMap = dynamic(() => import("@/components/RouteMap"), {
+  ssr: false,
+  loading: () => <div className="flex h-[340px] items-center justify-center rounded-xl bg-[var(--input-bg)] text-[12.5px] text-[var(--slate)]">Chargement de la carte…</div>,
+});
+const TRAFFIC_FACTOR = 1.15; // city traffic margin applied to the raw road durations
 
 type Kind = "partner" | "dropoff" | "stock" | "exceptionnel" | "demande_client";
 type Status = "planifie" | "annule";
@@ -126,19 +135,24 @@ function pseudoCoords(seed: string): Coords {
   return { x: (h % 2000) / 100 - 10, y: ((h >> 8) % 2000) / 100 - 10 };
 }
 
-function computeSchedule(stops: StopC[]) {
+/** Real road legs (minutes, km), one per active stop in order, plus the return leg to the depot at the end. */
+type Leg = { min: number; km: number };
+
+function computeSchedule(stops: StopC[], legs?: Leg[]) {
   let t = DAY_START;
   let totalTravel = 0;
   let totalKm = 0;
   let totalDuration = 0;
   let lunchAt = -1;
   let prevCoords: Coords = { x: 0, y: 0 };
+  let activeIdx = 0;
   const enriched: EnrichedStop[] = stops.map((s, i) => {
     if (s.status === "annule") {
       return { ...s, scheduledTime: null, travelFromPrev: 0, travelKmFromPrev: 0 };
     }
-    const travel = travelMinutes(prevCoords, s.coords);
-    const km = travelKm(prevCoords, s.coords);
+    const leg = legs?.[activeIdx++];
+    const travel = leg ? Math.round(leg.min) : travelMinutes(prevCoords, s.coords);
+    const km = leg ? leg.km : travelKm(prevCoords, s.coords);
     if (lunchAt === -1 && t + travel >= LUNCH_START && t < LUNCH_END) {
       lunchAt = i;
       t = LUNCH_END;
@@ -154,7 +168,18 @@ function computeSchedule(stops: StopC[]) {
     prevCoords = s.coords;
     return { ...s, scheduledTime, travelFromPrev: travel, travelKmFromPrev: km, arrivalMin };
   });
-  return { stops: enriched, dayEnd: t, totalTravel, totalKm, totalDuration, lunchAt };
+  // the truck goes back to the depot at the end of the day
+  let returnMin = 0;
+  let returnKm = 0;
+  if (activeIdx > 0) {
+    const ret = legs?.[activeIdx];
+    returnMin = ret ? Math.round(ret.min) : travelMinutes(prevCoords, { x: 0, y: 0 });
+    returnKm = ret ? ret.km : travelKm(prevCoords, { x: 0, y: 0 });
+    t += returnMin;
+    totalTravel += returnMin;
+    totalKm += returnKm;
+  }
+  return { stops: enriched, dayEnd: t, totalTravel, totalKm, totalDuration, lunchAt, returnMin, returnKm };
 }
 
 const KIND_BADGE: Record<string, string> = { stock: "Stock", dropoff: "Dépose", demande_client: "Demande exceptionnelle client", exceptionnel: "Exceptionnel" };
@@ -233,7 +258,47 @@ export default function PlanningPage() {
       }),
     [stops, geo, depotGeo],
   );
-  const sched = useMemo(() => computeSchedule(stopsC), [stopsC]);
+  // real road routing: depot → active stops (in order) → depot, computed by /api/route once every address is geolocated
+  const [route, setRoute] = useState<{ key: string; legs: Leg[]; geometry: [number, number][]; provider: string } | null>(null);
+  const [routeError, setRouteError] = useState<string | null>(null);
+  const routePts = useMemo(() => {
+    if (!depotGeo) return null;
+    const pts: LatLng[] = [depotGeo];
+    for (const s of stops) {
+      if (s.status === "annule") continue;
+      const g = geo[s.address];
+      if (!g) return null;
+      pts.push(g);
+    }
+    if (pts.length < 2) return null;
+    pts.push(depotGeo);
+    return pts;
+  }, [stops, geo, depotGeo]);
+  const routeKey = routePts ? routePts.map((p) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join("|") : null;
+  const activeRoute = route && route.key === routeKey ? route : null;
+  const sched = useMemo(() => computeSchedule(stopsC, activeRoute?.legs), [stopsC, activeRoute]);
+
+  useEffect(() => {
+    if (!routePts || !routeKey || route?.key === routeKey) return;
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch("/api/route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ points: routePts }) });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? "Calcul d'itinéraire impossible");
+        setRoute({
+          key: routeKey,
+          provider: json.provider,
+          geometry: json.geometry,
+          legs: (json.legs as { seconds: number; meters: number }[]).map((l) => ({ min: (l.seconds / 60) * TRAFFIC_FACTOR, km: l.meters / 1000 })),
+        });
+        setRouteError(null);
+      } catch (e) {
+        setRouteError((e as Error).message);
+      }
+    }, 600);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeKey]);
   const activeStops = sched.stops.filter((s) => s.status !== "annule");
   const cancelledCount = stops.length - activeStops.length;
   const overflow = sched.dayEnd - HARD_LIMIT;
@@ -381,7 +446,10 @@ export default function PlanningPage() {
       }));
       const { error } = await supabase.from("collectes").upsert(rows);
       if (error) fail("Enregistrement impossible", error.message);
-      else loadWeek();
+      else {
+        loadWeek();
+        flushNotificationEmails(); // the logisticien is notified (in-app by the database, e-mail from here)
+      }
     }, 800);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sched]);
@@ -542,17 +610,14 @@ export default function PlanningPage() {
   }
 
   /* ---------- map projection (km → svg) ---------- */
-  let lunchActivePos = -1;
-  if (sched.lunchAt !== -1) lunchActivePos = activeStops.indexOf(sched.stops[sched.lunchAt]);
-  const rawPts: Coords[] = [{ x: 0, y: 0 }, ...activeStops.map((s) => s.coords)];
-  const MW = 720, MH = 290, PAD = 46;
-  const minX = Math.min(...rawPts.map((p) => p.x)), maxX = Math.max(...rawPts.map((p) => p.x));
-  const minY = Math.min(...rawPts.map((p) => p.y)), maxY = Math.max(...rawPts.map((p) => p.y));
-  const scale = Math.min((MW - 2 * PAD) / Math.max(maxX - minX, 1), (MH - 2 * PAD) / Math.max(maxY - minY, 1));
-  const proj = (p: Coords): Coords => ({ x: PAD + (p.x - minX) * scale + ((MW - 2 * PAD) - (maxX - minX) * scale) / 2, y: PAD + (p.y - minY) * scale + ((MH - 2 * PAD) - (maxY - minY) * scale) / 2 });
-  const depotPt = proj({ x: 0, y: 0 });
-  const allPts = [depotPt, ...activeStops.map((s) => proj(s.coords))];
-  const mapIsReal = !!depotGeo;
+  const KIND_HEX: Record<Kind, string> = { partner: "#0a1a3f", stock: "#b97600", dropoff: "#1a8f68", exceptionnel: "#1f93a8", demande_client: "#7c5cd9" };
+  const mapPoints: MapPoint[] = [];
+  if (depotGeo) mapPoints.push({ lat: depotGeo.lat, lng: depotGeo.lng, label: "Entrepôt Linkee — départ", color: "#4FC1D6", num: "home", time: `Départ ${fmtTime(DAY_START)}` });
+  activeStops.forEach((s) => {
+    const g = geo[s.address];
+    if (g) mapPoints.push({ lat: g.lat, lng: g.lng, label: s.name, color: KIND_HEX[s.kind], num: sched.stops.findIndex((x) => x.id === s.id) + 1, time: s.scheduledTime ?? undefined });
+  });
+  const unlocated = activeStops.filter((s) => !geo[s.address]).length;
 
   const weekDays = (() => {
     const monday = new Date(currentDate);
@@ -781,46 +846,15 @@ export default function PlanningPage() {
           <div className="mb-[18px] rounded-[20px] border border-[var(--border)] bg-[var(--card)] p-[18px] shadow-[var(--shadow)]">
             <h3 className="mb-0.5 font-display text-base font-extrabold">Itinéraire du jour</h3>
             <p className="mb-2.5 text-[11.5px] text-[var(--slate)] italic">
-              {mapIsReal
-                ? "Positions réelles (adresses géolocalisées, à l'échelle) sur un schéma sans fond de carte. Les temps de trajet sont estimés à vol d'oiseau × 1,35 — le calcul routier viendra avec OpenRouteService."
-                : "Géolocalisation des adresses en cours… (positions provisoires tant qu'une adresse n'est pas trouvée)."}
+              {activeRoute
+                ? `Itinéraire routier réel (${activeRoute.provider === "ors" ? "OpenRouteService" : "OSRM"} · fond OpenStreetMap), retour au dépôt inclus. Temps de trajet majorés de 15 % pour la circulation.`
+                : routeError
+                  ? `Calcul routier indisponible (${routeError}) — temps estimés à vol d'oiseau en attendant.`
+                  : unlocated > 0
+                    ? `Géolocalisation des adresses en cours… (${unlocated} adresse(s) à trouver — vérifie qu'elles sont complètes dans fiche partenaire).`
+                    : "Calcul de l'itinéraire routier en cours…"}
             </p>
-            <svg viewBox={`0 0 ${MW} ${MH}`} className="block w-full rounded-xl bg-[var(--input-bg)]">
-              {allPts.slice(0, -1).map((pt, k) => {
-                const next = allPts[k + 1];
-                const isBreak = k === lunchActivePos;
-                return <line key={k} x1={pt.x} y1={pt.y} x2={next.x} y2={next.y} stroke="var(--slate)" strokeWidth={2} strokeDasharray={isBreak ? "5 5" : undefined} opacity={isBreak ? 0.5 : 0.3} />;
-              })}
-              <g>
-                <circle cx={depotPt.x} cy={depotPt.y} r={12} fill="var(--turquoise)" stroke="var(--card)" strokeWidth={2.5} />
-                <text x={depotPt.x} y={depotPt.y + 4} fontSize={13} textAnchor="middle">
-                  🏠
-                </text>
-                <text x={depotPt.x} y={depotPt.y + 26} fontSize={9.5} fontWeight={700} fill="var(--navy)" textAnchor="middle">
-                  Départ {fmtTime(DAY_START)}
-                </text>
-              </g>
-              {activeStops.map((s) => {
-                const p = proj(s.coords);
-                const color = s.kind === "stock" ? "var(--stock-accent)" : s.kind === "dropoff" ? "var(--dropoff)" : s.kind === "demande_client" ? "var(--client-req)" : s.kind === "exceptionnel" ? "var(--exc-accent)" : "var(--navy-deep)";
-                const short = s.name.length > 16 ? s.name.slice(0, 15) + "…" : s.name;
-                const num = sched.stops.findIndex((x) => x.id === s.id) + 1;
-                return (
-                  <g key={s.id}>
-                    <circle cx={p.x} cy={p.y} r={12} fill={color} stroke="var(--card)" strokeWidth={2.5} />
-                    <text x={p.x} y={p.y + 4} fontSize={11} fontWeight={700} fill="#fff" textAnchor="middle">
-                      {num}
-                    </text>
-                    <text x={p.x} y={p.y + 25} fontSize={9.5} fill="var(--slate)" textAnchor="middle">
-                      {short}
-                    </text>
-                    <text x={p.x} y={p.y - 16} fontSize={9.5} fontWeight={700} fill="var(--navy)" textAnchor="middle">
-                      {s.scheduledTime}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
+            {mapPoints.length > 1 ? <RouteMap points={mapPoints} line={activeRoute?.geometry ?? []} /> : <div className="flex h-[200px] items-center justify-center rounded-xl bg-[var(--input-bg)] text-[12.5px] text-[var(--slate)]">Ajoute des points à la tournée pour voir la carte.</div>}
             <div className="mt-2.5 flex flex-wrap gap-x-[18px] gap-y-2.5 border-t border-[var(--border)] pt-2.5">
               {[
                 ["var(--turquoise)", "Départ dépôt"],
@@ -986,6 +1020,16 @@ export default function PlanningPage() {
                 </div>
               );
             })}
+
+            {activeStops.length > 0 && (
+              <div className="flex items-center gap-3 rounded-2xl border-[1.5px] border-dashed border-[var(--border)] px-3.5 py-2.5 text-[12.5px] text-[var(--slate)]">
+                <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-full bg-[var(--track)] text-sm">🏠</span>
+                <span className="flex-1">
+                  Retour Entrepôt Linkee · {fmtDuration(sched.returnMin)} de trajet · {sched.returnKm.toFixed(1)} km
+                </span>
+                <span className="font-display text-[15px] font-extrabold text-[var(--navy)]">{fmtTime(sched.dayEnd)}</span>
+              </div>
+            )}
 
             <div className="mt-1 flex flex-wrap items-center gap-2.5 rounded-2xl border border-[var(--border)] bg-[var(--card)] px-3.5 py-3">
               <span className="text-[12.5px] font-bold text-[var(--navy)]">Ajouter un point à la tournée</span>

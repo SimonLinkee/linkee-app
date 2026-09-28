@@ -4,6 +4,16 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { signedUrls, uploadPrivatePhoto } from "@/lib/photos";
+import { geocode } from "@/lib/geocode";
+import NotificationBell from "@/components/NotificationBell";
+import { flushNotificationEmails } from "@/lib/notify";
+import dynamic from "next/dynamic";
+import type { MapPoint } from "@/components/RouteMap";
+
+const RouteMap = dynamic(() => import("@/components/RouteMap"), {
+  ssr: false,
+  loading: () => <div className="flex h-[300px] items-center justify-center text-[12.5px] text-[var(--slate)]">Chargement de la carte…</div>,
+});
 
 type Kind = "partner" | "dropoff" | "stock" | "exceptionnel";
 type ResultItem = { denree?: string; name?: string; kg: number; from?: string; sourceId?: string; stockId?: string; colis?: number };
@@ -53,14 +63,6 @@ const isoDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padS
 const dbWeekday = (d: Date) => (d.getDay() === 0 ? 7 : d.getDay());
 const ACCESS_KEY_MAP: Record<string, string> = { digicode: "digicode", quai: "quai", camion: "camion", etage: "ascenseur", horaire: "horaire" };
 
-/** Positions for the schematic map: spread the stops on a loose zig-zag. */
-function mapPoint(i: number) {
-  const cols = 4;
-  const row = Math.floor(i / cols);
-  const col = i % cols;
-  const x = 40 + (row % 2 === 0 ? col : cols - 1 - col) * 95;
-  return { x, y: 40 + row * 62 };
-}
 
 
 function rowToStop(r: DbStop, all: DbStop[]): Stop {
@@ -573,6 +575,7 @@ export default function JourneePage() {
     setClosedText(`Journée clôturée — ${timerText} travaillées. La journée de demain reste verrouillée jusqu'à son ouverture.`);
     setDayState("closed");
     setOpenIdx(null);
+    flushNotificationEmails();
   }
   async function uploadStopPhoto(stopId: string, file: File): Promise<string | null> {
     if (!cityId) {
@@ -693,6 +696,7 @@ export default function JourneePage() {
     }
     setStops((prev) => prev.map((x, idx) => (idx === i ? { ...x, status, result } : x)));
     setOpenIdx(null);
+    if (status === "annule") flushNotificationEmails(); // the admins are notified of the cancellation
   }
   async function logout() {
     await createClient().auth.signOut();
@@ -700,7 +704,42 @@ export default function JourneePage() {
     router.refresh();
   }
 
-  const pts = stops.map((s, i) => ({ ...mapPoint(i), kind: s.kind, name: s.name, num: i + 1 }));
+  const [mapPts, setMapPts] = useState<MapPoint[]>([]);
+  const [mapLine, setMapLine] = useState<[number, number][]>([]);
+  const addrKey = stops.map((s) => s.address + s.status).join("|");
+  useEffect(() => {
+    if (!mapOpen || stops.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const hex: Record<Kind, string> = { partner: "#0a1a3f", stock: "#b97600", dropoff: "#1a8f68", exceptionnel: "#1f93a8" };
+      const depot = await geocode(DEPOT_ADDRESS);
+      const found: { s: Stop; i: number; g: { lat: number; lng: number } }[] = [];
+      for (let i = 0; i < stops.length; i++) {
+        if (stops[i].status === "annule") continue;
+        const g = await geocode(stops[i].address);
+        if (g) found.push({ s: stops[i], i, g });
+      }
+      if (cancelled) return;
+      const points: MapPoint[] = [
+        ...(depot ? [{ lat: depot.lat, lng: depot.lng, label: "Entrepôt Linkee — départ", color: "#4FC1D6", num: "home" as const }] : []),
+        ...found.map(({ s, i, g }) => ({ lat: g.lat, lng: g.lng, label: s.name, color: hex[s.kind], num: i + 1, time: s.time || undefined })),
+      ];
+      setMapPts(points);
+      if (depot && found.length) {
+        try {
+          const res = await fetch("/api/route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ points: [depot, ...found.map((f) => f.g), depot] }) });
+          const json = await res.json();
+          if (!cancelled && res.ok) setMapLine(json.geometry);
+        } catch {
+          /* straight lines are drawn instead */
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapOpen, addrKey]);
   const todayWeekStops = stops.map((s) => ({ t: s.time, n: s.name, c: s.cat }));
 
   return (
@@ -711,6 +750,7 @@ export default function JourneePage() {
           <div className="mt-[3px] text-[12.5px] text-[var(--slate)] capitalize">{today}</div>
         </div>
         <div className="flex items-center gap-2.5">
+          <NotificationBell align="right" />
           <button type="button" onClick={logout} className="text-xs font-semibold text-[var(--slate)] underline">Déconnexion</button>
           <span className="flex h-[38px] w-[38px] items-center justify-center rounded-full bg-[var(--turquoise)] font-display text-[15px] font-bold text-[#04262e]">{(firstName || "?").charAt(0).toUpperCase()}</span>
         </div>
@@ -794,22 +834,12 @@ export default function JourneePage() {
           </button>
           {mapOpen && (
             <div className="mb-3 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-3.5 shadow-[var(--shadow)]">
-              <svg viewBox="0 0 360 260" className="block h-auto w-full">
-                {pts.slice(0, -1).map((p, k) => (
-                  <line key={k} x1={p.x} y1={p.y} x2={pts[k + 1].x} y2={pts[k + 1].y} stroke="var(--slate)" strokeWidth={2} strokeDasharray={k + 1 === breakIdx ? "5 5" : undefined} opacity={k + 1 === breakIdx ? 0.55 : 0.3} />
-                ))}
-                {pts.map((p) => {
-                  const color = p.kind === "stock" ? "var(--stock-accent)" : p.kind === "dropoff" ? "var(--dropoff)" : p.kind === "exceptionnel" ? "var(--exc-accent)" : "var(--navy-deep)";
-                  return (
-                    <g key={p.num}>
-                      <circle cx={p.x} cy={p.y} r={11} fill={color} stroke="var(--card)" strokeWidth={2} />
-                      <text x={p.x} y={p.y + 3.5} fontSize={10} fontWeight={700} fill="#fff" textAnchor="middle">{p.num}</text>
-                      <text x={p.x} y={p.y + 23} fontSize={8.5} fill="var(--slate)" textAnchor="middle">{p.name.length > 13 ? p.name.slice(0, 12) + "…" : p.name}</text>
-                    </g>
-                  );
-                })}
-              </svg>
-              <p className="mt-2 text-[11px] leading-[1.4] text-[var(--slate)] italic">Carte schématique de l&apos;ordre de tournée (aperçu hors-ligne). L&apos;application utilisera une vraie carte Leaflet / OpenStreetMap avec les adresses réelles.</p>
+              {mapPts.length > 1 ? (
+                <RouteMap points={mapPts} line={mapLine} height={300} />
+              ) : (
+                <div className="flex h-[160px] items-center justify-center text-[12.5px] text-[var(--slate)]">{stops.length === 0 ? "Aucun arrêt à afficher." : "Chargement de la carte…"}</div>
+              )}
+              <p className="mt-2 text-[11px] leading-[1.4] text-[var(--slate)] italic">Ordre de la tournée sur fond OpenStreetMap. Le bouton « Y aller » de chaque arrêt lance la navigation.</p>
             </div>
           )}
 

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { AVATAR_DEFS, critterSvg, type AvatarKey } from "@/lib/avatars";
+import NotificationBell from "@/components/NotificationBell";
 
 const NAV_ITEMS = [
   {
@@ -114,11 +115,14 @@ export function Sidebar() {
   return (
     <aside className="sticky top-0 flex h-screen w-[236px] flex-none flex-col justify-between bg-[var(--navy-deep)] px-[18px] py-[26px] text-[var(--panel-fg)]">
       <div>
-        <div className="flex items-end gap-0.5 px-1.5 pb-[26px]">
-          <span className="font-script text-2xl">linkee</span>
-          <svg width="30" height="11" viewBox="0 0 40 14" fill="none" aria-hidden="true" className="mb-1">
-            <path d="M2 3 C 10 13, 30 13, 38 3" stroke="var(--turquoise)" strokeWidth={4} strokeLinecap="round" />
-          </svg>
+        <div className="flex items-center justify-between px-1.5 pb-[26px]">
+          <div className="flex items-end gap-0.5">
+            <span className="font-script text-2xl">linkee</span>
+            <svg width="30" height="11" viewBox="0 0 40 14" fill="none" aria-hidden="true" className="mb-1">
+              <path d="M2 3 C 10 13, 30 13, 38 3" stroke="var(--turquoise)" strokeWidth={4} strokeLinecap="round" />
+            </svg>
+          </div>
+          <NotificationBell dark />
         </div>
         <nav className="flex flex-col gap-[3px]">
           {NAV_ITEMS.map((item) => {
