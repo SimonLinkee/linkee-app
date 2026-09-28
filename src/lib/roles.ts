@@ -1,6 +1,6 @@
 export type Role = 'en_attente' | 'admin_principal' | 'admin_local' | 'logisticien' | 'partenaire' | 'beneficiaire'
 
-const ADMIN_PATHS = ['/dashboard', '/partenaires', '/beneficiaires', '/planning', '/stock', '/flotte', '/todo', '/profil']
+const ADMIN_PATHS = ['/dashboard', '/partenaires', '/beneficiaires', '/planning', '/distributions', '/stock', '/flotte', '/todo', '/profil']
 
 export function homeForRole(role: string): string {
   switch (role) {

@@ -51,6 +51,16 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: "/distributions",
+    label: "Distributions",
+    icon: (
+      <>
+        <path d="M5 9 H19 L17.5 19 H6.5 Z" />
+        <path d="M9 9 V6.5 A3 3 0 0 1 15 6.5 V9" />
+      </>
+    ),
+  },
+  {
     href: "/stock",
     label: "Stock",
     icon: (

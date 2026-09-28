@@ -124,7 +124,9 @@ const BLANK_BENEFICIAIRE: Omit<BeneficiaireEntity, "id"> = {
 type Row = { id: string; name: string; category: string | null; address: string | null; active: boolean; fiche: Record<string, unknown> | null; logo_url?: string | null };
 function rowToEntity(kind: "partner" | "beneficiaire", r: Row): Entity {
   const base = kind === "partner" ? BLANK_PARTNER : BLANK_BENEFICIAIRE;
-  return { ...base, ...(r.fiche ?? {}), id: r.id, kind, name: r.name, cat: r.category ?? base.cat, address: r.address ?? "", active: r.active, logoUrl: r.logo_url ?? null } as Entity;
+  const e = { ...base, ...(r.fiche ?? {}), id: r.id, kind, name: r.name, cat: r.category ?? base.cat, address: r.address ?? "", active: r.active, logoUrl: r.logo_url ?? null } as Entity;
+  if (e.kind === "beneficiaire") e.pinned = !!e.pinned || e.cat === "Distribution Linkee"; // the category is what makes a place a Linkee distribution
+  return e;
 }
 function entityToRow(e: Entity) {
   const { id, kind, name, cat, address, active, logoUrl, ...fiche } = e;
@@ -132,6 +134,18 @@ function entityToRow(e: Entity) {
   void kind;
   void logoUrl; // stored in its own column
   return { name, category: cat, address, active, fiche };
+}
+
+/** Blue badge shown next to the name of a place where Linkee runs a distribution. */
+export function DistribBadge() {
+  return (
+    <span title="Lieu de distribution Linkee" className="inline-flex flex-none items-center gap-1.5 rounded-[40px] bg-[#2a78d6] px-3 py-1.5 text-[12px] font-semibold text-white">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]">
+        <path d="M5 9 H19 L17.5 19 H6.5 Z M9 9 V6.5 A3 3 0 0 1 15 6.5 V9" />
+      </svg>
+      Distribution Linkee
+    </span>
+  );
 }
 
 function AccessChips({ access, onToggle }: { access: AccessFlags; onToggle: (k: AccessKey) => void }) {
@@ -392,7 +406,7 @@ export default function PartenairesPage() {
         </span>
         <span className="flex flex-none flex-col items-end gap-1">
           {e.kind === "beneficiaire" && e.pinned && (
-            <span className="rounded-[40px] bg-[var(--turquoise)] px-1.5 py-0.5 text-[9px] font-bold text-[#04262e] uppercase">Linkee</span>
+            <span className="rounded-[40px] bg-[#2a78d6] px-1.5 py-0.5 text-[9px] font-bold text-white uppercase">Linkee</span>
           )}
           <span className={`h-2 w-2 rounded-full ${e.active ? "bg-[var(--good)]" : "bg-[var(--muted)]"}`} />
         </span>
@@ -517,15 +531,18 @@ export default function PartenairesPage() {
                   </span>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <input
-                    value={current.name}
-                    onChange={(e) => updateEntity((entity) => ({ ...entity, name: e.target.value }))}
-                    className="w-full rounded-lg border-b-[1.5px] border-transparent bg-transparent px-1 py-0.5 font-display text-[27px] font-black text-[var(--navy)] outline-none hover:border-b-[var(--turquoise)] hover:bg-[var(--input-bg)] focus:border-b-[var(--turquoise)] focus:bg-[var(--input-bg)]"
-                  />
+                  <div className="flex items-center gap-2.5">
+                    <input
+                      value={current.name}
+                      onChange={(e) => updateEntity((entity) => ({ ...entity, name: e.target.value }))}
+                      className="min-w-0 flex-1 rounded-lg border-b-[1.5px] border-transparent bg-transparent px-1 py-0.5 font-display text-[27px] font-black text-[var(--navy)] outline-none hover:border-b-[var(--turquoise)] hover:bg-[var(--input-bg)] focus:border-b-[var(--turquoise)] focus:bg-[var(--input-bg)]"
+                    />
+                    {current.kind === "beneficiaire" && current.pinned && <DistribBadge />}
+                  </div>
                   <div className="mt-1.5 flex flex-wrap items-center gap-3">
                     <select
                       value={current.cat}
-                      onChange={(e) => updateEntity((entity) => ({ ...entity, cat: e.target.value }))}
+                      onChange={(e) => updateEntity((entity) => ({ ...entity, cat: e.target.value, ...(entity.kind === "beneficiaire" ? { pinned: e.target.value === "Distribution Linkee" } : {}) }))}
                       className="cursor-pointer rounded-[40px] border border-[var(--border)] bg-[var(--input-bg)] px-3 py-[5px] text-[12.5px] font-semibold text-[var(--slate)]"
                     >
                       {(current.kind === "partner"
@@ -536,9 +553,6 @@ export default function PartenairesPage() {
                       ))}
                     </select>
                     {current.kind === "partner" && <span className="text-[11.5px] text-[var(--muted)]">SIREN {current.siren}</span>}
-                    {current.kind === "beneficiaire" && current.pinned && (
-                      <span className="rounded-[40px] bg-[var(--turquoise)] px-2.5 py-1 text-[10.5px] font-bold text-[#04262e] uppercase">Distribution Linkee</span>
-                    )}
                   </div>
                 </div>
                 <div className="flex flex-none items-center gap-2">

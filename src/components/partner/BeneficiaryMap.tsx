@@ -115,7 +115,7 @@ export default function BeneficiaryMap({ items, selectedId, onSelect }: { items:
   const noAddress = filtered.filter((b) => !b.address.trim() || coords[b.id + "|" + b.address] === null).length;
   const points: ClickPoint[] = located.map((b) => {
     const g = coords[b.id + "|" + b.address]!;
-    return { id: b.id, lat: g.lat, lng: g.lng, label: b.name, sub: [b.cat, b.horaires].filter(Boolean).join(" · "), color: !b.active ? "#8a93a8" : b.pinned ? "#4fc1d6" : "#0a1a3f" };
+    return { id: b.id, lat: g.lat, lng: g.lng, label: b.name, sub: [b.cat, b.horaires].filter(Boolean).join(" · "), color: !b.active ? "#8a93a8" : b.pinned ? "#2a78d6" : "#0a1a3f" };
   });
   const unreadable = days.size ? items.filter((b) => (!onlyActive || b.active) && !openDays(b.horaires)).length : 0;
   const nFilters = days.size + denrees.size + equip.size + (cat ? 1 : 0);
@@ -198,7 +198,7 @@ export default function BeneficiaryMap({ items, selectedId, onSelect }: { items:
           <PointsMap points={points} selectedId={selectedId} onSelect={onSelect} height={380} />
 
           <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-[var(--slate)]">
-            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#4fc1d6]" />Distribution Linkee</span>
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#2a78d6]" />Distribution Linkee</span>
             <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#0a1a3f]" />Association</span>
             <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#8a93a8]" />Inactive</span>
             {pending > 0 && <span>Localisation en cours… ({pending})</span>}
