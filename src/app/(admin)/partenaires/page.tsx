@@ -88,12 +88,21 @@ type BeneficiaireEntity = {
   horaires: string;
   hours: Record<string, Hours>;
   volumesAcceptes: string;
-  equipement: { cuisine: boolean; frigo: boolean; chambreFroide: boolean };
+  equipement: { cuisine: boolean; frigo: boolean; chambreFroide: boolean; stockage: boolean; porc: boolean };
   stockageM2: number;
   denrees: DenreeFlags;
   contacts: Contact[];
   siren: string;
   sirenInfo?: SirenInfo | null;
+  comment: string;
+  structureType: string;
+  statut: string;
+  publicCibles: Record<string, boolean>;
+  beneficiaryCount: string;
+  addressVerified: boolean;
+  network: string;
+  description: string;
+  isLinkeeSite: boolean;
 };
 
 type Entity = PartnerEntity | BeneficiaireEntity;
@@ -131,10 +140,19 @@ const BLANK_PARTNER: Omit<PartnerEntity, "id"> = {
   denrees: NO_DENREES, conditionnement: "Carton", access: NO_ACCESS, accessNote: "", history: [], contacts: [], benevoleOnly: false, activityStatus: "Non défini",
 };
 const ACTIVITY_STATUS_OPTIONS = ["Non défini", "Dons réguliers", "Ponctuel", "Link citoyen"];
+const STRUCTURE_TYPE_OPTIONS = [
+  "Association de taille standard", "Association de petite taille / locale", "Epicerie Solidaire",
+  "Distribution de repas", "CHU (centre d'hébergement d'urgence)", "Résidence Sociale", "Association organisant des maraudes",
+];
+const STATUT_OPTIONS = ["Actif - Distributions régulières", "Actif - Distributions non-régulières", "Échanges en cours / Pas de convention signée", "À contacter"];
+const DEFAULT_PUBLIC_OPTIONS = ["Tout public", "Familles précaires", "SDF", "Etudiants précaires", "Jeunes précaires", "Femmes isolées"];
+const BENEFICIARY_COUNT_OPTIONS = ["Moins de 50", "Entre 50 et 75", "Entre 75 et 100", "Entre 100 et 150", "Entre 150 et 200", "Plus de 200"];
 const BLANK_BENEFICIAIRE: Omit<BeneficiaireEntity, "id"> = {
   kind: "beneficiaire", name: "Nouveau bénéficiaire", cat: "Association partenaire", pinned: false, active: true, address: "", tel: "", mail: "",
-  access: NO_ACCESS, accessNote: "", horaires: "", hours: {}, volumesAcceptes: "", equipement: { cuisine: false, frigo: false, chambreFroide: false },
+  access: NO_ACCESS, accessNote: "", horaires: "", hours: {}, volumesAcceptes: "", equipement: { cuisine: false, frigo: false, chambreFroide: false, stockage: false, porc: false },
   stockageM2: 0, denrees: NO_DENREES, contacts: [], siren: "",
+  comment: "", structureType: "", statut: "", publicCibles: {}, beneficiaryCount: "",
+  addressVerified: false, network: "", description: "", isLinkeeSite: false,
 };
 
 // The full "fiche" lives in a jsonb column; name / category / address / active / benevole_only are also real columns.
@@ -210,6 +228,63 @@ function DenreeChips({ denrees, onToggle }: { denrees: DenreeFlags; onToggle: (d
           )}
           <span>{d}</span>
         </label>
+      ))}
+    </div>
+  );
+}
+
+/** Cases à cocher extensibles : la liste d'options proposées est l'union des options par défaut et de toutes
+ * les clés déjà utilisées par les autres bénéficiaires (+ ajout à la volée, immédiatement proposé partout). */
+function ExtensibleChips({ options, selected, onToggle, onAdd }: { options: string[]; selected: Record<string, boolean>; onToggle: (k: string) => void; onAdd: (k: string) => void }) {
+  const [adding, setAdding] = useState("");
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {options.map((k) => (
+        <label
+          key={k}
+          className={`inline-flex items-center gap-1.5 rounded-[40px] border-[1.5px] px-3.5 py-2 text-xs font-semibold ${
+            selected[k] ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)]"
+          }`}
+        >
+          <input type="checkbox" checked={!!selected[k]} onChange={() => onToggle(k)} className="hidden" />
+          {selected[k] && (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+              <path d="M20 6 L9 17 L4 12" />
+            </svg>
+          )}
+          <span>{k}</span>
+        </label>
+      ))}
+      <input
+        value={adding}
+        onChange={(e) => setAdding(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter" || !adding.trim()) return;
+          onAdd(adding.trim());
+          setAdding("");
+        }}
+        placeholder="+ Ajouter une catégorie…"
+        className="w-[170px] rounded-[40px] border-[1.5px] border-dashed border-[var(--border)] bg-transparent px-3.5 py-2 text-xs font-semibold text-[var(--slate)] outline-none focus:border-[var(--turquoise)]"
+      />
+    </div>
+  );
+}
+
+/** Choix unique présenté comme des puces (une seule tranche à la fois). */
+function SingleChoiceChips({ options, value, onChange }: { options: string[]; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((o) => (
+        <button
+          key={o}
+          type="button"
+          onClick={() => onChange(value === o ? "" : o)}
+          className={`rounded-[40px] border-[1.5px] px-3.5 py-2 text-xs font-semibold ${
+            value === o ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)]"
+          }`}
+        >
+          {o}
+        </button>
       ))}
     </div>
   );
@@ -965,6 +1040,8 @@ export default function PartenairesPage() {
                             ["cuisine", "Cuisine"],
                             ["frigo", "Frigo"],
                             ["chambreFroide", "Chambre froide"],
+                            ["stockage", "Stockage"],
+                            ["porc", "Accepte le porc"],
                           ] as const
                         ).map(([k, l]) => (
                           <label
@@ -992,6 +1069,64 @@ export default function PartenairesPage() {
                           </label>
                         ))}
                       </div>
+                    </div>
+                  </div>
+                </AccordionSection>
+              )}
+
+              {current.kind === "beneficiaire" && (
+                <AccordionSection title="Profil de l'association" sectionKey="profil" open={openSections.has("profil")} onToggle={toggleSection}>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className={labelCls}>Type de structure</label>
+                      <select className={inputCls} value={current.structureType} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, structureType: e.target.value } : entity))}>
+                        <option value="">— Non renseigné —</option>
+                        {STRUCTURE_TYPE_OPTIONS.map((o) => <option key={o}>{o}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Statut</label>
+                      <select className={inputCls} value={current.statut} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, statut: e.target.value } : entity))}>
+                        <option value="">— Non renseigné —</option>
+                        {STATUT_OPTIONS.map((o) => <option key={o}>{o}</option>)}
+                      </select>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className={labelCls}>Public <span className="font-normal text-[var(--muted)]">(catégories de bénéficiaires accueillis)</span></label>
+                      <ExtensibleChips
+                        options={Array.from(new Set([...DEFAULT_PUBLIC_OPTIONS, ...Object.keys(current.publicCibles)]))}
+                        selected={current.publicCibles}
+                        onToggle={(k) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, publicCibles: { ...entity.publicCibles, [k]: !entity.publicCibles[k] } } : entity))}
+                        onAdd={(k) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, publicCibles: { ...entity.publicCibles, [k]: true } } : entity))}
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className={labelCls}>Nombre de bénéficiaires</label>
+                      <SingleChoiceChips options={BENEFICIARY_COUNT_OPTIONS} value={current.beneficiaryCount} onChange={(v) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, beneficiaryCount: v } : entity))} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Réseau / fédération</label>
+                      <input className={inputCls} placeholder="Ex : Habitat & Humanisme" value={current.network} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, network: e.target.value } : entity))} />
+                    </div>
+                    <div className="flex items-end">
+                      <label className="flex items-center gap-2 text-[13px] font-semibold text-[var(--navy)]">
+                        <input type="checkbox" checked={current.addressVerified} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, addressVerified: e.target.checked } : entity))} className="h-[17px] w-[17px] accent-[var(--good)]" />
+                        Adresse vérifiée
+                      </label>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className={labelCls}>Description</label>
+                      <textarea className={`${inputCls} min-h-[64px] resize-y`} value={current.description} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, description: e.target.value } : entity))} />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className={labelCls}>Commentaires</label>
+                      <textarea className={`${inputCls} min-h-[64px] resize-y`} value={current.comment} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, comment: e.target.value } : entity))} />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="flex items-center gap-2 text-[13px] font-semibold text-[var(--navy)]">
+                        <input type="checkbox" checked={current.isLinkeeSite} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, isLinkeeSite: e.target.checked } : entity))} className="h-[17px] w-[17px] accent-[#2a78d6]" />
+                        Site Linkee <span className="font-normal text-[var(--muted)]">(entrepôt ou local Linkee — pas une association externe)</span>
+                      </label>
                     </div>
                   </div>
                 </AccordionSection>
