@@ -118,7 +118,7 @@ export default function LinkerCartePage() {
         </div>
       </div>
       <p className="-mt-1 text-[12px] font-semibold text-[var(--slate)]">
-        {linker.mode === "walk" ? "🚶 À pied / vélo" : "🚗 Voiture"} · rayon {linker.radius_km} km{linker.cold_ok ? " · 🧊 frais OK" : ""}
+        {linker.transport === "velo" ? "🚲 Vélo" : "🚶 À pied"} · rayon {linker.radius_km} km{linker.cold_ok ? " · 🧊 frais OK" : ""}
       </p>
 
       {loading ? (

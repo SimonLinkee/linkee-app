@@ -394,6 +394,7 @@ export default function EspacePartenairePage() {
   const [colRows, setColRows] = useState<CollecteRow[]>([]);
   const [reqRows, setReqRows] = useState<DbReq[]>([]);
   const [subList, setSubList] = useState<SubCat[]>([]);
+  const [linkRows, setLinkRows] = useState<{ partner_id: string; status: string; kg_estime: number; weight_actual: number | null }[]>([]);
   const [siteKey, setSiteKey] = useState("");
   const [gran, setGran] = useState<"semaine" | "mois" | "tout">("semaine");
   const [granM, setGranM] = useState<"semaine" | "mois" | "annee">("semaine");
@@ -418,14 +419,16 @@ export default function EspacePartenairePage() {
       if (partners[0]) setSiteKey(partners[0].id);
       if (partners.length) {
         const ids = partners.map((p) => p.id);
-        const [col, rq, sb] = await Promise.all([
+        const [col, rq, sb, lk] = await Promise.all([
           supabase.from("collectes").select("scheduled_date,scheduled_time,kind,status,motif,source,partner_id,partners(name,category),collecte_items!collecte_id(denree,kg,subcategory_id,quantity,unit)").in("partner_id", ids).order("scheduled_date").limit(5000),
           supabase.from("exceptional_requests").select("id,partner_id,wished_date,wished_time,denree,volume_kg,comment,status").in("partner_id", ids).order("created_at"),
           supabase.from("partner_subcategories").select(SUBCAT_SELECT).in("partner_id", ids),
+          supabase.from("links").select("partner_id,status,kg_estime,weight_actual").in("partner_id", ids),
         ]);
         setColRows((col.data ?? []) as unknown as CollecteRow[]);
         setReqRows((rq.data ?? []) as DbReq[]);
         setSubList(((sb.data ?? []) as unknown as SubCat[]).map((s) => ({ ...s, unit_price: s.unit_price == null ? null : Number(s.unit_price), unit_weight_kg: s.unit_weight_kg == null ? null : Number(s.unit_weight_kg) })));
+        setLinkRows((lk.data ?? []) as unknown as { partner_id: string; status: string; kg_estime: number; weight_actual: number | null }[]);
       }
       setLoading(false);
     })();
@@ -459,6 +462,13 @@ export default function EspacePartenairePage() {
     return out;
   }, [partnerRows, colRows, todayIso]);
   const site = sites[siteKey];
+
+  /* ---- Links Bénévoles : nombre de demandes et kg sauvés pour le site affiché ---- */
+  const linkStats = useMemo(() => {
+    const mine = linkRows.filter((l) => l.partner_id === siteKey && l.status !== "annulee");
+    const kg = mine.filter((l) => l.status === "livree").reduce((s, l) => s + (Number(l.weight_actual ?? l.kg_estime) || 0), 0);
+    return { count: mine.length, kg: Math.round(kg * 10) / 10 };
+  }, [linkRows, siteKey]);
 
   const requests: Request[] = reqRows
     .filter((r) => r.status === "en_attente")
@@ -689,6 +699,8 @@ export default function EspacePartenairePage() {
               <Tile label="Volume" value={`${fmtNum(dashM.volume)} kg`} />
               <Tile label="Collectes" value={String(dashM.collectes)} />
               <Tile label="Réussite" value={`${okRate} %`} />
+              <Tile label="Links Bénévoles" value={String(linkStats.count)} />
+              <Tile label="kg sauvés" value={`${fmtNum(linkStats.kg)} kg`} />
             </div>
           </Card>
 
@@ -873,10 +885,12 @@ export default function EspacePartenairePage() {
             <div>
               <PanelHead title="Tableau de bord" sub="Vos volumes et collectes pour le site sélectionné en haut de page." />
               <GranToggle options={[["semaine", "Semaine"], ["mois", "Mois"], ["tout", "Depuis le début"]]} value={gran} onChange={(v) => setGran(v as typeof gran)} />
-              <div className="mb-4 grid grid-cols-1 gap-3.5 sm:grid-cols-3">
+              <div className="mb-4 grid grid-cols-1 gap-3.5 sm:grid-cols-3 lg:grid-cols-5">
                 <Tile label="Volume collecté" value={`${fmtNum(dash.volume)} kg`} sub={dash.periodLabel} />
                 <Tile label="Collectes" value={String(dash.collectes)} sub={`${dash.ok} réalisées · ${dash.annulees} annulées`} />
                 <Tile label="Taux de réussite" value={`${dash.collectes ? Math.round((dash.ok / dash.collectes) * 100) : 0} %`} sub="sur la période" />
+                <Tile label="Links Bénévoles" value={String(linkStats.count)} sub="demandes envoyées" />
+                <Tile label="kg sauvés (Links)" value={`${fmtNum(linkStats.kg)} kg`} sub="livrés par les Linkers" />
               </div>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr]">
                 <Card title="Évolution du volume collecté" note="Volume collecté par période"><EvoChart data={dash.evo} /></Card>

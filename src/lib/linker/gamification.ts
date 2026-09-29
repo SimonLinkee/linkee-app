@@ -95,13 +95,23 @@ export function itemName(style: StyleKey, catIndex: number, v: number): string {
   return `${noun} ${TIER[g][v - 1]}`;
 }
 
-export const WALK_TITLES = ["Petit marcheur", "Marcheur", "Grand marcheur", "Randonneur", "Cycliste du dimanche", "Cycliste", "Grand cycliste", "Coursier", "Pédaleur fou", "Tour de France"];
+/** Le moyen de transport choisi par le Linker (indépendant de `mode`, qui reste la capacité 🎒/🚗 pour le matching). */
+export type Transport = "pied" | "velo";
+export const TRANSPORT_RADIUS: Record<Transport, { min: number; max: number }> = { pied: { min: 1, max: 8 }, velo: { min: 1, max: 25 } };
+
+// Titres un peu drôles, gradués selon la motivation à aller plus loin (1 titre par km, 1-8 pour "pied")
+export const WALK_TITLES = ["Flâneur du coin", "Marcheur de quartier", "Arpenteur urbain", "Grand marcheur", "Randonneur du bitume", "Increvable", "Bottes de sept lieues", "Légende du trottoir"];
+// "vélo" va jusqu'à 25 km : titres par paliers de ~3 km
+export const BIKE_TITLES: [number, string][] = [
+  [3, "Cycliste du dimanche"], [6, "Pédaleur motivé"], [9, "Mollets d'acier"], [12, "Dévoreur de bitume"],
+  [15, "Contre-la-montre perso"], [18, "Grimpeur du périph"], [21, "Increvable à deux roues"], [25, "Tour de France (presque)"],
+];
 export const CAR_TITLES: [number, string][] = [[10, "Drive"], [20, "Super Driver"], [30, "Roi de la route"], [40, "Pilote de rallye"], [50, "Fou du volant"]];
-/** The badge shown on a Linker's profile, derived from mode + radius. */
-export function typology(mode: Mode, radiusKm: number): { t: string; e: string } {
-  if (mode === "walk") { const i = Math.min(10, Math.max(1, Math.round(radiusKm))); return { t: WALK_TITLES[i - 1], e: i <= 4 ? "🚶" : "🚲" }; }
-  const hit = CAR_TITLES.find(([max]) => radiusKm <= max) ?? CAR_TITLES[CAR_TITLES.length - 1];
-  return { t: hit[1], e: "🚗" };
+/** The badge shown on a Linker's profile, derived from transport (pied/vélo) + radius. */
+export function typology(transport: Transport, radiusKm: number): { t: string; e: string } {
+  if (transport === "pied") { const i = Math.min(8, Math.max(1, Math.round(radiusKm))); return { t: WALK_TITLES[i - 1], e: "🚶" }; }
+  const hit = BIKE_TITLES.find(([max]) => radiusKm <= max) ?? BIKE_TITLES[BIKE_TITLES.length - 1];
+  return { t: hit[1], e: "🚲" };
 }
 export const MAX_KG: Record<Mode, number> = { walk: 25, car: 80 };
 

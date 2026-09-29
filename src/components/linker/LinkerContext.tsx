@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { CharKey } from "@/lib/linker/characters";
-import type { Mode, StyleKey } from "@/lib/linker/gamification";
+import type { Mode, StyleKey, Transport } from "@/lib/linker/gamification";
 
 export type LinkerRow = {
   id: string;
@@ -14,6 +14,7 @@ export type LinkerRow = {
   equipped: Record<number, number | "none">;
   cosmetics: { emoji?: string; bg?: string; hue?: number; owned?: { emoji?: Record<string, boolean>; bg?: Record<string, boolean>; color?: Record<string, boolean> } };
   mode: Mode;
+  transport: Transport;
   radius_km: number;
   cold_ok: boolean;
   address_ref: string | null;

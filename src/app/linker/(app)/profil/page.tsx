@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useLinker, type AvailWindow } from "@/components/linker/LinkerContext";
-import { MAX_KG, typology } from "@/lib/linker/gamification";
+import { MAX_KG, TRANSPORT_RADIUS, typology, type Transport } from "@/lib/linker/gamification";
 import AddressSearch, { type AddressHit } from "@/components/AddressSearch";
 
 const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
@@ -36,7 +36,8 @@ export default function LinkerProfilPage() {
 
   if (!ready || !linker) return <p className="py-10 text-center text-[14px] font-semibold text-[var(--slate)]">Chargement…</p>;
 
-  const ty = typology(linker.mode, linker.radius_km);
+  const ty = typology(linker.transport, linker.radius_km);
+  const bounds = TRANSPORT_RADIUS[linker.transport];
   const flash = () => { setSaved(true); setErr(""); window.setTimeout(() => setSaved(false), 1400); };
 
   async function addWindow(day: number) {
@@ -73,6 +74,11 @@ export default function LinkerProfilPage() {
   }
   async function setRadius(v: number) {
     await patchLinker({ radius_km: v });
+  }
+  async function setTransport(t: Transport) {
+    const b = TRANSPORT_RADIUS[t];
+    await patchLinker({ transport: t, radius_km: Math.min(Math.max(linker!.radius_km, b.min), b.max) });
+    flash();
   }
   async function toggleCold() {
     await patchLinker({ cold_ok: !linker!.cold_ok });
@@ -120,19 +126,21 @@ export default function LinkerProfilPage() {
         </div>
       </div>
 
-      <label className={labelCls}>Mon mode de déplacement</label>
-      <div className="flex items-center gap-3 rounded-[18px] border-[3px] p-3 text-center" style={{ borderColor: "var(--turquoise)", background: "#e3f6fa" }}>
-        <span className="text-[26px]">🚶🚲</span>
-        <div className="min-w-0 flex-1 text-left">
-          <div className="font-display text-[15px] font-extrabold text-[var(--navy)]">À pied / vélo</div>
-          <div className="text-[11px] font-bold text-[var(--slate)]">{MAX_KG.walk} kg max</div>
-        </div>
+      <label className={labelCls}>Mon moyen de déplacement</label>
+      <div className="flex gap-2.5">
+        {([["pied", "🚶", "À pied"], ["velo", "🚲", "Vélo"]] as [Transport, string, string][]).map(([t, e, l]) => (
+          <button key={t} type="button" onClick={() => setTransport(t)} className="flex-1 rounded-[18px] border-[3px] p-3 text-center" style={{ borderColor: linker.transport === t ? "var(--turquoise)" : "var(--border)", background: linker.transport === t ? "#e3f6fa" : "var(--card)" }}>
+            <div className="text-[26px]">{e}</div>
+            <div className="font-display text-[15px] font-extrabold text-[var(--navy)]">{l}</div>
+            <div className="text-[11px] font-bold text-[var(--slate)]">{MAX_KG.walk} kg max · jusqu&apos;à {TRANSPORT_RADIUS[t].max} km</div>
+          </button>
+        ))}
       </div>
       <p className="-mt-1 text-[11px] font-semibold text-[var(--muted)]">La collecte en voiture arrivera bientôt.</p>
 
       <label className={labelCls}>Mon rayon d&apos;intervention : <b style={{ color: "#eb6834" }}>{linker.radius_km} km</b></label>
-      <input type="range" min={1} max={25} step={1} value={linker.radius_km} onChange={(e) => setRadius(+e.target.value)} className="h-9 w-full accent-[#eb6834]" />
-      <div className="-mt-2 flex justify-between text-[11px] font-bold text-[var(--muted)]"><span>1 km</span><span>25 km</span></div>
+      <input type="range" min={bounds.min} max={bounds.max} step={1} value={linker.radius_km} onChange={(e) => setRadius(+e.target.value)} className="h-9 w-full accent-[#eb6834]" />
+      <div className="-mt-2 flex justify-between text-[11px] font-bold text-[var(--muted)]"><span>{bounds.min} km</span><span>{bounds.max} km</span></div>
 
       <label className={labelCls}>Mes disponibilités <span className="font-semibold text-[var(--muted)]">(un créneau par jour)</span></label>
       <div className="flex flex-col gap-2">
@@ -142,12 +150,12 @@ export default function LinkerProfilPage() {
             <div key={di} className="flex items-center gap-2 rounded-[16px] border-2 border-[var(--border)] bg-[var(--card)] p-2.5">
               <span className="w-[80px] flex-none text-[13px] font-bold text-[var(--navy)]">{d}</span>
               <select
-                className={`${selectCls} flex-none !w-[112px]`}
+                className={`${selectCls} ${w ? "flex-none !w-[112px]" : "flex-1"}`}
                 value={w ? "on" : "off"}
                 onChange={(e) => (e.target.value === "on" ? addWindow(di) : w && removeWindow(w))}
               >
                 <option value="on">Disponible</option>
-                <option value="off">Fermé</option>
+                <option value="off">Non disponible ce jour-là</option>
               </select>
               {w && (
                 <>

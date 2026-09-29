@@ -1,16 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
 import CharSvg from "@/components/linker/CharSvg";
 import { CH, characterSVG, type CharKey } from "@/lib/linker/characters";
 import { computeOutfit, stageOf, type Mode, type StyleKey } from "@/lib/linker/gamification";
-import { matchNearestOpenBeneficiary } from "@/lib/linker/matching";
 
 const ORANGE = "#eb6834";
-type LinkerRow = { id: string; character: CharKey; level: number; mode: Mode; radius_km: number; cold_ok: boolean; kg_saved: number; links_done: number; chosen: Record<number, StyleKey>; equipped: Record<number, number | "none">; profiles: { full_name: string | null; email: string | null; phone: string | null } | { full_name: string | null; email: string | null; phone: string | null }[] | null };
+type LinkerRow = { id: string; character: CharKey; level: number; mode: Mode; transport: "pied" | "velo"; radius_km: number; cold_ok: boolean; kg_saved: number; links_done: number; chosen: Record<number, StyleKey>; equipped: Record<number, number | "none">; profiles: { full_name: string | null; email: string | null; phone: string | null } | { full_name: string | null; email: string | null; phone: string | null }[] | null };
 type LinkedProfile = { full_name: string | null; phone: string | null };
 type LinkRow = { id: string; status: string; kg_estime: number; is_fresh: boolean; denree: string | null; window_date: string; window_from: string; window_to: string; is_demo: boolean; partners: { name: string } | { name: string }[] | null; beneficiaries: { name: string } | { name: string }[] | null; linkers: { character: CharKey; level: number; profiles: LinkedProfile | LinkedProfile[] | null } | { character: CharKey; level: number; profiles: LinkedProfile | LinkedProfile[] | null }[] | null };
 type Partner = { id: string; name: string; address: string | null; allow_backpack: boolean; allow_car: boolean };
@@ -33,7 +31,6 @@ export default function LinksBenevolesAdminPage() {
   const [partners, setPartners] = useState<Partner[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [isSuperadmin, setIsSuperadmin] = useState(false);
 
   useEffect(() => {
@@ -49,7 +46,7 @@ export default function LinksBenevolesAdminPage() {
     if (!cityId) return setLoading(false);
     setLoading(true);
     const [lk, lnk, pt] = await Promise.all([
-      supabase.from("linkers").select("id,character,level,mode,radius_km,cold_ok,kg_saved,links_done,chosen,equipped,profiles(full_name,email,phone)").eq("city_id", cityId).order("level", { ascending: false }),
+      supabase.from("linkers").select("id,character,level,mode,transport,radius_km,cold_ok,kg_saved,links_done,chosen,equipped,profiles(full_name,email,phone)").eq("city_id", cityId).order("level", { ascending: false }),
       supabase.from("links").select("id,status,kg_estime,is_fresh,denree,window_date,window_from,window_to,is_demo,partners(name),beneficiaries(name),linkers(character,level,profiles(full_name,phone))").eq("city_id", cityId).order("created_at", { ascending: false }).limit(100),
       supabase.from("partners").select("id,name,address,allow_backpack,allow_car").eq("city_id", cityId).eq("active", true).order("name"),
     ]);
@@ -71,47 +68,6 @@ export default function LinksBenevolesAdminPage() {
     if (error) setMsg(error.message);
   }
 
-  async function generateDemo() {
-    if (!cityId || partners.length === 0) return setMsg("Il faut au moins un partenaire actif dans cette ville.");
-    setBusy(true);
-    setMsg(null);
-    const eligible = partners.filter((p) => p.allow_backpack || p.allow_car);
-    const pool = eligible.length ? eligible : partners.slice(0, 3);
-    const today = new Date();
-    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-    const { data: auth } = await supabase.auth.getUser();
-    if (!eligible.length) {
-      // no partner has opted in yet: turn on 🎒 for the ones used, so the demo Links are actually visible to a Linker
-      await Promise.all(pool.slice(0, 3).map((p) => supabase.from("partners").update({ allow_backpack: true }).eq("id", p.id)));
-    }
-    const chosen = pool.slice(0, 3);
-    const rows = await Promise.all(
-      chosen.map(async (p, i) => {
-        const car = p.allow_car && (i === 2 || !p.allow_backpack);
-        const kg = car ? [32, 55, 78][i % 3] : [6, 12, 21][i % 3];
-        const match = p.address ? await matchNearestOpenBeneficiary(supabase, cityId, p.address, iso, "17:30", "19:00") : null;
-        return {
-          city_id: cityId, partner_id: p.id, beneficiary_id: match?.id ?? null,
-          status: "proposee", kg_estime: kg, is_fresh: i % 2 === 0, mode_required: car ? "car" : "walk",
-          window_date: iso, window_from: "17:30:00", window_to: "19:00:00", is_demo: true, created_by: auth.user?.id ?? null,
-        };
-      }),
-    );
-    const missing = rows.filter((r) => !r.beneficiary_id).length;
-    const { error } = await supabase.from("links").insert(rows);
-    setBusy(false);
-    if (error) return setMsg("Génération impossible : " + error.message);
-    if (missing) setMsg(`${missing} Link(s) créé(s) sans association trouvée à proximité (adresse non géolocalisable, ou aucune ouverte).`);
-    await load();
-  }
-  async function clearDemo() {
-    if (!cityId) return;
-    setBusy(true);
-    await supabase.from("links").delete().eq("city_id", cityId).eq("is_demo", true);
-    setBusy(false);
-    await load();
-  }
-
   if (isAll) return <p className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card)] px-5 py-8 text-center text-[13px] text-[var(--slate)]">Choisis une ville pour voir ses Links Bénévoles.</p>;
 
   const kpis = [
@@ -127,21 +83,6 @@ export default function LinksBenevolesAdminPage() {
         <div>
           <h1 className="font-display text-[32px] leading-none font-black">Links Bénévoles</h1>
           <p className="mt-1 text-[13.5px] text-[var(--slate)]">Petites collectes confiées à des bénévoles (Linkers) — {city?.name}.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link href="/linker" target="_blank" className="flex items-center gap-1.5 rounded-[40px] border-[1.5px] px-4 py-[9px] font-display text-[13.5px] font-bold" style={{ borderColor: ORANGE, color: ORANGE }}>
-            👀 Voir comme Linker
-          </Link>
-          {isSuperadmin && (
-            <>
-              <button type="button" disabled={busy} onClick={generateDemo} className="rounded-[40px] px-4 py-[9px] font-display text-[13.5px] font-bold text-white disabled:opacity-60" style={{ background: ORANGE }}>
-                + Générer des Links de démo
-              </button>
-              <button type="button" disabled={busy} onClick={clearDemo} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-[9px] font-display text-[13.5px] font-bold text-[var(--slate)] disabled:opacity-60">
-                Supprimer les données de démo
-              </button>
-            </>
-          )}
         </div>
       </div>
 
@@ -174,8 +115,8 @@ export default function LinksBenevolesAdminPage() {
                       <CharSvg html={characterSVG(lk.character, { stage: stageOf(lk.level), outfit, size: 44 })} />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-semibold text-[var(--navy)]">{p?.full_name || p?.email || "Linker"} · {CH[lk.character].n}</span>
-                      <span className="block text-[11px] text-[var(--slate)]">Level {lk.level} · {lk.mode === "walk" ? "🚶 à pied/vélo" : "🚗 voiture"} · {lk.radius_km} km{lk.cold_ok ? " · 🧊" : ""}</span>
+                      <span className="block truncate text-[13px] font-semibold text-[var(--navy)]">{p?.full_name || p?.email || "Linker"}</span>
+                      <span className="block text-[11px] text-[var(--slate)]">Level {lk.level} · {lk.transport === "velo" ? "🚲 vélo" : "🚶 à pied"} · {lk.radius_km} km{lk.cold_ok ? " · 🧊" : ""}</span>
                       {p?.phone && <a href={`tel:${p.phone}`} className="mt-0.5 inline-block text-[11px] font-bold text-[#2a78d6]">📞 {p.phone}</a>}
                     </span>
                     <span className="flex-none text-right text-[11.5px] font-bold text-[var(--good)]">{lk.links_done} livré{lk.links_done > 1 ? "s" : ""}</span>
@@ -188,7 +129,7 @@ export default function LinksBenevolesAdminPage() {
           <section className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow)]">
             <h3 className="text-[14.5px] font-semibold text-[var(--navy)]">Links</h3>
             <p className="mb-3 text-[11.5px] text-[var(--slate)]">Statut proposée → acceptée → collectée → livrée.</p>
-            {links.length === 0 && <p className="text-[13px] text-[var(--slate)]">Aucun Link — génère des données de démo pour tester le parcours en direct.</p>}
+            {links.length === 0 && <p className="text-[13px] text-[var(--slate)]">Aucun Link pour l&apos;instant.</p>}
             <div className="flex flex-col gap-2">
               {links.map((l) => {
                 const linker = first(l.linkers);

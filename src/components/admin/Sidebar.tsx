@@ -168,21 +168,49 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="sticky top-0 flex h-screen w-[236px] flex-none flex-col justify-between bg-[var(--navy-deep)] px-[18px] py-[26px] text-[var(--panel-fg)]">
-      <div>
-        <div className="flex items-center justify-between px-1.5 pb-[26px]">
-          <div className="flex items-end gap-0.5">
-            <span className="font-script text-2xl">linkee</span>
-            <svg width="30" height="11" viewBox="0 0 40 14" fill="none" aria-hidden="true" className="mb-1">
-              <path d="M2 3 C 10 13, 30 13, 38 3" stroke="var(--turquoise)" strokeWidth={4} strokeLinecap="round" />
-            </svg>
-          </div>
-          <NotificationBell dark />
+    <aside className="sticky top-0 flex h-screen w-[236px] flex-none flex-col bg-[var(--navy-deep)] px-[18px] py-5 text-[var(--panel-fg)]">
+      <div className="flex flex-none items-center justify-between px-1.5">
+        <div className="flex items-end gap-0.5">
+          <span className="font-script text-2xl">linkee</span>
+          <svg width="30" height="11" viewBox="0 0 40 14" fill="none" aria-hidden="true" className="mb-1">
+            <path d="M2 3 C 10 13, 30 13, 38 3" stroke="var(--turquoise)" strokeWidth={4} strokeLinecap="round" />
+          </svg>
         </div>
+        <NotificationBell dark />
+      </div>
 
+      {/* avatar + déconnexion : toujours visibles en haut, plus jamais coupés en bas sur un écran bas */}
+      <div className="mt-3.5 mb-3.5 flex flex-none items-center gap-2.5 rounded-xl px-1.5 py-1.5">
+        {me.avatar ? (
+          <span className="flex h-10 w-10 flex-none overflow-hidden rounded-full" dangerouslySetInnerHTML={{ __html: critterSvg(me.avatar as AvatarKey) }} />
+        ) : (
+          <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-[var(--turquoise)] font-display text-[15px] font-bold text-[#04262e]">
+            {(me.name || "?").charAt(0).toUpperCase()}
+          </span>
+        )}
+        <span className="min-w-0 flex-1 leading-tight">
+          <span className="block truncate text-[13.5px] font-bold text-[var(--panel-fg)]">{me.name || "…"}</span>
+          <span className="block text-[11px] text-[var(--panel-fg-dim)]">{ROLE_SHORT[me.role] ?? ""}</span>
+        </span>
+        <button
+          type="button"
+          onClick={handleLogout}
+          aria-label="Déconnexion"
+          title="Déconnexion"
+          className="flex h-8 w-8 flex-none items-center justify-center rounded-full text-[var(--panel-fg-dim)] hover:bg-white/10 hover:text-[var(--panel-fg)]"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-[17px] w-[17px]">
+            <path d="M9 4 H6 a1.5 1.5 0 0 0 -1.5 1.5 v13 A1.5 1.5 0 0 0 6 20 h3" />
+            <path d="M15 16 L20 12 L15 8" />
+            <path d="M20 12 H9" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {/* big city selector: solid colour of the city you are browsing */}
         {ready && (
-          <div className="relative mb-5">
+          <div className="relative mb-4 flex-none">
             <button
               type="button"
               disabled={!canSwitch}
@@ -253,14 +281,14 @@ export function Sidebar() {
           </div>
         )}
 
-        <nav className="flex flex-col gap-[3px]">
+        <nav className="flex flex-none flex-col gap-[2px]">
           {visibleNav.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + "/") || (item.href === "/links-benevoles" && pathname.startsWith("/linker"));
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-[11px] rounded-xl px-3 py-[11px] text-sm font-semibold ${
+                className={`flex items-center gap-[11px] rounded-xl px-3 py-2 text-sm font-semibold ${
                   active
                     ? "bg-[var(--turquoise)] text-[#04262e]"
                     : "text-[var(--panel-fg-dim)] hover:bg-white/8 hover:text-[var(--panel-fg)]"
@@ -286,13 +314,13 @@ export function Sidebar() {
           })}
           {me.role === "admin_principal" && (
             <>
-          <div className="my-2.5 h-px bg-white/12" />
-          <div className="px-3 pb-1 pt-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--panel-fg-dim)]">
+          <div className="my-2 h-px bg-white/12" />
+          <div className="px-3 pb-1 pt-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-[var(--panel-fg-dim)]">
             Superadmin
           </div>
           <Link
             href={SUPER_ITEM.href}
-            className={`flex items-center gap-[11px] rounded-xl px-3 py-[11px] text-sm font-semibold ${
+            className={`flex items-center gap-[11px] rounded-xl px-3 py-2 text-sm font-semibold ${
               pathname === SUPER_ITEM.href
                 ? "bg-[var(--turquoise)] text-[#04262e]"
                 : "text-[var(--panel-fg-dim)] hover:bg-white/8 hover:text-[var(--panel-fg)]"
@@ -313,7 +341,7 @@ export function Sidebar() {
           </Link>
           <Link
             href="/historique"
-            className={`flex items-center gap-[11px] rounded-xl px-3 py-[11px] text-sm font-semibold ${
+            className={`flex items-center gap-[11px] rounded-xl px-3 py-2 text-sm font-semibold ${
               pathname === "/historique" ? "bg-[var(--turquoise)] text-[#04262e]" : "text-[var(--panel-fg-dim)] hover:bg-white/8 hover:text-[var(--panel-fg)]"
             }`}
           >
@@ -326,41 +354,6 @@ export function Sidebar() {
             </>
           )}
         </nav>
-      </div>
-      <div className="flex flex-col gap-3.5">
-        <div className="flex items-center gap-2.5 rounded-xl px-2.5 py-2">
-          {me.avatar ? (
-            <span className="flex h-[34px] w-[34px] flex-none overflow-hidden rounded-full" dangerouslySetInnerHTML={{ __html: critterSvg(me.avatar as AvatarKey) }} />
-          ) : (
-            <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full bg-[var(--turquoise)] font-display text-sm font-bold text-[#04262e]">
-              {(me.name || "?").charAt(0).toUpperCase()}
-            </span>
-          )}
-          <span className="min-w-0 leading-tight">
-            <span className="block truncate text-[13.5px] font-bold text-[var(--panel-fg)]">{me.name || "…"}</span>
-            <span className="block text-[11.5px] text-[var(--panel-fg-dim)]">{ROLE_SHORT[me.role] ?? ""}</span>
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={handleLogout}
-          className="flex items-center gap-[9px] px-2.5 py-2 text-[13px] font-semibold text-[var(--panel-fg-dim)] hover:text-[var(--panel-fg)]"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.7}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-4 w-4"
-          >
-            <path d="M9 4 H6 a1.5 1.5 0 0 0 -1.5 1.5 v13 A1.5 1.5 0 0 0 6 20 h3" />
-            <path d="M15 16 L20 12 L15 8" />
-            <path d="M20 12 H9" />
-          </svg>
-          <span>Déconnexion</span>
-        </button>
       </div>
     </aside>
   );

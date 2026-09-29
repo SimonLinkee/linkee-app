@@ -166,6 +166,18 @@ export default function DashboardPage() {
   const [dateTo, setDateTo] = useState(() => isoOf(new Date()));
   const [activePartnerId, setActivePartnerId] = useState("");
   const [partnerOpts, setPartnerOpts] = useState<PartnerOpt[]>([]);
+  const [activeBeneficiaryId, setActiveBeneficiaryId] = useState("");
+  const [beneficiaryOpts, setBeneficiaryOpts] = useState<PartnerOpt[]>([]);
+  const [depot, setDepot] = useState<{ volume: number; count: number; denrees: { k: string; kg: number; pct: number }[] } | null>(null);
+  const [linkKpi, setLinkKpi] = useState<{ count: number; kg: number }>({ count: 0, kg: 0 });
+  function pickPartner(id: string) {
+    setActivePartnerId(id);
+    if (id) setActiveBeneficiaryId("");
+  }
+  function pickBeneficiary(id: string) {
+    setActiveBeneficiaryId(id);
+    if (id) setActivePartnerId("");
+  }
   const [cur, setCur] = useState<Summary | null>(null);
   const [prev, setPrev] = useState<Summary | null>(null);
   const [evo, setEvo] = useState<EvoPoint[]>([]);
@@ -184,6 +196,60 @@ export default function DashboardPage() {
     if (cityId) pq = pq.eq("city_id", cityId);
     pq.then(({ data }) => setPartnerOpts(((data ?? []) as { id: string; name: string; category: string | null }[]).map((p) => ({ id: p.id, name: p.name, cat: p.category ?? "" }))));
   }, [supabase]);
+
+  // "lieux de dépose" = bénéficiaires marqués Distribution Linkee (ou épinglés) — même logique que côté planning mobile
+  useEffect(() => {
+    let bq = supabase.from("beneficiaries").select("id,name,category,fiche").order("name");
+    if (cityId) bq = bq.eq("city_id", cityId);
+    bq.then(({ data }) => {
+      const rows = (data ?? []) as { id: string; name: string; category: string | null; fiche: { pinned?: boolean } | null }[];
+      setBeneficiaryOpts(rows.filter((b) => b.category === "Distribution Linkee" || b.fiche?.pinned).map((b) => ({ id: b.id, name: b.name, cat: b.category ?? "" })));
+    });
+  }, [supabase, cityId]);
+
+  // vue "lieu de dépose" : volumes reçus et typologie des denrées, à partir des distributions réellement clôturées
+  useEffect(() => {
+    if (!activeBeneficiaryId) return setDepot(null);
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("distributions")
+        .select("id,event_date,distribution_lines(category,weight_kg)")
+        .eq("beneficiary_id", activeBeneficiaryId)
+        .gte("event_date", isoOf(range.from))
+        .lte("event_date", isoOf(range.to));
+      if (cancelled) return;
+      const rows = (data ?? []) as { id: string; event_date: string; distribution_lines: { category: string | null; weight_kg: number | string | null }[] | null }[];
+      const byCat = new Map<string, number>();
+      let total = 0;
+      for (const d of rows) for (const l of d.distribution_lines ?? []) { const kg = Number(l.weight_kg) || 0; total += kg; const k = l.category || "Autre"; byCat.set(k, (byCat.get(k) ?? 0) + kg); }
+      const denrees = Array.from(byCat.entries()).map(([k, kg]) => ({ k, kg: Math.round(kg * 10) / 10, pct: total ? Math.round((kg / total) * 100) : 0 })).sort((a, b) => b.kg - a.kg);
+      setDepot({ volume: Math.round(total * 10) / 10, count: rows.length, denrees });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, activeBeneficiaryId, fromKey, toKey]);
+
+  // indicateurs Links Bénévoles : filtrables par partenaire et par ville (vide = toutes villes)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let q = supabase.from("links").select("status,kg_estime,weight_actual,window_date").gte("window_date", isoOf(range.from)).lte("window_date", isoOf(range.to));
+      if (cityId) q = q.eq("city_id", cityId);
+      if (activePartnerId) q = q.eq("partner_id", activePartnerId);
+      if (activeBeneficiaryId) q = q.eq("beneficiary_id", activeBeneficiaryId);
+      const { data } = await q;
+      if (cancelled) return;
+      const rows = (data ?? []) as { status: string; kg_estime: number; weight_actual: number | null }[];
+      const mine = rows.filter((l) => l.status !== "annulee");
+      const kg = mine.filter((l) => l.status === "livree").reduce((s, l) => s + (Number(l.weight_actual ?? l.kg_estime) || 0), 0);
+      setLinkKpi({ count: mine.length, kg: Math.round(kg * 10) / 10 });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, cityId, activePartnerId, activeBeneficiaryId, fromKey, toKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -247,6 +313,7 @@ export default function DashboardPage() {
   }
 
   const activePartner = partnerOpts.find((p) => p.id === activePartnerId);
+  const activeBeneficiary = beneficiaryOpts.find((b) => b.id === activeBeneficiaryId);
   const c: Summary = cur ?? { volume: 0, don: 0, customShare: 0, collectes: 0, ok: 0, annulees: 0, taux: 0, denrees: CAT_KEYS.map((k) => ({ k, kg: 0, pct: 0 })), partners: [], motifs: [], byDay: {} };
   const okPct = c.collectes ? Math.round((c.ok / c.collectes) * 100) : 0;
   const delta = prev && prev.volume > 0 ? Math.round(((c.volume - prev.volume) / prev.volume) * 100) : null;
@@ -304,20 +371,36 @@ export default function DashboardPage() {
               <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} aria-label="Date de fin" className="rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-2.5 py-1.5 text-[12.5px] font-semibold text-[var(--navy)] outline-none focus:border-[var(--turquoise)]" />
             </div>
           )}
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
             <label htmlFor="partner-select" className="text-xs font-semibold whitespace-nowrap text-[var(--slate)]">
               Isoler un partenaire
             </label>
             <select
               id="partner-select"
               value={activePartnerId}
-              onChange={(e) => setActivePartnerId(e.target.value)}
+              onChange={(e) => pickPartner(e.target.value)}
               className="max-w-[220px] cursor-pointer rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-2.5 py-[7px] text-[12.5px] font-semibold text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
             >
               <option value="">Tous les partenaires</option>
               {partnerOpts.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
+                </option>
+              ))}
+            </select>
+            <label htmlFor="depot-select" className="text-xs font-semibold whitespace-nowrap text-[var(--slate)]">
+              Isoler un lieu de dépose
+            </label>
+            <select
+              id="depot-select"
+              value={activeBeneficiaryId}
+              onChange={(e) => pickBeneficiary(e.target.value)}
+              className="max-w-[220px] cursor-pointer rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-2.5 py-[7px] text-[12.5px] font-semibold text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
+            >
+              <option value="">Tous les lieux</option>
+              {beneficiaryOpts.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
                 </option>
               ))}
             </select>
@@ -340,8 +423,69 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {activeBeneficiary && (
+        <div className="-mt-2.5 mb-[22px] flex flex-wrap items-center justify-between gap-4 rounded-[18px] bg-[var(--navy-deep)] px-[22px] py-4 text-[var(--panel-fg)] shadow-[var(--shadow)]">
+          <div>
+            <span className="text-[11px] font-bold tracking-[0.05em] text-[var(--panel-fg-dim)] uppercase">Lieu de dépose</span>
+            <h2 className="my-0.5 font-display text-[22px] font-extrabold">{activeBeneficiary.name}</h2>
+            <p className="text-[12.5px] text-[var(--panel-fg-dim)]">Volumes reçus et typologie des denrées — pour préparer un point avec l&apos;association.</p>
+          </div>
+          <button type="button" onClick={() => setActiveBeneficiaryId("")} className="flex-none rounded-[40px] border-[1.5px] border-white/35 px-4 py-2.5 font-display text-[13px] font-bold hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]">
+            Retour à la vue globale
+          </button>
+        </div>
+      )}
+
+      {activeBeneficiaryId ? (
+        <div className={loading ? "opacity-60 transition-opacity" : "transition-opacity"}>
+          <section className="mb-[22px] grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <div className="flex flex-col gap-2 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]">
+              <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Volume reçu</span>
+              <span className="font-display text-[30px] leading-none font-black text-[var(--navy)] tabular-nums">{fmt(depot?.volume ?? 0)} kg</span>
+              <span className="text-[12.5px] text-[var(--slate)]">sur la période sélectionnée</span>
+            </div>
+            <div className="flex flex-col gap-2 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]">
+              <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Distributions</span>
+              <span className="font-display text-[30px] leading-none font-black text-[var(--navy)] tabular-nums">{depot?.count ?? 0}</span>
+              <span className="text-[12.5px] text-[var(--slate)]">réalisées sur la période</span>
+            </div>
+            <div className="flex flex-col gap-2 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]" style={{ borderTop: "4px solid #eb6834" }}>
+              <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Links Bénévoles</span>
+              <span className="font-display text-[30px] leading-none font-black text-[var(--navy)] tabular-nums">{linkKpi.count}</span>
+              <span className="text-[12.5px] text-[var(--slate)]">demandes vers ce lieu</span>
+            </div>
+            <div className="flex flex-col gap-2 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]" style={{ borderTop: "4px solid #eb6834" }}>
+              <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">kg sauvés (Links)</span>
+              <span className="font-display text-[30px] leading-none font-black text-[var(--navy)] tabular-nums">{fmt(linkKpi.kg)} kg</span>
+              <span className="text-[12.5px] text-[var(--slate)]">livrés par les Linkers</span>
+            </div>
+          </section>
+          <section className="rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)]">
+            <h3 className="mb-0.5 font-display text-[17px] font-extrabold text-[var(--navy)]">Répartition par type de denrée</h3>
+            <p className="mb-4 text-[12.5px] text-[var(--slate)]">Part du volume reçu par ce lieu sur la période</p>
+            {!depot || depot.denrees.length === 0 ? (
+              <p className="py-6 text-center text-[13px] text-[var(--slate)]">Aucune distribution enregistrée sur cette période.</p>
+            ) : (
+              <div className="flex flex-col gap-3.5">
+                {depot.denrees.map((x) => {
+                  const max = Math.max(...depot.denrees.map((d) => d.pct), 1);
+                  return (
+                    <div key={x.k} className="grid grid-cols-[128px_1fr_90px] items-center gap-2.5">
+                      <span className="text-[12.5px] font-semibold text-[var(--navy)]">{x.k}</span>
+                      <span className="h-3 overflow-hidden rounded-md bg-[var(--track)]">
+                        <span className="block h-full rounded-md" style={{ width: `${Math.round((x.pct / max) * 100)}%`, background: "#2a78d6" }} />
+                      </span>
+                      <span className="text-right text-[12.5px] font-semibold text-[var(--slate)] tabular-nums">{x.pct}% · {fmt(x.kg)}kg</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </div>
+      ) : (
       <div className={loading ? "opacity-60 transition-opacity" : "transition-opacity"}>
-        <section className="mb-[22px] grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <section className="mb-[22px] grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
           <div className="flex flex-col gap-2 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]">
             <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Volume collecté</span>
             <span className="font-display text-[30px] leading-none font-black text-[var(--navy)] tabular-nums">{fmt(c.volume)} kg</span>
@@ -375,6 +519,16 @@ export default function DashboardPage() {
             <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Temps de travail</span>
             <span className="font-display text-[30px] leading-none font-black text-[var(--navy)] tabular-nums">{activePartnerId ? "—" : fmtHours(work.secs)}</span>
             <span className="text-[12.5px] text-[var(--slate)]">{activePartnerId ? "Non applicable à un seul partenaire" : `${work.days} journée(s) clôturée(s)`}</span>
+          </div>
+          <div className="flex flex-col gap-2 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]" style={{ borderTop: "4px solid #eb6834" }}>
+            <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Links Bénévoles</span>
+            <span className="font-display text-[30px] leading-none font-black text-[var(--navy)] tabular-nums">{linkKpi.count}</span>
+            <span className="text-[12.5px] text-[var(--slate)]">{isAll ? "toutes villes" : city?.name ?? ""}{activePartnerId ? " · ce partenaire" : ""}</span>
+          </div>
+          <div className="flex flex-col gap-2 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]" style={{ borderTop: "4px solid #eb6834" }}>
+            <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">kg sauvés (Links)</span>
+            <span className="font-display text-[30px] leading-none font-black text-[var(--navy)] tabular-nums">{fmt(linkKpi.kg)} kg</span>
+            <span className="text-[12.5px] text-[var(--slate)]">livrés par les Linkers</span>
           </div>
         </section>
 
@@ -492,6 +646,7 @@ export default function DashboardPage() {
           })()}
         </section>
       </div>
+      )}
     </div>
   );
 }
