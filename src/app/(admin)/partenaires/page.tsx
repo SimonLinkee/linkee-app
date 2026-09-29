@@ -107,6 +107,7 @@ type BeneficiaireEntity = {
   description: string;
   isLinkeeSite: boolean;
   portalEmail?: string;
+  creneaux: Creneaux;
 };
 
 type Entity = PartnerEntity | BeneficiaireEntity;
@@ -156,7 +157,7 @@ const BLANK_BENEFICIAIRE: Omit<BeneficiaireEntity, "id"> = {
   access: NO_ACCESS, accessNote: "", horaires: "", hours: {}, volumesAcceptes: "", equipement: { cuisine: false, frigo: false, chambreFroide: false, stockage: false, porc: false },
   stockageM2: 0, denrees: NO_DENREES, contacts: [], siren: "",
   comment: "", structureType: "", statut: "", publicCibles: {}, beneficiaryCount: "",
-  addressVerified: false, network: "", description: "", isLinkeeSite: false,
+  addressVerified: false, network: "", description: "", isLinkeeSite: false, creneaux: {},
 };
 
 // The full "fiche" lives in a jsonb column; name / category / address / active / benevole_only are also real columns.
@@ -909,6 +910,22 @@ export default function PartenairesPage() {
                       onChange={(e) => updateEntity((entity) => ({ ...entity, accessNote: e.target.value }))}
                     />
                   </div>
+                  {current.kind === "beneficiaire" && (
+                    <div className="sm:col-span-2">
+                      <label className={labelCls}>
+                        Créneau de livraison fixe <span className="font-normal text-[var(--muted)]">(pour les associations livrées chaque semaine par le planning pro)</span>
+                      </label>
+                      <p className="mb-2 text-[11.5px] text-[var(--slate)]">
+                        Renseigne un jour + une plage horaire pour que cette association apparaisse automatiquement dans le Planning ce jour-là, sans avoir à l&apos;ajouter à la main chaque semaine.
+                        Ne sert qu&apos;au planning pro — sans effet sur Links Bénévoles, qui se base sur les horaires d&apos;ouverture ci-dessous.
+                      </p>
+                      {formatCreneaux(current.creneaux) && <p className="mb-2 text-[12px] font-semibold text-[var(--navy)]">{formatCreneaux(current.creneaux)}</p>}
+                      <SlotsEditor
+                        value={current.creneaux ?? {}}
+                        onChange={(v) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, creneaux: v } : entity))}
+                      />
+                    </div>
+                  )}
                 </div>
               </AccordionSection>
 
@@ -1044,7 +1061,7 @@ export default function PartenairesPage() {
               )}
 
               {current.kind === "beneficiaire" && (
-                <AccordionSection title="Accueil & équipements" sectionKey="accueil" open={openSections.has("accueil")} onToggle={toggleSection}>
+                <AccordionSection title="Horaires d'ouverture et équipements sur site" sectionKey="accueil" open={openSections.has("accueil")} onToggle={toggleSection}>
                   <div className="mb-3.5">
                     <label className={labelCls}>
                       Horaires d&apos;ouverture <span className="font-normal text-[var(--muted)]">(utilisés pour trouver l&apos;association la plus proche ouverte, dans Links Bénévoles)</span>

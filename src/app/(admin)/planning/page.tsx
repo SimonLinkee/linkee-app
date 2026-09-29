@@ -152,7 +152,7 @@ function rowToStop(r: DbCollecte, depotAddress: string): Stop {
     label: r.label,
     photoPaths: r.photo_paths ?? [],
     passage: p?.passage ?? undefined,
-    creneaux: p?.creneaux ?? undefined,
+    creneaux: p?.creneaux ?? b?.creneaux ?? undefined,
   };
 }
 
@@ -192,7 +192,7 @@ function computeSchedule(stops: StopC[], legs: Leg[] | undefined, dayStart: numb
     const natural = t + travel;
     // arrivée avant l'ouverture du créneau habituel du partenaire : on attend (non bloquant, intégré aux
     // horaires) ; arrivée après la fermeture de tous les créneaux du jour : rien à faire, juste signalé.
-    const { arrival, waitMin } = s.kind === "partner" && s.creneaux ? resolveArrival(natural, slotsForDate(s.creneaux, dateIso)) : { arrival: natural, waitMin: 0 };
+    const { arrival, waitMin } = (s.kind === "partner" || s.kind === "dropoff") && s.creneaux ? resolveArrival(natural, slotsForDate(s.creneaux, dateIso)) : { arrival: natural, waitMin: 0 };
     totalTravel += travel;
     totalKm += km;
     const arrivalMin = arrival;
@@ -234,7 +234,7 @@ const KIND_BADGE_CLS: Record<string, string> = {
 };
 
 const SELECT_DAY =
-  "id,kind,partner_id,beneficiary_id,label,comment,status,duration_min,photo_paths,scheduled_time,partners(name,category,address,passage:fiche->passage,creneaux:fiche->creneaux),beneficiaries(name,category,address)";
+  "id,kind,partner_id,beneficiary_id,label,comment,status,duration_min,photo_paths,scheduled_time,partners(name,category,address,passage:fiche->passage,creneaux:fiche->creneaux),beneficiaries(name,category,address,creneaux:fiche->creneaux)";
 
 export default function PlanningPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -374,15 +374,15 @@ export default function PlanningPage() {
       const [ps, bs, tpl] = await Promise.all([
         // les partenaires "Éligible collecte bénévole" sortent du planning pro classique — ils passent par les Links Bénévoles
         supabase.from("partners").select("id,name,category,address,passage:fiche->passage,creneaux:fiche->creneaux").eq("city_id", cityId ?? "").eq("active", true).eq("benevole_only", false).is("deleted_at", null).order("name"),
-        supabase.from("beneficiaries").select("id,name,category,address").eq("city_id", cityId ?? "").eq("active", true).is("deleted_at", null).order("name"),
+        supabase.from("beneficiaries").select("id,name,category,address,creneaux:fiche->creneaux").eq("city_id", cityId ?? "").eq("active", true).is("deleted_at", null).order("name"),
         supabase.from("checklist_templates").select("weekday,items").eq("city_id", cityId ?? ""),
       ]);
       const list: Place[] = [
         ...((ps.data ?? []) as unknown as { id: string; name: string; category: string | null; address: string | null; passage: Passage | null; creneaux: Creneaux | null }[]).map((p) => ({
           key: "p:" + p.id, kind: "partner" as const, name: p.name, cat: p.category ?? "", address: p.address ?? "", partnerId: p.id, beneficiaryId: null, passage: p.passage ?? undefined, creneaux: p.creneaux ?? undefined,
         })),
-        ...((bs.data ?? []) as { id: string; name: string; category: string | null; address: string | null }[]).map((b) => ({
-          key: "b:" + b.id, kind: "dropoff" as const, name: b.name, cat: b.category ?? "", address: b.address ?? "", partnerId: null, beneficiaryId: b.id,
+        ...((bs.data ?? []) as unknown as { id: string; name: string; category: string | null; address: string | null; creneaux: Creneaux | null }[]).map((b) => ({
+          key: "b:" + b.id, kind: "dropoff" as const, name: b.name, cat: b.category ?? "", address: b.address ?? "", partnerId: null, beneficiaryId: b.id, creneaux: b.creneaux ?? undefined,
         })),
         DEPOT_PLACE,
       ];
@@ -484,6 +484,23 @@ export default function PlanningPage() {
     loadRequests();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cityId, iso]);
+
+  // Dépose fixe hebdomadaire : toute association dont la fiche a un "Créneau de livraison fixe" renseigné
+  // (Adresse & accès) pour le jour affiché est ajoutée automatiquement au planning, si elle n'y est pas déjà
+  // — plus besoin de la recréer chaque semaine à la main. Ne remonte jamais dans le passé (on ne réécrit pas
+  // l'historique d'un jour jamais consulté).
+  const autoDropoffChecked = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (ro || loadingDay || !cityId || !places.length) return;
+    if (iso < isoDate(new Date())) return;
+    const key = `${cityId}|${iso}`;
+    if (autoDropoffChecked.current.has(key)) return;
+    autoDropoffChecked.current.add(key);
+    const toAdd = places.filter(
+      (p) => p.kind === "dropoff" && p.creneaux && slotsForDate(p.creneaux, iso).length > 0 && !stops.some((s) => s.kind === "dropoff" && s.beneficiaryId === p.beneficiaryId),
+    );
+    toAdd.forEach((p) => insertStop(p, "dropoff", {}));
+  }, [ro, loadingDay, cityId, iso, places, stops]);
 
   /* ---------- write back order / times after user edits ---------- */
   useEffect(() => {
@@ -1074,7 +1091,7 @@ export default function PlanningPage() {
                         )}
                       </div>
                       <div className="text-[11.5px] text-[var(--slate)]">{s.cat}</div>
-                      {s.kind === "partner" && s.creneaux && (() => {
+                      {(s.kind === "partner" || s.kind === "dropoff") && s.creneaux && (() => {
                         const todaySlots = slotsForDate(s.creneaux, iso);
                         if (!todaySlots.length) return null;
                         const mismatch = s.arrivalMin !== undefined && outsideUsualSlots(s.arrivalMin, todaySlots);
