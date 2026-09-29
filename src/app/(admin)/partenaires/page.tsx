@@ -142,7 +142,7 @@ const BLANK_PARTNER: Omit<PartnerEntity, "id"> = {
 const ACTIVITY_STATUS_OPTIONS = ["Non défini", "Dons réguliers", "Ponctuel", "Link citoyen"];
 const STRUCTURE_TYPE_OPTIONS = [
   "Association de taille standard", "Association de petite taille / locale", "Epicerie Solidaire",
-  "Distribution de repas", "CHU (centre d'hébergement d'urgence)", "Résidence Sociale", "Association organisant des maraudes",
+  "Distribution de repas", "CHU (centre d’hébergement d’urgence)", "Résidence Sociale", "Association organisant des maraudes",
 ];
 const STATUT_OPTIONS = ["Actif - Distributions régulières", "Actif - Distributions non-régulières", "Échanges en cours / Pas de convention signée", "À contacter"];
 const DEFAULT_PUBLIC_OPTIONS = ["Tout public", "Familles précaires", "SDF", "Etudiants précaires", "Jeunes précaires", "Femmes isolées"];
