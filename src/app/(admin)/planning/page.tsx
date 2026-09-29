@@ -17,7 +17,7 @@ const RouteMap = dynamic(() => import("@/components/RouteMap"), {
 });
 const TRAFFIC_FACTOR = 1.15; // city traffic margin applied to the raw road durations
 
-type Kind = "partner" | "dropoff" | "stock" | "exceptionnel" | "demande_client";
+type Kind = "partner" | "dropoff" | "stock" | "exceptionnel" | "demande_client" | "pause";
 type Status = "planifie" | "annule";
 type Coords = { x: number; y: number };
 type Stop = {
@@ -38,7 +38,7 @@ type Stop = {
   creneaux?: Creneaux;
 };
 type StopC = Stop & { coords: Coords };
-type EnrichedStop = StopC & { scheduledTime: string | null; travelFromPrev: number; travelKmFromPrev: number; arrivalMin?: number };
+type EnrichedStop = StopC & { scheduledTime: string | null; travelFromPrev: number; travelKmFromPrev: number; arrivalMin?: number; waitMin?: number };
 type ChecklistItem = { id: string; label: string };
 type Place = { key: string; kind: "partner" | "dropoff" | "stock"; name: string; cat: string; address: string; partnerId: string | null; beneficiaryId: string | null; passage?: Passage; creneaux?: Creneaux };
 type DbRel = { name: string; category: string | null; address: string | null; passage?: Passage | null; creneaux?: Creneaux | null };
@@ -69,8 +69,8 @@ type PartnerReq = {
 };
 
 const DEFAULT_DAY_START = 9 * 60; // 09:00, adjustable per day (day_settings)
-const LUNCH_START = 12 * 60 + 30;
-const LUNCH_END = 13 * 60 + 30;
+const LUNCH_RESUME_FLOOR = 14 * 60; // la reprise après la pause ne se fait jamais avant 14h
+const LUNCH_DEFAULT_DURATION = 30; // durée mini par défaut à l'ajout, modifiable comme la durée de n'importe quel arrêt
 const HARD_LIMIT = 18 * 60;
 const DEPOT_NAME = "Entrepôt Linkee"; // the depot address depends on the city (cities.depot_address)
 const depotPlace = (address: string): Place => ({ key: "depot", kind: "stock", name: DEPOT_NAME, cat: "Dépôt stock", address, partnerId: null, beneficiaryId: null });
@@ -116,6 +116,17 @@ function outsideUsualSlots(arrivalMin: number, slots: { open: string; close: str
   if (!slots.length) return false;
   return !slots.some((s) => arrivalMin >= toMin(s.open) && arrivalMin <= toMin(s.close));
 }
+/** Si l'arrivée calculée tombe avant l'ouverture d'un créneau, on attend (non bloquant, intégré aux horaires) ;
+ * si elle tombe après la fermeture de tous les créneaux du jour, on ne peut rien y faire — l'arrivée est
+ * laissée telle quelle et sera signalée par outsideUsualSlots. */
+function resolveArrival(natural: number, slots: { open: string; close: string }[]) {
+  if (!slots.length) return { arrival: natural, waitMin: 0 };
+  const ranges = slots.map((s) => ({ open: toMin(s.open), close: toMin(s.close) })).sort((a, b) => a.open - b.open);
+  if (ranges.some((r) => natural >= r.open && natural <= r.close)) return { arrival: natural, waitMin: 0 };
+  const next = ranges.find((r) => r.open > natural);
+  if (next) return { arrival: next.open, waitMin: next.open - natural };
+  return { arrival: natural, waitMin: 0 };
+}
 function one<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
 }
@@ -154,35 +165,42 @@ function pseudoCoords(seed: string): Coords {
 /** Real road legs (minutes, km), one per active stop in order, plus the return leg to the depot at the end. */
 type Leg = { min: number; km: number };
 
-function computeSchedule(stops: StopC[], legs?: Leg[], dayStart: number = DEFAULT_DAY_START) {
+function computeSchedule(stops: StopC[], legs: Leg[] | undefined, dayStart: number = DEFAULT_DAY_START, dateIso: string) {
   let t = dayStart;
   let totalTravel = 0;
   let totalKm = 0;
   let totalDuration = 0;
-  let lunchAt = -1;
   let prevCoords: Coords = { x: 0, y: 0 };
   let activeIdx = 0;
-  const enriched: EnrichedStop[] = stops.map((s, i) => {
+  const enriched: EnrichedStop[] = stops.map((s) => {
     if (s.status === "annule") {
       return { ...s, scheduledTime: null, travelFromPrev: 0, travelKmFromPrev: 0 };
+    }
+    if (s.kind === "pause") {
+      // pas de trajet : la pause se prend là où l'équipe se trouve. Reprise au plus tôt à 14h, avec une
+      // durée mini garantie (s.duration, modifiable comme n'importe quel arrêt) même en cas de retard.
+      const arrivalMin = t;
+      const scheduledTime = fmtTime(t);
+      const resumeAt = Math.max(LUNCH_RESUME_FLOOR, t + s.duration);
+      totalDuration += resumeAt - t;
+      t = resumeAt;
+      return { ...s, scheduledTime, travelFromPrev: 0, travelKmFromPrev: 0, arrivalMin };
     }
     const leg = legs?.[activeIdx++];
     const travel = leg ? Math.round(leg.min) : travelMinutes(prevCoords, s.coords);
     const km = leg ? leg.km : travelKm(prevCoords, s.coords);
-    if (lunchAt === -1 && t + travel >= LUNCH_START && t < LUNCH_END) {
-      lunchAt = i;
-      t = LUNCH_END;
-    } else {
-      t += travel;
-    }
+    const natural = t + travel;
+    // arrivée avant l'ouverture du créneau habituel du partenaire : on attend (non bloquant, intégré aux
+    // horaires) ; arrivée après la fermeture de tous les créneaux du jour : rien à faire, juste signalé.
+    const { arrival, waitMin } = s.kind === "partner" && s.creneaux ? resolveArrival(natural, slotsForDate(s.creneaux, dateIso)) : { arrival: natural, waitMin: 0 };
     totalTravel += travel;
     totalKm += km;
-    const arrivalMin = t;
-    const scheduledTime = fmtTime(t);
-    t += s.duration;
+    const arrivalMin = arrival;
+    const scheduledTime = fmtTime(arrival);
+    t = arrival + s.duration;
     totalDuration += s.duration;
     prevCoords = s.coords;
-    return { ...s, scheduledTime, travelFromPrev: travel, travelKmFromPrev: km, arrivalMin };
+    return { ...s, scheduledTime, travelFromPrev: travel, travelKmFromPrev: km, arrivalMin, waitMin };
   });
   // the truck goes back to the depot at the end of the day
   let returnMin = 0;
@@ -195,22 +213,24 @@ function computeSchedule(stops: StopC[], legs?: Leg[], dayStart: number = DEFAUL
     totalTravel += returnMin;
     totalKm += returnKm;
   }
-  return { stops: enriched, dayEnd: t, totalTravel, totalKm, totalDuration, lunchAt, returnMin, returnKm };
+  return { stops: enriched, dayEnd: t, totalTravel, totalKm, totalDuration, returnMin, returnKm };
 }
 
-const KIND_BADGE: Record<string, string> = { stock: "Stock", dropoff: "Dépose", demande_client: "Demande exceptionnelle client", exceptionnel: "Exceptionnel" };
+const KIND_BADGE: Record<string, string> = { stock: "Stock", dropoff: "Dépose", demande_client: "Demande exceptionnelle client", exceptionnel: "Exceptionnel", pause: "Pause" };
 const KIND_BORDER: Record<Kind, string> = {
   partner: "",
   stock: "border-l-4 border-l-[var(--stock-accent)]",
   dropoff: "border-l-4 border-l-[var(--dropoff)]",
   exceptionnel: "border-l-4 border-l-[var(--exc-accent)]",
   demande_client: "border-l-4 border-l-[var(--client-req)] bg-[var(--client-req-bg)]",
+  pause: "border-l-4 border-l-[var(--muted)] border-dashed bg-[var(--input-bg)]",
 };
 const KIND_BADGE_CLS: Record<string, string> = {
   stock: "bg-[var(--stock-accent-bg)] text-[var(--stock-accent)]",
   dropoff: "bg-[var(--dropoff-bg)] text-[var(--dropoff)]",
   exceptionnel: "bg-[var(--exc-accent-bg)] text-[var(--exc-accent)]",
   demande_client: "bg-[var(--client-req)] text-white",
+  pause: "bg-[var(--track)] text-[var(--slate)]",
 };
 
 const SELECT_DAY =
@@ -291,7 +311,7 @@ export default function PlanningPage() {
     if (!depotGeo) return null;
     const pts: LatLng[] = [depotGeo];
     for (const s of stops) {
-      if (s.status === "annule") continue;
+      if (s.status === "annule" || s.kind === "pause") continue;
       const g = geo[s.address];
       if (!g) return null;
       pts.push(g);
@@ -303,7 +323,7 @@ export default function PlanningPage() {
   const routeKey = routePts ? routePts.map((p) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join("|") : null;
   const activeRoute = route && route.key === routeKey ? route : null;
   const [dayStart, setDayStart] = useState(DEFAULT_DAY_START);
-  const sched = useMemo(() => computeSchedule(stopsC, activeRoute?.legs, dayStart), [stopsC, activeRoute, dayStart]);
+  const sched = useMemo(() => computeSchedule(stopsC, activeRoute?.legs, dayStart, iso), [stopsC, activeRoute, dayStart, iso]);
 
   useEffect(() => {
     if (!routePts || !routeKey || route?.key === routeKey) return;
@@ -568,6 +588,24 @@ export default function PlanningPage() {
     if (place) insertStop(place, place.kind, {}).then(() => showToast(`${place.name} ajouté à la tournée.`));
   }
 
+  /** La pause déjeuner est une étape comme une autre : déplaçable par glisser-déposer, sans trajet propre —
+   * voir computeSchedule pour la règle "reprise pas avant 14h, durée mini garantie même en retard". */
+  async function addLunchStop() {
+    if (!cityId) return showToast("Aucune ville n'est associée à ton compte.");
+    const { data, error } = await supabase
+      .from("collectes")
+      .insert({ city_id: cityId, kind: "pause", label: "Pause déjeuner", scheduled_date: iso, sort_order: stops.length, status: "todo", duration_min: LUNCH_DEFAULT_DURATION })
+      .select("id")
+      .single();
+    if (error || !data) return fail("Ajout impossible", error?.message ?? "erreur inconnue (la migration 031 est-elle passée ?)");
+    const stop: Stop = {
+      id: data.id as string, name: "Pause déjeuner", cat: "", kind: "pause", duration: LUNCH_DEFAULT_DURATION, status: "planifie", dbStatus: "todo",
+      address: "", partnerId: null, beneficiaryId: null, label: "Pause déjeuner", photoPaths: [],
+    };
+    editStops((prev) => [...prev, stop]);
+    showToast("Pause déjeuner ajoutée — glisse-la où tu veux dans la tournée.");
+  }
+
   async function submitExceptional() {
     const place = places.find((p) => p.key === excPlaceKey);
     if (!place) return showToast("Choisis d'abord un partenaire (crée-en un dans l'onglet Partenaires).");
@@ -652,7 +690,7 @@ export default function PlanningPage() {
   }
 
   /* ---------- map projection (km → svg) ---------- */
-  const KIND_HEX: Record<Kind, string> = { partner: "#0a1a3f", stock: "#b97600", dropoff: "#1a8f68", exceptionnel: "#1f93a8", demande_client: "#7c5cd9" };
+  const KIND_HEX: Record<Kind, string> = { partner: "#0a1a3f", stock: "#b97600", dropoff: "#1a8f68", exceptionnel: "#1f93a8", demande_client: "#7c5cd9", pause: "#7a7f8c" };
   const mapPoints: MapPoint[] = [];
   if (depotGeo) mapPoints.push({ lat: depotGeo.lat, lng: depotGeo.lng, label: "Entrepôt Linkee — départ", color: "#4FC1D6", num: "home", time: `Début de journée ${fmtTime(dayStart)}` });
   activeStops.forEach((s) => {
@@ -964,20 +1002,12 @@ export default function PlanningPage() {
 
             {sched.stops.map((s, i) => {
               const cancelled = s.status === "annule";
-              const isLunch = i === sched.lunchAt;
               const done = s.dbStatus === "collecte";
               return (
                 <div key={s.id}>
                   {cancelled ? (
                     <div className="py-1 pl-[50px] text-[11px] font-semibold text-[var(--critical)] italic">Annulé — exclu du calcul de trajet et de la carte</div>
-                  ) : isLunch ? (
-                    <div className="flex items-center gap-2.5 rounded-2xl border-[1.5px] border-dashed border-[var(--border)] px-3.5 py-2.5 text-[12.5px] text-[var(--slate)]">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]">
-                        <path d="M6 3 V7 M18 3 V7 M4 7 H20 L19 20 H5 Z" />
-                      </svg>
-                      <span>Pause déjeuner — 12h30 – 13h30</span>
-                    </div>
-                  ) : (
+                  ) : s.kind === "pause" ? null : (
                     <div className="flex items-center gap-1.5 py-0.5 pl-[50px] text-[11px] font-semibold text-[var(--muted)]">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-[13px] w-[13px]">
                         <path d="M12 5 V19 M6 13 L12 19 L18 13" />
@@ -1014,9 +1044,11 @@ export default function PlanningPage() {
                     </span>
                     <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-full bg-[var(--track)] font-display text-xs font-extrabold text-[var(--navy)]">{i + 1}</span>
                     <span className={`w-[70px] flex-none leading-tight ${cancelled ? "opacity-60" : ""}`}>
-                      <span className="block text-[9.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">{s.kind === "dropoff" ? "Dépose" : s.kind === "stock" ? "Prise stock" : "Collecte"}</span>
+                      <span className="block text-[9.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">{s.kind === "dropoff" ? "Dépose" : s.kind === "stock" ? "Prise stock" : s.kind === "pause" ? "Pause" : "Collecte"}</span>
                       <span className="block font-display text-[18px] font-extrabold text-[var(--navy)]">{s.scheduledTime || "—"}</span>
-                      {s.arrivalMin !== undefined && <span className="block text-[10.5px] text-[var(--slate)]">→ {fmtTime(s.arrivalMin + s.duration)}</span>}
+                      {s.arrivalMin !== undefined && (
+                        <span className="block text-[10.5px] text-[var(--slate)]">→ {fmtTime(s.kind === "pause" ? Math.max(LUNCH_RESUME_FLOOR, s.arrivalMin + s.duration) : s.arrivalMin + s.duration)}</span>
+                      )}
                     </span>
                     <span className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
@@ -1049,7 +1081,7 @@ export default function PlanningPage() {
                         return (
                           <div className={`text-[11px] ${mismatch ? "font-semibold text-[var(--warn)]" : "text-[var(--slate)]"}`}>
                             Créneau habituel : {todaySlots.map((sl) => `${sl.open}–${sl.close}`).join(", ")}
-                            {mismatch ? " ⚠︎ hors créneau" : ""}
+                            {mismatch ? " ⚠︎ hors créneau" : s.waitMin ? ` · ⏳ attente ${fmtDuration(s.waitMin)} avant l'ouverture` : ""}
                           </div>
                         );
                       })()}
@@ -1066,13 +1098,14 @@ export default function PlanningPage() {
                         value={s.duration}
                         onClick={(e) => e.stopPropagation()}
                         disabled={ro}
+                        title={s.kind === "pause" ? "Durée minimum garantie (la reprise ne se fait jamais avant 14h)" : undefined}
                         onChange={(e) => updateDuration(i, +e.target.value || 0)}
                         className="w-11 rounded-[8px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-1.5 py-1 text-center text-xs font-semibold text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
                       />
                       <small className="text-[11px] text-[var(--slate)]">min</small>
                     </span>
                     <span className="flex flex-none gap-1.5">
-                      {!ro && !(s.kind === "stock" && done) && (
+                      {!ro && !(s.kind === "stock" && done) && s.kind !== "pause" && (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1086,7 +1119,7 @@ export default function PlanningPage() {
                           Compléter les infos
                         </button>
                       )}
-                      {!ro && (
+                      {!ro && s.kind !== "pause" && (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1163,6 +1196,11 @@ export default function PlanningPage() {
               <button type="button" onClick={addPlaceToTour} className="rounded-[40px] bg-[var(--navy-deep)] px-4 py-2 font-display text-[13px] font-bold text-[var(--panel-fg)]">
                 + Ajouter
               </button>
+              {!stops.some((s) => s.kind === "pause") && (
+                <button type="button" onClick={addLunchStop} className="rounded-[40px] border-[1.5px] border-dashed border-[var(--border)] px-4 py-2 font-display text-[13px] font-bold text-[var(--slate)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]">
+                  + Pause déjeuner
+                </button>
+              )}
             </div>
             )}
           </div>

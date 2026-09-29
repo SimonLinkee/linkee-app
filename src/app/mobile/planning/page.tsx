@@ -22,8 +22,8 @@ type Stop = {
 type Opt = { id: string; name: string };
 
 const DENREES = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
-const KIND_LABEL: Record<string, string> = { partner: "Collecte", dropoff: "Dépose", stock: "Prise au stock", exceptionnel: "Collecte exceptionnelle", demande_client: "Demande partenaire" };
-const KIND_COLOR: Record<string, string> = { partner: "#0a1a3f", dropoff: "#1a8f68", stock: "#b97600", exceptionnel: "#1f93a8", demande_client: "#7c5cd9" };
+const KIND_LABEL: Record<string, string> = { partner: "Collecte", dropoff: "Dépose", stock: "Prise au stock", exceptionnel: "Collecte exceptionnelle", demande_client: "Demande partenaire", pause: "Pause déjeuner" };
+const KIND_COLOR: Record<string, string> = { partner: "#0a1a3f", dropoff: "#1a8f68", stock: "#b97600", exceptionnel: "#1f93a8", demande_client: "#7c5cd9", pause: "#7a7f8c" };
 const isoOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const first = <T,>(v: T | T[] | null | undefined): T | null => (Array.isArray(v) ? (v[0] ?? null) : (v ?? null));
 const field = "h-[52px] w-full rounded-2xl border-2 border-[var(--border)] bg-[var(--input-bg)] px-4 text-[16px] font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]";
@@ -179,12 +179,14 @@ export default function MobilePlanning() {
                   {done ? "Réalisée" : cancelled ? "Annulée" : "À faire"}
                 </span>
               </div>
+              {s.kind !== "pause" && (
               <div className={`mt-3 grid gap-2 ${s.kind === "stock" && done ? "grid-cols-1" : "grid-cols-2"}`}>
                 {!(s.kind === "stock" && done) && (
                   <button type="button" onClick={() => setModal({ mode: "data", current: s.status, stop: { id: s.id, name: nameOf(s), kind: s.kind, partnerId: s.partner_id, cat: first(s.partners)?.category ?? first(s.beneficiaries)?.category ?? "" } })} className="h-[52px] rounded-xl bg-[var(--good)] text-[15px] font-bold text-white">Compléter les infos</button>
                 )}
                 <button type="button" onClick={() => setModal({ mode: "status", current: s.status, stop: { id: s.id, name: nameOf(s), kind: s.kind, partnerId: s.partner_id, cat: first(s.partners)?.category ?? first(s.beneficiaries)?.category ?? "" } })} className="h-[52px] rounded-xl border-2 border-[var(--navy-deep)] text-[15px] font-bold text-[var(--navy)]">Statut : {done ? "Réalisée" : cancelled ? "Annulée" : "À faire"} ▾</button>
               </div>
+              )}
               {!done && (
                 <div className="mt-2 grid grid-cols-3 gap-2">
                   <button type="button" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Monter" className="h-[52px] rounded-xl bg-[var(--track)] text-[22px] font-bold text-[var(--navy)] disabled:opacity-30">↑</button>

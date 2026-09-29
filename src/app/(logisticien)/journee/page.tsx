@@ -17,7 +17,7 @@ const RouteMap = dynamic(() => import("@/components/RouteMap"), {
   loading: () => <div className="flex h-[300px] items-center justify-center text-[12.5px] text-[var(--slate)]">Chargement de la carte…</div>,
 });
 
-type Kind = "partner" | "dropoff" | "stock" | "exceptionnel";
+type Kind = "partner" | "dropoff" | "stock" | "exceptionnel" | "pause";
 type ResultItem = { denree?: string; name?: string; kg: number; from?: string; sourceId?: string; stockId?: string; colis?: number; subcategoryId?: string; quantity?: number; unit?: string };
 type StopResult = { items?: ResultItem[]; totalKg?: number; photos?: number; photoPaths?: string[]; motif?: string };
 type ChecklistItem = { id: string; label: string };
@@ -75,7 +75,7 @@ const ACCESS_KEY_MAP: Record<string, string> = { digicode: "digicode", quai: "qu
 function rowToStop(r: DbStop, all: DbStop[], depotAddress: string): Stop {
   const rel = one(r.partners) ?? one(r.beneficiaries);
   const fiche = (rel?.fiche ?? {}) as { access?: Record<string, boolean>; accessNote?: string; denrees?: Record<string, boolean> };
-  const kind: Kind = r.kind === "dropoff" ? "dropoff" : r.kind === "stock" ? "stock" : r.kind === "partner" ? "partner" : "exceptionnel";
+  const kind: Kind = r.kind === "dropoff" ? "dropoff" : r.kind === "stock" ? "stock" : r.kind === "partner" ? "partner" : r.kind === "pause" ? "pause" : "exceptionnel";
   const items: ResultItem[] = (r.collecte_items ?? []).map((it) => {
     const src = it.source_collecte_id ? all.find((x) => x.id === it.source_collecte_id) : null;
     const srcRel = src ? (one(src.partners) ?? one(src.beneficiaries)) : null;
@@ -639,9 +639,9 @@ export default function JourneePage() {
       return next;
     });
   }
-  const doneCount = stops.filter((s) => s.status !== "todo").length;
-  const remaining = stops.length - doneCount;
-  const breakIdx = stops.findIndex((s) => s.time >= "13:30");
+  const realStops = stops.filter((s) => s.kind !== "pause");
+  const doneCount = realStops.filter((s) => s.status !== "todo").length;
+  const remaining = realStops.length - doneCount;
   const pad = (n: number) => (n < 10 ? "0" + n : "" + n);
   const [now] = useState(() => new Date());
   const today = now.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
@@ -904,11 +904,11 @@ export default function JourneePage() {
     if (!mapOpen || stops.length === 0) return;
     let cancelled = false;
     (async () => {
-      const hex: Record<Kind, string> = { partner: "#0a1a3f", stock: "#b97600", dropoff: "#1a8f68", exceptionnel: "#1f93a8" };
+      const hex: Record<Kind, string> = { partner: "#0a1a3f", stock: "#b97600", dropoff: "#1a8f68", exceptionnel: "#1f93a8", pause: "#7a7f8c" };
       const depot = await geocode(depotAddr);
       const found: { s: Stop; i: number; g: { lat: number; lng: number } }[] = [];
       for (let i = 0; i < stops.length; i++) {
-        if (stops[i].status === "annule") continue;
+        if (stops[i].status === "annule" || stops[i].kind === "pause") continue;
         const g = await geocode(stops[i].address);
         if (g) found.push({ s: stops[i], i, g });
       }
@@ -1094,9 +1094,9 @@ export default function JourneePage() {
           )}
 
           <div className="mb-3 flex items-center justify-between px-0.5">
-            <span className="text-[12.5px] font-bold">{doneCount} / {stops.length} traitées</span>
+            <span className="text-[12.5px] font-bold">{doneCount} / {realStops.length} traitées</span>
             <span className="mx-2.5 h-[7px] flex-1 overflow-hidden rounded-[5px] bg-[var(--todo-bg)]">
-              <span className="block h-full rounded-[5px] bg-[var(--good)] transition-[width]" style={{ width: `${Math.round((doneCount / stops.length) * 100)}%` }} />
+              <span className="block h-full rounded-[5px] bg-[var(--good)] transition-[width]" style={{ width: `${realStops.length ? Math.round((doneCount / realStops.length) * 100) : 0}%` }} />
             </span>
           </div>
 
@@ -1119,26 +1119,19 @@ export default function JourneePage() {
           <div className="flex flex-col gap-3">
             {stops.map((s, i) => {
               const done = s.status !== "todo";
-              const badge = s.status === "collecte" ? (s.kind === "stock" ? "Pris" : s.kind === "dropoff" ? "Déposé" : "Collecté") : s.status === "annule" ? "Annulé" : "À faire";
-              const borderCls = s.kind === "stock" ? "border-l-[3px] border-l-[var(--stock-accent)]" : s.kind === "dropoff" ? "border-l-[3px] border-l-[var(--dropoff)]" : s.kind === "exceptionnel" ? "border-l-[3px] border-l-[var(--exc-accent)]" : "";
-              const iconCls = s.kind === "stock" ? "bg-[var(--stock-accent-bg)] text-[var(--stock-accent)]" : s.kind === "dropoff" ? "bg-[var(--dropoff-bg)] text-[var(--dropoff)]" : s.kind === "exceptionnel" ? "bg-[var(--exc-accent-bg)] text-[var(--exc-accent)]" : "bg-[var(--todo-bg)] text-[var(--slate)]";
-              const badgeCls = s.status === "collecte" ? (s.kind === "dropoff" ? "bg-[var(--dropoff-bg)] text-[var(--dropoff)]" : "bg-[var(--good-bg)] text-[var(--good)]") : s.status === "annule" ? "bg-[var(--critical-bg)] text-[var(--critical)]" : "bg-[var(--todo-bg)] text-[var(--slate)]";
+              const isPause = s.kind === "pause";
+              const badge = isPause ? "Pause" : s.status === "collecte" ? (s.kind === "stock" ? "Pris" : s.kind === "dropoff" ? "Déposé" : "Collecté") : s.status === "annule" ? "Annulé" : "À faire";
+              const borderCls = isPause ? "border-l-[3px] border-dashed border-l-[var(--muted)]" : s.kind === "stock" ? "border-l-[3px] border-l-[var(--stock-accent)]" : s.kind === "dropoff" ? "border-l-[3px] border-l-[var(--dropoff)]" : s.kind === "exceptionnel" ? "border-l-[3px] border-l-[var(--exc-accent)]" : "";
+              const iconCls = isPause ? "bg-[var(--todo-bg)] text-[var(--slate)]" : s.kind === "stock" ? "bg-[var(--stock-accent-bg)] text-[var(--stock-accent)]" : s.kind === "dropoff" ? "bg-[var(--dropoff-bg)] text-[var(--dropoff)]" : s.kind === "exceptionnel" ? "bg-[var(--exc-accent-bg)] text-[var(--exc-accent)]" : "bg-[var(--todo-bg)] text-[var(--slate)]";
+              const badgeCls = isPause ? "bg-[var(--todo-bg)] text-[var(--slate)]" : s.status === "collecte" ? (s.kind === "dropoff" ? "bg-[var(--dropoff-bg)] text-[var(--dropoff)]" : "bg-[var(--good-bg)] text-[var(--good)]") : s.status === "annule" ? "bg-[var(--critical-bg)] text-[var(--critical)]" : "bg-[var(--todo-bg)] text-[var(--slate)]";
               const orderCls = s.status === "collecte" ? "bg-[var(--good-bg)] text-[var(--good)]" : s.status === "annule" ? "bg-[var(--critical-bg)] text-[var(--critical)]" : "bg-[var(--todo-bg)] text-[var(--navy)]";
               return (
                 <div key={i}>
-                  {i === breakIdx && (
-                    <div className="mb-3 flex items-center gap-2.5 rounded-[14px] border-[1.5px] border-dashed border-[var(--border)] px-4 py-[11px] text-[var(--slate)]">
-                      <Icon className="h-4 w-4 flex-none"><path d="M6 3 V7 M18 3 V7 M4 7 H20 L19 20 H5 Z" /></Icon>
-                      <span>
-                        <div className="text-[12.5px] font-bold text-[var(--navy)]">Pause déjeuner</div>
-                        <div className="text-[11px]">12h30 – 13h30</div>
-                      </span>
-                    </div>
-                  )}
                   <div className={`rounded-[18px] border border-[var(--border)] bg-[var(--card)] px-4 py-3.5 shadow-[var(--shadow)] ${borderCls}`}>
                     <div
-                      className="flex cursor-pointer items-center gap-3"
+                      className={`flex items-center gap-3 ${isPause ? "" : "cursor-pointer"}`}
                       onClick={() => {
+                        if (isPause) return;
                         if (dayState !== "running") {
                           if (dayState === "idle") showToast("Démarrez votre journée pour saisir une collecte.");
                           return;
@@ -1149,25 +1142,26 @@ export default function JourneePage() {
                       <span className="flex flex-none flex-col items-center gap-[5px]">
                         <span className={`flex h-[26px] w-[26px] items-center justify-center rounded-full font-display text-[12.5px] font-extrabold ${orderCls}`}>{i + 1}</span>
                         <span className={`flex h-5 w-5 items-center justify-center rounded-full ${iconCls}`}>
-                          <Icon>{CAT_PATHS[s.cat] || CAT_PATHS.default}</Icon>
+                          <Icon>{isPause ? <path d="M6 3 V7 M18 3 V7 M4 7 H20 L19 20 H5 Z" /> : CAT_PATHS[s.cat] || CAT_PATHS.default}</Icon>
                         </span>
                       </span>
                       <span className="min-w-0 flex-1">
-                        <div className="mb-0.5 text-[9.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">{s.kind === "dropoff" ? "Dépose prévue à" : s.kind === "stock" ? "Prise prévue à" : "Collecte prévue à"}</div>
+                        <div className="mb-0.5 text-[9.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">{isPause ? "Pause à" : s.kind === "dropoff" ? "Dépose prévue à" : s.kind === "stock" ? "Prise prévue à" : "Collecte prévue à"}</div>
                         <div className="font-display text-[19px] leading-none font-black text-[var(--navy)]">{s.time || "—"}</div>
                         <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[15.5px] leading-tight font-bold text-[var(--navy)]">
                           <span>{s.name}</span>
                           <PassageBadges passage={s.passage} size={22} />
                         </div>
                         <div className="text-[12px] text-[var(--slate)]">{s.cat}</div>
-                        {!done && dayState === "running" && openIdx !== i && <div className="mt-1 text-[11.5px] font-bold text-[var(--turquoise)]">Touchez pour saisir cet arrêt</div>}
+                        {!isPause && !done && dayState === "running" && openIdx !== i && <div className="mt-1 text-[11.5px] font-bold text-[var(--turquoise)]">Touchez pour saisir cet arrêt</div>}
                       </span>
                       <span className={`rounded-[40px] px-[9px] py-[5px] text-[10.5px] font-bold tracking-[0.02em] whitespace-nowrap uppercase ${badgeCls}`}>{badge}</span>
-                      {!done && dayState !== "closed" && (
+                      {!isPause && !done && dayState !== "closed" && (
                         <Icon className={`h-4 w-4 flex-none text-[var(--slate)] transition-transform ${openIdx === i ? "rotate-180" : ""}`} sw={2}><path d="M6 9 L12 15 L18 9" /></Icon>
                       )}
                     </div>
 
+                    {!isPause && (
                     <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--input-bg)] p-2.5">
                       <span className="flex min-w-0 flex-1 items-start gap-2 text-[12.5px] leading-[1.35] font-semibold text-[var(--navy)]">
                         <Icon className="mt-0.5 h-4 w-4 flex-none text-[var(--turquoise)]"><path d="M12 21 C 8 16.5, 5 13, 5 9.5 A7 7 0 0 1 19 9.5 C 19 13, 16 16.5, 12 21 Z" /><circle cx="12" cy="9.5" r="2.3" /></Icon>
@@ -1178,6 +1172,7 @@ export default function JourneePage() {
                         Y aller
                       </a>
                     </div>
+                    )}
                     {s.comment && (
                       <div className="mt-2 flex items-start gap-2 rounded-xl bg-[var(--exc-accent-bg)] px-3 py-2.5 text-[12.5px] leading-[1.45] font-semibold text-[var(--navy)]">
                         <Icon className="mt-px h-3.5 w-3.5 flex-none text-[var(--exc-accent)]"><path d="M4 5 H20 V16 H9 L5 19 V16 H4 Z" /></Icon>
