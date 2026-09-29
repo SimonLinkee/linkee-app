@@ -6,12 +6,15 @@ import { useCity } from "@/components/admin/CityContext";
 import CharSvg from "@/components/linker/CharSvg";
 import { CH, characterSVG, type CharKey } from "@/lib/linker/characters";
 import { stageOf } from "@/lib/linker/gamification";
+import { DEFAULT_EUR_PER_KG } from "@/lib/stats";
 
 type Profile = { full_name: string | null; phone: string | null };
 type LinkRow = {
   id: string;
   status: string;
   kg_estime: number;
+  weight_actual: number | null;
+  don_value: number | null;
   is_fresh: boolean;
   denree: string | null;
   window_date: string;
@@ -54,7 +57,7 @@ export default function MobileLinksPage() {
     setLoading(true);
     supabase
       .from("links")
-      .select("id,status,kg_estime,is_fresh,denree,window_date,window_from,window_to,is_demo,partners(name),beneficiaries(name),linkers(character,level,profiles(full_name,phone))")
+      .select("id,status,kg_estime,weight_actual,don_value,is_fresh,denree,window_date,window_from,window_to,is_demo,partners(name),beneficiaries(name),linkers(character,level,profiles(full_name,phone))")
       .eq("city_id", cityId)
       .order("created_at", { ascending: false })
       .limit(60)
@@ -71,6 +74,13 @@ export default function MobileLinksPage() {
   });
   const enCours = links.filter((l) => l.status === "acceptee" || l.status === "collectee").length;
   const aujourdhui = links.filter((l) => l.status === "livree" && l.window_date === new Date().toISOString().slice(0, 10)).length;
+
+  async function saveDonValue(id: string, raw: string) {
+    const v = raw.trim() === "" ? null : Number(raw.replace(",", "."));
+    if (v != null && !Number.isFinite(v)) return;
+    setLinks((prev) => prev.map((l) => (l.id === id ? { ...l, don_value: v } : l)));
+    await supabase.from("links").update({ don_value: v }).eq("id", id);
+  }
 
   return (
     <div>
@@ -116,6 +126,8 @@ export default function MobileLinksPage() {
                 const linker = first(l.linkers);
                 const lp = linker ? first(linker.profiles) : null;
                 const st = STATUS_UI[l.status] ?? STATUS_UI.proposee;
+                const kg = Number(l.weight_actual ?? l.kg_estime) || 0;
+                const auto = Math.round(kg * DEFAULT_EUR_PER_KG * 100) / 100;
                 return (
                   <div key={l.id} className="rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-3.5">
                     <div className="flex items-start justify-between gap-2">
@@ -142,6 +154,19 @@ export default function MobileLinksPage() {
                     ) : (
                       <p className="mt-2 text-[12px] font-semibold text-[var(--muted)]">En attente d&apos;un Linker…</p>
                     )}
+                    <label className="mt-2 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--slate)]">
+                      Valeur du don
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        defaultValue={l.don_value ?? ""}
+                        onBlur={(e) => saveDonValue(l.id, e.target.value)}
+                        placeholder={String(auto)}
+                        className="h-8 w-[84px] rounded-[9px] border border-[var(--border)] bg-[var(--input-bg)] px-2 text-[12px] font-bold text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
+                      />
+                      €{l.don_value == null && <span className="text-[10.5px] font-medium text-[var(--muted)]">(auto : {auto} €)</span>}
+                    </label>
                   </div>
                 );
               })}

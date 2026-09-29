@@ -169,7 +169,7 @@ export default function DashboardPage() {
   const [activeBeneficiaryId, setActiveBeneficiaryId] = useState("");
   const [beneficiaryOpts, setBeneficiaryOpts] = useState<PartnerOpt[]>([]);
   const [depot, setDepot] = useState<{ volume: number; count: number; denrees: { k: string; kg: number; pct: number }[] } | null>(null);
-  const [linkKpi, setLinkKpi] = useState<{ count: number; kg: number }>({ count: 0, kg: 0 });
+  const [linkKpi, setLinkKpi] = useState<{ count: number; kg: number; don: number }>({ count: 0, kg: 0, don: 0 });
   function pickPartner(id: string) {
     setActivePartnerId(id);
     if (id) setActiveBeneficiaryId("");
@@ -235,16 +235,19 @@ export default function DashboardPage() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let q = supabase.from("links").select("status,kg_estime,weight_actual,window_date").gte("window_date", isoOf(range.from)).lte("window_date", isoOf(range.to));
+      let q = supabase.from("links").select("status,kg_estime,weight_actual,don_value,window_date").gte("window_date", isoOf(range.from)).lte("window_date", isoOf(range.to));
       if (cityId) q = q.eq("city_id", cityId);
       if (activePartnerId) q = q.eq("partner_id", activePartnerId);
       if (activeBeneficiaryId) q = q.eq("beneficiary_id", activeBeneficiaryId);
       const { data } = await q;
       if (cancelled) return;
-      const rows = (data ?? []) as { status: string; kg_estime: number; weight_actual: number | null }[];
+      const rows = (data ?? []) as { status: string; kg_estime: number; weight_actual: number | null; don_value: number | null }[];
       const mine = rows.filter((l) => l.status !== "annulee");
-      const kg = mine.filter((l) => l.status === "livree").reduce((s, l) => s + (Number(l.weight_actual ?? l.kg_estime) || 0), 0);
-      setLinkKpi({ count: mine.length, kg: Math.round(kg * 10) / 10 });
+      const delivered = mine.filter((l) => l.status === "livree");
+      const kg = delivered.reduce((s, l) => s + (Number(l.weight_actual ?? l.kg_estime) || 0), 0);
+      // valeur du don : celle renseignée manuellement (don_value) écrase le calcul automatique (kg × prix par défaut), pour ce Link uniquement
+      const don = delivered.reduce((s, l) => s + (l.don_value != null ? Number(l.don_value) : (Number(l.weight_actual ?? l.kg_estime) || 0) * DEFAULT_EUR_PER_KG), 0);
+      setLinkKpi({ count: mine.length, kg: Math.round(kg * 10) / 10, don: Math.round(don * 100) / 100 });
     })();
     return () => {
       cancelled = true;
@@ -622,12 +625,12 @@ export default function DashboardPage() {
           <span className="h-px flex-1 bg-[var(--border)]" />
         </div>
         <p className="-mt-2 mb-4 text-[12.5px] text-[var(--slate)]">
-          Recalculé en direct à partir des collectes validées de la période.
-          {c.volume > 0 && c.customShare > 0 ? ` ${c.customShare} % du volume est valorisé au prix propre du partenaire, le reste à ${DEFAULT_EUR_PER_KG} €/kg.` : ` Valeur des dons calculée à ${DEFAULT_EUR_PER_KG} €/kg (aucun prix partenaire renseigné).`}
+          Recalculé en direct à partir des collectes validées et des Links Bénévoles livrés sur la période.
+          {c.volume > 0 && c.customShare > 0 ? ` ${c.customShare} % du volume est valorisé au prix propre du partenaire, le reste à ${DEFAULT_EUR_PER_KG} €/kg.` : ` Valeur des dons calculée à ${DEFAULT_EUR_PER_KG} €/kg par défaut (sauf valeur renseignée manuellement pour un Link).`}
         </p>
         <section className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
           {(() => {
-            const r = rse(c.volume, c.don);
+            const r = rse(c.volume + linkKpi.kg, c.don + linkKpi.don);
             const eur = (n: number) => `${fmt(n)} €`;
             const tiles: [string, string, string][] = [
               ["Valeur des dons", eur(r.don), "var(--good)"],

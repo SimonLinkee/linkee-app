@@ -44,6 +44,9 @@ type DashPeriod = {
   annulees: number;
   denrees: { k: CatKey; pct: number; kg: number }[];
   evo: { l: string; v: number }[];
+  linksCount: number;
+  linksKg: number;
+  linksDon: number;
 };
 type Request = { id?: string; site: string; date: string; time: string; denree: string; volume: string; comment: string; status?: string };
 type DbReq = { id: string; partner_id: string; wished_date: string; wished_time: string | null; denree: string | null; volume_kg: number | null; comment: string | null; status: string };
@@ -394,7 +397,7 @@ export default function EspacePartenairePage() {
   const [colRows, setColRows] = useState<CollecteRow[]>([]);
   const [reqRows, setReqRows] = useState<DbReq[]>([]);
   const [subList, setSubList] = useState<SubCat[]>([]);
-  const [linkRows, setLinkRows] = useState<{ partner_id: string; status: string; kg_estime: number; weight_actual: number | null }[]>([]);
+  const [linkRows, setLinkRows] = useState<{ partner_id: string; status: string; kg_estime: number; weight_actual: number | null; don_value: number | null; window_date: string }[]>([]);
   const [siteKey, setSiteKey] = useState("");
   const [gran, setGran] = useState<"semaine" | "mois" | "tout">("semaine");
   const [granM, setGranM] = useState<"semaine" | "mois" | "annee">("semaine");
@@ -423,12 +426,12 @@ export default function EspacePartenairePage() {
           supabase.from("collectes").select("scheduled_date,scheduled_time,kind,status,motif,source,partner_id,partners(name,category),collecte_items!collecte_id(denree,kg,subcategory_id,quantity,unit)").in("partner_id", ids).order("scheduled_date").limit(5000),
           supabase.from("exceptional_requests").select("id,partner_id,wished_date,wished_time,denree,volume_kg,comment,status").in("partner_id", ids).order("created_at"),
           supabase.from("partner_subcategories").select(SUBCAT_SELECT).in("partner_id", ids),
-          supabase.from("links").select("partner_id,status,kg_estime,weight_actual").in("partner_id", ids),
+          supabase.from("links").select("partner_id,status,kg_estime,weight_actual,don_value,window_date").in("partner_id", ids),
         ]);
         setColRows((col.data ?? []) as unknown as CollecteRow[]);
         setReqRows((rq.data ?? []) as DbReq[]);
         setSubList(((sb.data ?? []) as unknown as SubCat[]).map((s) => ({ ...s, unit_price: s.unit_price == null ? null : Number(s.unit_price), unit_weight_kg: s.unit_weight_kg == null ? null : Number(s.unit_weight_kg) })));
-        setLinkRows((lk.data ?? []) as unknown as { partner_id: string; status: string; kg_estime: number; weight_actual: number | null }[]);
+        setLinkRows((lk.data ?? []) as unknown as { partner_id: string; status: string; kg_estime: number; weight_actual: number | null; don_value: number | null; window_date: string }[]);
       }
       setLoading(false);
     })();
@@ -462,13 +465,6 @@ export default function EspacePartenairePage() {
     return out;
   }, [partnerRows, colRows, todayIso]);
   const site = sites[siteKey];
-
-  /* ---- Links Bénévoles : nombre de demandes et kg sauvés pour le site affiché ---- */
-  const linkStats = useMemo(() => {
-    const mine = linkRows.filter((l) => l.partner_id === siteKey && l.status !== "annulee");
-    const kg = mine.filter((l) => l.status === "livree").reduce((s, l) => s + (Number(l.weight_actual ?? l.kg_estime) || 0), 0);
-    return { count: mine.length, kg: Math.round(kg * 10) / 10 };
-  }, [linkRows, siteKey]);
 
   const requests: Request[] = reqRows
     .filter((r) => r.status === "en_attente")
@@ -505,6 +501,7 @@ export default function EspacePartenairePage() {
     const fk = isoOf(f);
     const tk = isoOf(t);
     const s = summarize(siteRows.filter((r) => r.scheduled_date >= fk && r.scheduled_date <= tk), subs);
+    const lk = linksAgg(fk, tk);
     return {
       periodLabel: label,
       volume: s.volume,
@@ -515,11 +512,23 @@ export default function EspacePartenairePage() {
       annulees: s.annulees,
       denrees: s.denrees,
       evo: g === "semaine" || g === "mois" ? buildEvo(s.byDay, f, t) : monthlyEvo(s.byDay, f, t),
+      linksCount: lk.count,
+      linksKg: lk.kg,
+      linksDon: lk.don,
     };
+  }
+  /** Contribution des Links Bénévoles (livrés) sur une période : kg + valeur du don (surchargée par don_value si renseignée). */
+  function linksAgg(fromIso: string, toIso: string) {
+    const mine = linkRows.filter((l) => l.partner_id === siteKey && l.status === "livree" && l.window_date >= fromIso && l.window_date <= toIso);
+    const all = linkRows.filter((l) => l.partner_id === siteKey && l.status !== "annulee" && l.window_date >= fromIso && l.window_date <= toIso);
+    const kg = mine.reduce((s, l) => s + (Number(l.weight_actual ?? l.kg_estime) || 0), 0);
+    const don = mine.reduce((s, l) => s + (l.don_value != null ? Number(l.don_value) : (Number(l.weight_actual ?? l.kg_estime) || 0) * DEFAULT_EUR_PER_KG), 0);
+    return { count: all.length, kg: Math.round(kg * 10) / 10, don: Math.round(don * 100) / 100 };
   }
   const dash = periodStats(gran);
   const dashM = periodStats(granM);
   const rseSum = summarize(siteRows.filter((r) => r.scheduled_date >= from && r.scheduled_date <= to), subs);
+  const rseLinks = linksAgg(from, to);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -699,8 +708,8 @@ export default function EspacePartenairePage() {
               <Tile label="Volume" value={`${fmtNum(dashM.volume)} kg`} />
               <Tile label="Collectes" value={String(dashM.collectes)} />
               <Tile label="Réussite" value={`${okRate} %`} />
-              <Tile label="Links Bénévoles" value={String(linkStats.count)} />
-              <Tile label="kg sauvés" value={`${fmtNum(linkStats.kg)} kg`} />
+              <Tile label="Links Bénévoles" value={String(dashM.linksCount)} />
+              <Tile label="kg sauvés" value={`${fmtNum(dashM.linksKg)} kg`} />
             </div>
           </Card>
 
@@ -731,8 +740,8 @@ export default function EspacePartenairePage() {
   }
 
   /* ---- Desktop (complete) ---- */
-  const R = rse(rseSum.volume, rseSum.don); // RSE report figures for the chosen period
-  const dashR = rse(dash.volume, dash.don);
+  const R = rse(rseSum.volume + rseLinks.kg, rseSum.don + rseLinks.don); // RSE report figures for the chosen period, Links Bénévoles inclus
+  const dashR = rse(dash.volume + dash.linksKg, dash.don + dash.linksDon);
   const kg = R.kg;
   const donValue = R.don;
   const tabs: { k: Tab; l: string; icon: ReactNode }[] = [
@@ -889,8 +898,8 @@ export default function EspacePartenairePage() {
                 <Tile label="Volume collecté" value={`${fmtNum(dash.volume)} kg`} sub={dash.periodLabel} />
                 <Tile label="Collectes" value={String(dash.collectes)} sub={`${dash.ok} réalisées · ${dash.annulees} annulées`} />
                 <Tile label="Taux de réussite" value={`${dash.collectes ? Math.round((dash.ok / dash.collectes) * 100) : 0} %`} sub="sur la période" />
-                <Tile label="Links Bénévoles" value={String(linkStats.count)} sub="demandes envoyées" />
-                <Tile label="kg sauvés (Links)" value={`${fmtNum(linkStats.kg)} kg`} sub="livrés par les Linkers" />
+                <Tile label="Links Bénévoles" value={String(dash.linksCount)} sub="demandes envoyées" />
+                <Tile label="kg sauvés (Links)" value={`${fmtNum(dash.linksKg)} kg`} sub="livrés par les Linkers" />
               </div>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr]">
                 <Card title="Évolution du volume collecté" note="Volume collecté par période"><EvoChart data={dash.evo} /></Card>
