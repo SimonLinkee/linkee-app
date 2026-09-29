@@ -9,6 +9,8 @@ import PartnerValuation from "@/components/partner/PartnerValuation";
 import PartnerCollectes from "@/components/partner/PartnerCollectes";
 import BeneficiaryMap from "@/components/partner/BeneficiaryMap";
 import AddressSearch from "@/components/AddressSearch";
+import SirenField from "@/components/partner/SirenField";
+import type { SirenInfo } from "@/lib/siren";
 
 type FicheTab = "fiche" | "documents" | "valorisation" | "collectes";
 
@@ -67,6 +69,7 @@ type PartnerEntity = {
   contacts: Contact[];
   portalEmail?: string;
   linkedSites?: string[];
+  sirenInfo?: SirenInfo | null;
 };
 
 type BeneficiaireEntity = {
@@ -89,6 +92,8 @@ type BeneficiaireEntity = {
   stockageM2: number;
   denrees: DenreeFlags;
   contacts: Contact[];
+  siren: string;
+  sirenInfo?: SirenInfo | null;
 };
 
 type Entity = PartnerEntity | BeneficiaireEntity;
@@ -129,7 +134,7 @@ const ACTIVITY_STATUS_OPTIONS = ["Non défini", "Dons réguliers", "Ponctuel", "
 const BLANK_BENEFICIAIRE: Omit<BeneficiaireEntity, "id"> = {
   kind: "beneficiaire", name: "Nouveau bénéficiaire", cat: "Association partenaire", pinned: false, active: true, address: "", tel: "", mail: "",
   access: NO_ACCESS, accessNote: "", horaires: "", hours: {}, volumesAcceptes: "", equipement: { cuisine: false, frigo: false, chambreFroide: false },
-  stockageM2: 0, denrees: NO_DENREES, contacts: [],
+  stockageM2: 0, denrees: NO_DENREES, contacts: [], siren: "",
 };
 
 // The full "fiche" lives in a jsonb column; name / category / address / active / benevole_only are also real columns.
@@ -597,7 +602,6 @@ export default function PartenairesPage() {
                         <option key={c}>{c}</option>
                       ))}
                     </select>
-                    {current.kind === "partner" && <span className="text-[11.5px] text-[var(--muted)]">SIREN {current.siren}</span>}
                   </div>
                 </div>
                 <div className="flex flex-none items-center gap-2">
@@ -679,6 +683,15 @@ export default function PartenairesPage() {
                       placeholder="Numéro, rue, code postal, ville"
                     />
                     <p className="mt-1 text-[11px] font-semibold text-[var(--muted)]">Choisis une suggestion dans la liste pour garantir un matching fiable avec les Links Bénévoles.</p>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Numéro SIREN</label>
+                    <SirenField
+                      siren={current.siren}
+                      info={current.sirenInfo}
+                      onSirenChange={(v) => updateEntity((entity) => ({ ...entity, siren: v }))}
+                      onInfoChange={(info) => updateEntity((entity) => ({ ...entity, sirenInfo: info }))}
+                    />
                   </div>
                   {current.kind === "partner" && (
                     <div>
