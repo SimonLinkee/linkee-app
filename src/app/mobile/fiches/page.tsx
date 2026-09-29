@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
+import AddressSearch from "@/components/AddressSearch";
 
 type Kind = "partner" | "beneficiaire";
 type Contact = { type: string; nom: string; tel: string; mail: string };
@@ -97,7 +98,12 @@ export default function MobileFiches() {
           </div>
           <div>
             <span className={label}>Adresse</span>
-            <input className={field} value={cur.address ?? ""} onChange={(e) => patch(cur.id, { address: e.target.value })} />
+            <AddressSearch
+              className={field}
+              value={cur.address ?? ""}
+              onChange={(v) => patch(cur.id, { address: v })}
+              onPick={(hit) => patch(cur.id, { address: hit.label })}
+            />
           </div>
           <button type="button" onClick={() => patch(cur.id, { active: !cur.active })} className={`flex h-[54px] items-center justify-between rounded-2xl px-4 text-[15px] font-bold ${cur.active ? "bg-[var(--good-bg)] text-[var(--good)]" : "bg-[var(--track)] text-[var(--slate)]"}`}>
             <span>{cur.active ? "Actif — visible dans les tournées" : "Inactif — masqué des tournées"}</span>

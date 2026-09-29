@@ -14,6 +14,7 @@ export default function AddressSearch({
   value,
   onChange,
   onPick,
+  onBlur,
   placeholder,
   className,
   verified,
@@ -21,6 +22,7 @@ export default function AddressSearch({
   value: string;
   onChange: (text: string) => void;
   onPick: (hit: AddressHit) => void;
+  onBlur?: () => void; // pour enregistrer le texte tel quel si l'utilisateur ne choisit pas de suggestion (adresse rare non référencée)
   placeholder?: string;
   className: string;
   verified?: boolean; // affiche un badge quand l'adresse actuelle vient d'une sélection dans la liste
@@ -82,6 +84,7 @@ export default function AddressSearch({
           setOpen(true);
         }}
         onFocus={() => hits.length && setOpen(true)}
+        onBlur={onBlur}
         placeholder={placeholder}
         autoComplete="off"
       />

@@ -8,6 +8,7 @@ import PartnerDocuments from "@/components/partner/PartnerDocuments";
 import PartnerValuation from "@/components/partner/PartnerValuation";
 import PartnerCollectes from "@/components/partner/PartnerCollectes";
 import BeneficiaryMap from "@/components/partner/BeneficiaryMap";
+import AddressSearch from "@/components/AddressSearch";
 
 type FicheTab = "fiche" | "documents" | "valorisation" | "collectes";
 
@@ -637,7 +638,14 @@ export default function PartenairesPage() {
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="sm:col-span-2">
                     <label className={labelCls}>Adresse</label>
-                    <input className={inputCls} value={current.address} onChange={(e) => updateEntity((entity) => ({ ...entity, address: e.target.value }))} />
+                    <AddressSearch
+                      className={inputCls}
+                      value={current.address}
+                      onChange={(v) => updateEntity((entity) => ({ ...entity, address: v }))}
+                      onPick={(hit) => updateEntity((entity) => ({ ...entity, address: hit.label }))}
+                      placeholder="Numéro, rue, code postal, ville"
+                    />
+                    <p className="mt-1 text-[11px] font-semibold text-[var(--muted)]">Choisis une suggestion dans la liste pour garantir un matching fiable avec les Links Bénévoles.</p>
                   </div>
                   {current.kind === "partner" && (
                     <div>

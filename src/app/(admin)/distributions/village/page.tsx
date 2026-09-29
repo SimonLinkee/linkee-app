@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
 import DistribTabs from "@/components/DistribTabs";
 import PhotoStrip from "@/components/PhotoStrip";
+import AddressSearch from "@/components/AddressSearch";
 
 const ORANGE = "#eb6834";
 
@@ -256,7 +257,12 @@ export default function VillagePage() {
                   </div>
                   <div>
                     <label className={labelCls}>Adresse</label>
-                    <input className={fieldCls} value={cur.address ?? ""} onChange={(e) => patch(cur.id, { address: e.target.value })} />
+                    <AddressSearch
+                      className={fieldCls}
+                      value={cur.address ?? ""}
+                      onChange={(v) => patch(cur.id, { address: v })}
+                      onPick={(hit) => patch(cur.id, { address: hit.label })}
+                    />
                   </div>
                   <div className="sm:col-span-2">
                     <label className={labelCls}>Description de l&apos;activité</label>

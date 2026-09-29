@@ -3,6 +3,23 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { CITY_PALETTE, DEFAULT_DEPOT, useCity } from "@/components/admin/CityContext";
+import AddressSearch from "@/components/AddressSearch";
+
+/** Adresse de l'entrepôt d'une ville : recherche BAN, enregistrée dès qu'une suggestion est choisie, ou au blur en repli. */
+function DepotAddressField({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const [v, setV] = useState(value);
+  useEffect(() => setV(value), [value]);
+  return (
+    <AddressSearch
+      className="w-full rounded-[9px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[12px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
+      value={v}
+      onChange={setV}
+      onPick={(hit) => { setV(hit.label); onSave(hit.label); }}
+      onBlur={() => { const t = v.trim(); if (t && t !== value) onSave(t); }}
+      placeholder="Rue, code postal, ville"
+    />
+  );
+}
 
 type Role = "en_attente" | "admin_principal" | "admin_local" | "resp_distribution" | "logisticien" | "partenaire" | "beneficiaire" | "linker";
 type City = { id: string; name: string; color?: string | null; depot_address?: string | null };
@@ -326,14 +343,9 @@ export default function VillesComptesPage() {
                   ))}
                 </div>
                 <div className="mt-2.5 mb-1 text-[10.5px] font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Adresse de l&apos;entrepôt (départ des tournées)</div>
-                <input
-                  defaultValue={c.depot_address ?? (c.name === "Lyon" ? DEFAULT_DEPOT : "")}
-                  placeholder="Rue, code postal, ville"
-                  onBlur={(e) => {
-                    const v = e.target.value.trim();
-                    if (v && v !== (c.depot_address ?? "")) updateCity(c.id, { depot_address: v });
-                  }}
-                  className="w-full rounded-[9px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[12px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
+                <DepotAddressField
+                  value={c.depot_address ?? (c.name === "Lyon" ? DEFAULT_DEPOT : "")}
+                  onSave={(v) => updateCity(c.id, { depot_address: v })}
                 />
               </div>
             </div>
