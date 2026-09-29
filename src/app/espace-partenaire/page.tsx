@@ -84,13 +84,13 @@ function siteFromRow(r: PartnerRow, upcoming: Site["upcoming"], history: History
     benevoleOnly: !!r.benevole_only,
   };
 }
-const DENREE_OPTIONS_LIST = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
+const DENREE_OPTIONS_LIST = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie", "Produits surgelés", "Boissons", "Non alimentaire"];
 
 const ACCESS_OPTIONS = [
   { k: "digicode", l: "Digicode" }, { k: "quai", l: "Quai de livraison" }, { k: "camion", l: "Accès camion" },
   { k: "etage", l: "Étage / ascenseur" }, { k: "horaire", l: "Horaire strict" },
 ];
-const DENREE_OPTIONS = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
+const DENREE_OPTIONS = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie", "Produits surgelés", "Boissons", "Non alimentaire"];
 const DAYS = [
   { k: "lun", l: "Lundi" }, { k: "mar", l: "Mardi" }, { k: "mer", l: "Mercredi" }, { k: "jeu", l: "Jeudi" },
   { k: "ven", l: "Vendredi" }, { k: "sam", l: "Samedi" }, { k: "dim", l: "Dimanche" },

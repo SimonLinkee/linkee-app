@@ -62,6 +62,7 @@ type PartnerEntity = {
   logoUrl?: string | null;
   dureeCollecte?: number;
   benevoleOnly?: boolean;
+  activityStatus?: string;
   history: HistoryEntry[];
   contacts: Contact[];
   portalEmail?: string;
@@ -92,7 +93,9 @@ type BeneficiaireEntity = {
 
 type Entity = PartnerEntity | BeneficiaireEntity;
 
-const DENREE_OPTIONS = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
+// Les 5 premières sont les catégories "officielles" utilisées pour le bilan RSE (collectes, planning) ;
+// les suivantes sont des indications supplémentaires sur ce que le partenaire donne, sans impact sur le bilan RSE.
+const DENREE_OPTIONS = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie", "Produits surgelés", "Boissons", "Non alimentaire"];
 const ACCESS_OPTIONS: { k: AccessKey; l: string }[] = [
   { k: "digicode", l: "Digicode" },
   { k: "quai", l: "Quai de livraison" },
@@ -120,8 +123,9 @@ const NO_ACCESS: AccessFlags = { digicode: false, quai: false, camion: false, et
 
 const BLANK_PARTNER: Omit<PartnerEntity, "id"> = {
   kind: "partner", name: "Nouveau partenaire", cat: "Commerce", active: true, siren: "", antenne: "Lyon", address: "", creneau: "",
-  denrees: NO_DENREES, conditionnement: "Carton", access: NO_ACCESS, accessNote: "", history: [], contacts: [], benevoleOnly: false,
+  denrees: NO_DENREES, conditionnement: "Carton", access: NO_ACCESS, accessNote: "", history: [], contacts: [], benevoleOnly: false, activityStatus: "Non défini",
 };
+const ACTIVITY_STATUS_OPTIONS = ["Non défini", "Dons réguliers", "Ponctuel", "Link citoyen"];
 const BLANK_BENEFICIAIRE: Omit<BeneficiaireEntity, "id"> = {
   kind: "beneficiaire", name: "Nouveau bénéficiaire", cat: "Association partenaire", pinned: false, active: true, address: "", tel: "", mail: "",
   access: NO_ACCESS, accessNote: "", horaires: "", hours: {}, volumesAcceptes: "", equipement: { cuisine: false, frigo: false, chambreFroide: false },
@@ -259,6 +263,9 @@ export default function PartenairesPage() {
   const [ficheTab, setFicheTab] = useState<FicheTab>("fiche");
   const [currentId, setCurrentId] = useState("");
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [activeFilter, setActiveFilter] = useState<"" | "actif" | "inactif">("");
+  const [sortBy, setSortBy] = useState<"nom" | "statut">("nom");
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(["identite"]));
   const [autosaveVisible, setAutosaveVisible] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -388,7 +395,11 @@ export default function PartenairesPage() {
     setOpenSections(new Set(["identite"]));
   }
 
-  const filteredList = list.filter((e) => e.name.toLowerCase().includes(search.toLowerCase()));
+  const filteredList = list
+    .filter((e) => e.name.toLowerCase().includes(search.toLowerCase()))
+    .filter((e) => !activeFilter || (activeFilter === "actif" ? e.active : !e.active))
+    .filter((e) => !statusFilter || (e.kind === "partner" && (e.activityStatus || "Non défini") === statusFilter))
+    .sort((a, b) => (sortBy === "statut" ? (a.kind === "partner" ? a.activityStatus || "" : "").localeCompare(b.kind === "partner" ? b.activityStatus || "" : "") || a.name.localeCompare(b.name) : a.name.localeCompare(b.name)));
   const pinned = filteredList.filter((e) => e.kind === "beneficiaire" && e.pinned);
   const rest = filteredList.filter((e) => !(e.kind === "beneficiaire" && e.pinned));
 
@@ -414,7 +425,10 @@ export default function PartenairesPage() {
         </span>
         <span className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-bold text-[var(--navy)]">{e.name}</div>
-          <div className="text-[11px] text-[var(--slate)]">{e.cat}</div>
+          <div className="truncate text-[11px] text-[var(--slate)]">
+            {e.cat}
+            {e.kind === "partner" && e.activityStatus && e.activityStatus !== "Non défini" ? ` · ${e.activityStatus}` : ""}
+          </div>
         </span>
         <span className="flex flex-none flex-col items-end gap-1">
           {e.kind === "beneficiaire" && e.pinned && (
@@ -465,6 +479,25 @@ export default function PartenairesPage() {
             className="w-full rounded-[40px] border border-[var(--border)] bg-[var(--card)] py-[9px] pr-3 pl-[34px] text-[13px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
           />
         </div>
+        {tab === "partner" && (
+          <>
+            <select value={activeFilter} onChange={(e) => setActiveFilter(e.target.value as typeof activeFilter)} className="rounded-[40px] border border-[var(--border)] bg-[var(--card)] px-3 py-[9px] text-[12.5px] font-semibold text-[var(--slate)]">
+              <option value="">Actifs et inactifs</option>
+              <option value="actif">Actifs seulement</option>
+              <option value="inactif">Inactifs seulement</option>
+            </select>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-[40px] border border-[var(--border)] bg-[var(--card)] px-3 py-[9px] text-[12.5px] font-semibold text-[var(--slate)]">
+              <option value="">Tous statuts</option>
+              {ACTIVITY_STATUS_OPTIONS.map((o) => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </select>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className="rounded-[40px] border border-[var(--border)] bg-[var(--card)] px-3 py-[9px] text-[12.5px] font-semibold text-[var(--slate)]">
+              <option value="nom">Trier par nom</option>
+              <option value="statut">Trier par statut</option>
+            </select>
+          </>
+        )}
         <button
           type="button"
           onClick={createEntity}
@@ -558,7 +591,7 @@ export default function PartenairesPage() {
                       className="cursor-pointer rounded-[40px] border border-[var(--border)] bg-[var(--input-bg)] px-3 py-[5px] text-[12.5px] font-semibold text-[var(--slate)]"
                     >
                       {(current.kind === "partner"
-                        ? ["Boulangerie", "Supermarché", "Traiteur", "Hôtel", "Restauration rapide", "Restauration collective", "Industriel", "Grossiste"]
+                        ? ["Boulangerie", "Supermarché", "Traiteur", "Hôtel", "Restauration rapide", "Restauration collective", "Restauration collective Standard", "Traiteur, hôtel et restauration rapide", "Industriel", "Grossiste", "Association", "Evenementiel", "Non alimentaire"]
                         : ["Distribution Linkee", "Association partenaire"]
                       ).map((c) => (
                         <option key={c}>{c}</option>
@@ -657,6 +690,16 @@ export default function PartenairesPage() {
                     <div>
                       <label className={labelCls}>Créneau de collecte</label>
                       <input className={inputCls} value={current.creneau} onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, creneau: e.target.value } : entity))} />
+                    </div>
+                  )}
+                  {current.kind === "partner" && (
+                    <div>
+                      <label className={labelCls}>Statut d&apos;activité <span className="font-normal text-[var(--muted)]">(filtrable/triable dans la liste)</span></label>
+                      <select className={inputCls} value={current.activityStatus || "Non défini"} onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, activityStatus: e.target.value } : entity))}>
+                        {ACTIVITY_STATUS_OPTIONS.map((o) => (
+                          <option key={o}>{o}</option>
+                        ))}
+                      </select>
                     </div>
                   )}
                   {current.kind === "beneficiaire" && (
