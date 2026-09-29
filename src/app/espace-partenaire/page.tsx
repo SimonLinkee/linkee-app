@@ -8,6 +8,7 @@ import { CAT_LABELS, CO2_SOURCE, DEFAULT_EUR_PER_KG, SUBCAT_SELECT, buildEvo, is
 import PartnerDocuments from "@/components/partner/PartnerDocuments";
 import PartnerValuation from "@/components/partner/PartnerValuation";
 import PartnerLinks from "@/components/partner/PartnerLinks";
+import { formatCreneaux, type Creneaux } from "@/lib/creneaux";
 
 /* ---------------- types ---------------- */
 type Contact = { type: string; nom: string; tel: string; mail: string };
@@ -73,7 +74,7 @@ function siteFromRow(r: PartnerRow, upcoming: Site["upcoming"], history: History
     denrees,
     logo: r.logo_url,
     adminInfo: {
-      slot: ((f.slotDisplay || f.creneau) as string) || "Non renseigné",
+      slot: (f.slotDisplay as string) || formatCreneaux(f.creneaux as Creneaux) || (f.creneau as string) || "Non renseigné",
       denree: DENREE_OPTIONS_LIST.filter((d) => denrees[d]).join(", ") || "Non renseigné",
       volumeRange: (f.volumeRange as string) ?? "",
       comment: (f.partnerComment as string) ?? "",

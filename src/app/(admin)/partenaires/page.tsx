@@ -11,6 +11,7 @@ import BeneficiaryMap from "@/components/partner/BeneficiaryMap";
 import AddressSearch from "@/components/AddressSearch";
 import SirenField from "@/components/partner/SirenField";
 import type { SirenInfo } from "@/lib/siren";
+import { formatCreneaux, type Creneaux, type Slot as CreneauSlot } from "@/lib/creneaux";
 
 type FicheTab = "fiche" | "documents" | "valorisation" | "collectes";
 
@@ -31,6 +32,7 @@ const SECTION_COLOR: Record<string, string> = {
   accueil: "var(--dropoff)",
   contacts: "var(--cat-2)",
   portal: "#0a1a3f",
+  creneaux: "var(--cat-3)",
 };
 
 type AccessKey = "digicode" | "quai" | "camion" | "etage" | "horaire";
@@ -53,7 +55,7 @@ type PartnerEntity = {
   siren: string;
   antenne: string;
   address: string;
-  creneau: string;
+  creneaux: Creneaux;
   denrees: DenreeFlags;
   conditionnement: string;
   access: AccessFlags;
@@ -138,7 +140,7 @@ const NO_DENREES: DenreeFlags = { Secs: false, "Fruits et légumes": false, "Pro
 const NO_ACCESS: AccessFlags = { digicode: false, quai: false, camion: false, etage: false, horaire: false };
 
 const BLANK_PARTNER: Omit<PartnerEntity, "id"> = {
-  kind: "partner", name: "Nouveau partenaire", cat: "Commerce", active: true, siren: "", antenne: "Lyon", address: "", creneau: "",
+  kind: "partner", name: "Nouveau partenaire", cat: "Commerce", active: true, siren: "", antenne: "Lyon", address: "", creneaux: {},
   denrees: NO_DENREES, conditionnement: "Carton", access: NO_ACCESS, accessNote: "", history: [], contacts: [], benevoleOnly: false, activityStatus: "Non défini",
 };
 const ACTIVITY_STATUS_OPTIONS = ["Non défini", "Dons réguliers", "Ponctuel", "Link citoyen"];
@@ -231,6 +233,56 @@ function DenreeChips({ denrees, onToggle }: { denrees: DenreeFlags; onToggle: (d
           <span>{d}</span>
         </label>
       ))}
+    </div>
+  );
+}
+
+/** Créneaux de collecte structurés (jour + début + fin), plusieurs par jour possibles — remplace le champ
+ * "Créneau de collecte" en texte libre pour que le planning puisse s'en servir. */
+function SlotsEditor({ value, onChange }: { value: Creneaux; onChange: (v: Creneaux) => void }) {
+  function addSlot(day: string) {
+    const cur = value[day] ?? [];
+    onChange({ ...value, [day]: [...cur, { open: "09:00", close: "10:00" }] });
+  }
+  function updateSlot(day: string, i: number, patch: Partial<CreneauSlot>) {
+    const cur = (value[day] ?? []).map((s, idx) => (idx === i ? { ...s, ...patch } : s));
+    onChange({ ...value, [day]: cur });
+  }
+  function removeSlot(day: string, i: number) {
+    const cur = (value[day] ?? []).filter((_, idx) => idx !== i);
+    onChange({ ...value, [day]: cur });
+  }
+  return (
+    <div className="flex flex-col overflow-hidden rounded-[14px] border border-[var(--border)]">
+      {DAYS.map((d) => {
+        const slots = value[d.k] ?? [];
+        return (
+          <div key={d.k} className="border-b border-[var(--border)] bg-[var(--card)] px-3 py-2.5 last:border-b-0">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[12.5px] font-bold text-[var(--navy)]">{d.l}</span>
+              <button type="button" onClick={() => addSlot(d.k)} className="flex-none rounded-[40px] border-[1.5px] border-dashed border-[var(--border)] px-2.5 py-1 text-[11px] font-bold text-[var(--slate)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]">
+                + Créneau
+              </button>
+            </div>
+            {slots.length === 0 ? (
+              <p className="mt-1 text-[11px] text-[var(--muted)]">Fermé / aucun créneau</p>
+            ) : (
+              <div className="mt-1.5 flex flex-col gap-1.5">
+                {slots.map((s, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input type="time" className={`${inputCls} !w-auto !px-2 !py-1.5 !text-xs`} value={s.open} onChange={(e) => updateSlot(d.k, i, { open: e.target.value })} />
+                    <span className="text-[11px] text-[var(--muted)]">à</span>
+                    <input type="time" className={`${inputCls} !w-auto !px-2 !py-1.5 !text-xs`} value={s.close} onChange={(e) => updateSlot(d.k, i, { close: e.target.value })} />
+                    <button type="button" onClick={() => removeSlot(d.k, i)} title="Supprimer ce créneau" className="ml-1 flex h-6 w-6 flex-none items-center justify-center rounded-full border-[1.5px] border-[var(--border)] text-[var(--slate)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]">
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -822,12 +874,6 @@ export default function PartenairesPage() {
                   )}
                   {current.kind === "partner" && (
                     <div>
-                      <label className={labelCls}>Créneau de collecte</label>
-                      <input className={inputCls} value={current.creneau} onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, creneau: e.target.value } : entity))} />
-                    </div>
-                  )}
-                  {current.kind === "partner" && (
-                    <div>
                       <label className={labelCls}>Statut d&apos;activité <span className="font-normal text-[var(--muted)]">(filtrable/triable dans la liste)</span></label>
                       <select className={inputCls} value={current.activityStatus || "Non défini"} onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, activityStatus: e.target.value } : entity))}>
                         {ACTIVITY_STATUS_OPTIONS.map((o) => (
@@ -865,6 +911,19 @@ export default function PartenairesPage() {
                   </div>
                 </div>
               </AccordionSection>
+
+              {current.kind === "partner" && (
+                <AccordionSection title="Créneaux de collecte" sectionKey="creneaux" open={openSections.has("creneaux")} onToggle={toggleSection}>
+                  <p className="mb-3 text-[11.5px] text-[var(--slate)]">
+                    Jour + heure de début + heure de fin — utilisés pour planifier les collectes. Plusieurs créneaux possibles, y compris plusieurs le même jour.
+                  </p>
+                  {formatCreneaux(current.creneaux) && <p className="mb-3 text-[12px] font-semibold text-[var(--navy)]">{formatCreneaux(current.creneaux)}</p>}
+                  <SlotsEditor
+                    value={current.creneaux ?? {}}
+                    onChange={(v) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, creneaux: v } : entity))}
+                  />
+                </AccordionSection>
+              )}
 
               {current.kind === "partner" && (
                 <AccordionSection title="Denrées & logistique" sectionKey="logistics" open={openSections.has("logistics")} onToggle={toggleSection}>

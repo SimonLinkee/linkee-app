@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
 import AddressSearch from "@/components/AddressSearch";
+import { formatCreneaux, type Creneaux } from "@/lib/creneaux";
 
 type Kind = "partner" | "beneficiaire";
 type Contact = { type: string; nom: string; tel: string; mail: string };
@@ -116,7 +117,8 @@ export default function MobileFiches() {
             <>
               <div>
                 <span className={label}>Créneau habituel</span>
-                <input className={field} value={str(f.creneau)} onChange={(e) => setF("creneau", e.target.value)} placeholder="Ex : lundi 10h-12h" />
+                <div className={`${field} flex items-center text-[14px] text-[var(--slate)]`}>{formatCreneaux(f.creneaux as Creneaux) || "Non renseigné"}</div>
+                <p className="mt-1 text-[12px] text-[var(--slate)]">Modifiable dans la fiche complète, sur ordinateur (« Créneaux de collecte »).</p>
               </div>
               <div>
                 <span className={label}>Antenne / site</span>

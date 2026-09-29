@@ -9,6 +9,7 @@ import { PassageBadges, type Passage } from "@/components/PassageIcons";
 import AdminStopModal from "@/components/planning/AdminStopModal";
 import dynamic from "next/dynamic";
 import type { MapPoint } from "@/components/RouteMap";
+import { formatCreneaux, slotsForDate, type Creneaux } from "@/lib/creneaux";
 
 const RouteMap = dynamic(() => import("@/components/RouteMap"), {
   ssr: false,
@@ -34,12 +35,13 @@ type Stop = {
   label: string | null;
   photoPaths: string[];
   passage?: Passage;
+  creneaux?: Creneaux;
 };
 type StopC = Stop & { coords: Coords };
 type EnrichedStop = StopC & { scheduledTime: string | null; travelFromPrev: number; travelKmFromPrev: number; arrivalMin?: number };
 type ChecklistItem = { id: string; label: string };
-type Place = { key: string; kind: "partner" | "dropoff" | "stock"; name: string; cat: string; address: string; partnerId: string | null; beneficiaryId: string | null; passage?: Passage };
-type DbRel = { name: string; category: string | null; address: string | null; passage?: Passage | null };
+type Place = { key: string; kind: "partner" | "dropoff" | "stock"; name: string; cat: string; address: string; partnerId: string | null; beneficiaryId: string | null; passage?: Passage; creneaux?: Creneaux };
+type DbRel = { name: string; category: string | null; address: string | null; passage?: Passage | null; creneaux?: Creneaux | null };
 type DbCollecte = {
   id: string;
   kind: Kind;
@@ -105,6 +107,15 @@ function fmtDuration(mins: number) {
   const m = mins % 60;
   return h > 0 ? `${h}h${m < 10 ? "0" : ""}${m}` : `${m}min`;
 }
+function toMin(hhmm: string) {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
+/** L'heure d'arrivée calculée par le trajet tombe-t-elle hors des créneaux habituels du partenaire ce jour-là ? */
+function outsideUsualSlots(arrivalMin: number, slots: { open: string; close: string }[]) {
+  if (!slots.length) return false;
+  return !slots.some((s) => arrivalMin >= toMin(s.open) && arrivalMin <= toMin(s.close));
+}
 function one<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
 }
@@ -130,6 +141,7 @@ function rowToStop(r: DbCollecte, depotAddress: string): Stop {
     label: r.label,
     photoPaths: r.photo_paths ?? [],
     passage: p?.passage ?? undefined,
+    creneaux: p?.creneaux ?? undefined,
   };
 }
 
@@ -202,7 +214,7 @@ const KIND_BADGE_CLS: Record<string, string> = {
 };
 
 const SELECT_DAY =
-  "id,kind,partner_id,beneficiary_id,label,comment,status,duration_min,photo_paths,scheduled_time,partners(name,category,address,passage:fiche->passage),beneficiaries(name,category,address)";
+  "id,kind,partner_id,beneficiary_id,label,comment,status,duration_min,photo_paths,scheduled_time,partners(name,category,address,passage:fiche->passage,creneaux:fiche->creneaux),beneficiaries(name,category,address)";
 
 export default function PlanningPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -341,13 +353,13 @@ export default function PlanningPage() {
     (async () => {
       const [ps, bs, tpl] = await Promise.all([
         // les partenaires "Éligible collecte bénévole" sortent du planning pro classique — ils passent par les Links Bénévoles
-        supabase.from("partners").select("id,name,category,address,passage:fiche->passage").eq("city_id", cityId ?? "").eq("active", true).eq("benevole_only", false).is("deleted_at", null).order("name"),
+        supabase.from("partners").select("id,name,category,address,passage:fiche->passage,creneaux:fiche->creneaux").eq("city_id", cityId ?? "").eq("active", true).eq("benevole_only", false).is("deleted_at", null).order("name"),
         supabase.from("beneficiaries").select("id,name,category,address").eq("city_id", cityId ?? "").eq("active", true).is("deleted_at", null).order("name"),
         supabase.from("checklist_templates").select("weekday,items").eq("city_id", cityId ?? ""),
       ]);
       const list: Place[] = [
-        ...((ps.data ?? []) as unknown as { id: string; name: string; category: string | null; address: string | null; passage: Passage | null }[]).map((p) => ({
-          key: "p:" + p.id, kind: "partner" as const, name: p.name, cat: p.category ?? "", address: p.address ?? "", partnerId: p.id, beneficiaryId: null, passage: p.passage ?? undefined,
+        ...((ps.data ?? []) as unknown as { id: string; name: string; category: string | null; address: string | null; passage: Passage | null; creneaux: Creneaux | null }[]).map((p) => ({
+          key: "p:" + p.id, kind: "partner" as const, name: p.name, cat: p.category ?? "", address: p.address ?? "", partnerId: p.id, beneficiaryId: null, passage: p.passage ?? undefined, creneaux: p.creneaux ?? undefined,
         })),
         ...((bs.data ?? []) as { id: string; name: string; category: string | null; address: string | null }[]).map((b) => ({
           key: "b:" + b.id, kind: "dropoff" as const, name: b.name, cat: b.category ?? "", address: b.address ?? "", partnerId: null, beneficiaryId: b.id,
@@ -542,6 +554,7 @@ export default function PlanningPage() {
       label: place.key === "depot" ? place.name : null,
       photoPaths: [],
       passage: place.passage,
+      creneaux: place.creneaux,
     };
     editStops((prev) => {
       const next = [...prev];
@@ -1029,6 +1042,17 @@ export default function PlanningPage() {
                         )}
                       </div>
                       <div className="text-[11.5px] text-[var(--slate)]">{s.cat}</div>
+                      {s.kind === "partner" && s.creneaux && (() => {
+                        const todaySlots = slotsForDate(s.creneaux, iso);
+                        if (!todaySlots.length) return null;
+                        const mismatch = s.arrivalMin !== undefined && outsideUsualSlots(s.arrivalMin, todaySlots);
+                        return (
+                          <div className={`text-[11px] ${mismatch ? "font-semibold text-[var(--warn)]" : "text-[var(--slate)]"}`}>
+                            Créneau habituel : {todaySlots.map((sl) => `${sl.open}–${sl.close}`).join(", ")}
+                            {mismatch ? " ⚠︎ hors créneau" : ""}
+                          </div>
+                        );
+                      })()}
                       {s.comment && (s.kind === "stock" || s.kind === "dropoff") && <div className="truncate text-[11px] text-[var(--stock-accent)] italic" title={s.comment}>{s.comment}</div>}
                     </span>
                     <span className={`flex-none rounded-[40px] px-2 py-[3px] text-[9.5px] font-bold tracking-[0.03em] uppercase ${cancelled ? "bg-[var(--critical-bg)] text-[var(--critical)]" : done ? "bg-[var(--good-bg)] text-[var(--good)]" : KIND_BADGE_CLS[s.kind] || "bg-[var(--track)] text-[var(--slate)]"}`}>
@@ -1132,6 +1156,7 @@ export default function PlanningPage() {
                 {places.map((p) => (
                   <option key={p.key} value={p.key}>
                     {p.name} — {p.kind === "dropoff" ? "dépose" : p.kind === "stock" ? "stock" : "collecte"}
+                    {p.kind === "partner" && formatCreneaux(p.creneaux) ? ` (${formatCreneaux(p.creneaux)})` : ""}
                   </option>
                 ))}
               </select>
