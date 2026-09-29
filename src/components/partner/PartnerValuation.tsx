@@ -92,7 +92,10 @@ export default function PartnerValuation({ partnerId, category }: { partnerId: s
     const name = (adding[cat] ?? "").trim();
     if (!name) return;
     const { data, error } = await supabase.from("partner_subcategories").insert({ partner_id: partnerId, category: cat, name, unit: "kg" }).select(SUBCAT_SELECT).single();
-    if (error || !data) return setMsg("Ajout impossible : " + (error?.message ?? "erreur"));
+    if (error || !data) {
+      const raw = error?.message ?? "erreur";
+      return setMsg("Ajout impossible : " + (/schema cache/i.test(raw) ? raw + " — si tu viens de passer une migration, recharge la page dans une minute." : raw));
+    }
     setSubs((prev) => [...prev, data as unknown as SubCat]);
     setAdding((a) => ({ ...a, [cat]: "" }));
     flash();
@@ -101,7 +104,7 @@ export default function PartnerValuation({ partnerId, category }: { partnerId: s
   return (
     <div>
       <p className="mb-3 text-[12.5px] leading-[1.5] text-[var(--slate)]">
-        Reprend le <strong className="text-[var(--navy)]">barème par défaut</strong> du type de partenaire ({category || "aucun type"}). Modifie un prix ou un poids moyen pour ce partenaire précis (il s&apos;affiche alors comme <strong className="text-[var(--navy)]">personnalisé</strong>, avec un retour possible à la valeur par défaut) ou ajoute une sous-catégorie propre à ce partenaire. Une modification ne s&apos;applique qu&apos;aux prochaines collectes : l&apos;historique garde sa valeur d&apos;origine. Sans prix, le calcul par défaut reste {DEFAULT_EUR_PER_KG} € / kg.
+        Reprend la <strong className="text-[var(--navy)]">valeur des dons par défaut</strong> du type de partenaire ({category || "aucun type"}). Modifie un prix ou un poids moyen pour ce partenaire précis (il s&apos;affiche alors comme <strong className="text-[var(--navy)]">personnalisé</strong>, avec un retour possible à la valeur par défaut) ou ajoute une sous-catégorie propre à ce partenaire. Une modification ne s&apos;applique qu&apos;aux prochaines collectes : l&apos;historique garde sa valeur d&apos;origine. Sans prix, le calcul par défaut reste {DEFAULT_EUR_PER_KG} € / kg.
       </p>
       <div className={`mb-2 text-[11.5px] font-semibold text-[var(--good)] transition-opacity ${saved ? "opacity-100" : "opacity-0"}`}>Modifications enregistrées</div>
       {msg && <div className="mb-3 rounded-xl bg-[var(--critical-bg)] px-3.5 py-2.5 text-[12.5px] font-semibold text-[var(--critical)]">{msg}</div>}

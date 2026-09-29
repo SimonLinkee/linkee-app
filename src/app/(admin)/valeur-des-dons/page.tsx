@@ -8,9 +8,11 @@ const PARTNER_CATS = ["Boulangerie", "Supermarché", "Traiteur", "Hôtel", "Rest
 const CAT_COLOR = ["var(--cat-1)", "var(--cat-2)", "var(--cat-3)", "var(--cat-4)", "var(--cat-5)"];
 const inputCls = "w-full rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[13px] font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]";
 
-/** Barèmes par défaut, par type de partenaire — s'appliquent automatiquement à tous les partenaires de ce type
- * (chacun peut ensuite les personnaliser dans son onglet Valorisation, sans jamais toucher ce barème partagé). */
-export default function BaremesPage() {
+/** Valeur des dons par défaut, par type de partenaire — s'applique automatiquement à tous les partenaires de ce
+ * type (chacun peut ensuite la personnaliser dans son propre onglet Valorisation, sans jamais toucher cette
+ * valeur partagée). Anciennement "Barèmes" — nom conservé côté base (table category_baremes) mais renommé
+ * partout dans l'interface. */
+export default function ValeurDesDonsPage() {
   const supabase = useMemo(() => createClient(), []);
   const [cat, setCat] = useState(PARTNER_CATS[0]);
   const [items, setItems] = useState<Bareme[]>([]);
@@ -38,31 +40,31 @@ export default function BaremesPage() {
   async function patch(id: string, p: Partial<Bareme>) {
     setItems((prev) => prev.map((b) => (b.id === id ? { ...b, ...p } : b)));
     const { error } = await supabase.from("category_baremes").update(p).eq("id", id);
-    if (error) setMsg("Enregistrement impossible : " + error.message);
+    if (error) setMsg("Enregistrement impossible : " + friendlyError(error.message));
     else flash();
   }
   async function add(denree: string) {
     const name = (adding[denree] ?? "").trim();
     if (!name) return;
     const { data, error } = await supabase.from("category_baremes").insert({ partner_category: cat, category: denree, name, unit: "kg", unit_price: 0 }).select(BAREME_SELECT).single();
-    if (error || !data) return setMsg("Ajout impossible : " + (error?.message ?? "erreur"));
+    if (error || !data) return setMsg("Ajout impossible : " + friendlyError(error?.message ?? "erreur"));
     setItems((prev) => [...prev, data as unknown as Bareme]);
     setAdding((a) => ({ ...a, [denree]: "" }));
     flash();
   }
   async function remove(b: Bareme) {
-    if (!window.confirm(`Supprimer « ${b.name} » du barème ${cat} ? Les partenaires qui l'avaient personnalisé gardent leur valeur ; les autres repassent au calcul par défaut.`)) return;
+    if (!window.confirm(`Supprimer « ${b.name} » de la valeur des dons ${cat} ? Les partenaires qui l'avaient personnalisé gardent leur valeur ; les autres repassent au calcul par défaut.`)) return;
     const { error } = await supabase.from("category_baremes").delete().eq("id", b.id);
-    if (error) return setMsg("Suppression impossible : " + error.message);
+    if (error) return setMsg("Suppression impossible : " + friendlyError(error.message));
     setItems((prev) => prev.filter((x) => x.id !== b.id));
   }
 
   return (
     <div>
       <div className="mb-4">
-        <h1 className="font-display text-[32px] leading-none font-black">Barèmes par type de partenaire</h1>
+        <h1 className="font-display text-[32px] leading-none font-black">Valeur des dons par type de partenaire</h1>
         <p className="mt-1 text-[13.5px] text-[var(--slate)]">
-          Un barème s&apos;applique automatiquement à tous les partenaires du type choisi. Chaque partenaire peut ensuite personnaliser un prix ou un poids moyen dans son propre onglet Valorisation, sans modifier ce barème partagé. Une modification ici ne change jamais la valeur des collectes déjà enregistrées.
+          Une valeur s&apos;applique automatiquement à tous les partenaires du type choisi. Chaque partenaire peut ensuite la personnaliser (prix ou poids moyen) dans son propre onglet Valorisation, sans modifier cette valeur partagée. Une modification ici ne change jamais la valeur des collectes déjà enregistrées.
         </p>
       </div>
 
@@ -89,7 +91,7 @@ export default function BaremesPage() {
                 <span className="text-[11.5px] text-[var(--slate)]">{list.length} produit{list.length > 1 ? "s" : ""}</span>
               </div>
               <div className="px-4 py-2">
-                {list.length === 0 && <p className="py-2 text-[12px] text-[var(--slate)]">Aucun produit dans le barème {cat} pour cette catégorie.</p>}
+                {list.length === 0 && <p className="py-2 text-[12px] text-[var(--slate)]">Aucun produit dans la valeur des dons {cat} pour cette catégorie.</p>}
                 {list.map((b) => (
                   <div key={b.id} className="border-b border-[var(--border)] py-2.5 last:border-none">
                     <div className="grid grid-cols-[1fr_92px_112px_auto] items-center gap-2">
@@ -163,4 +165,11 @@ export default function BaremesPage() {
       </div>
     </div>
   );
+}
+
+/** Rend le message plus clair juste après une migration (le cache de schéma de Supabase met parfois une minute
+ * à reconnaître une table ou une colonne toute neuve) plutôt que de laisser un message Postgres brut. */
+function friendlyError(message: string): string {
+  if (/schema cache/i.test(message)) return message + " — si tu viens de passer une migration, recharge la page dans une minute.";
+  return message;
 }

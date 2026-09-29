@@ -260,7 +260,7 @@ export default function PartnerCollectes({ partnerId, cityId, category }: { part
                     {catSubs.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
-                        {s.unit_price != null ? ` — ${s.unit_price} € / ${UNIT_LABEL[s.unit]}${s.isDefault ? " (barème)" : ""}` : ""}
+                        {s.unit_price != null ? ` — ${s.unit_price} € / ${UNIT_LABEL[s.unit]}${s.isDefault ? " (valeur par défaut)" : ""}` : ""}
                       </option>
                     ))}
                   </select>

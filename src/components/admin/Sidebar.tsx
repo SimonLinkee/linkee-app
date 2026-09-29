@@ -106,8 +106,8 @@ const NAV_ITEMS = [
     ),
   },
   {
-    href: "/baremes",
-    label: "Barèmes",
+    href: "/valeur-des-dons",
+    label: "Valeur des dons",
     icon: (
       <>
         <path d="M6 3 V21 M18 3 V21" />
@@ -151,7 +151,7 @@ export function Sidebar() {
   // only Dashboard and Fleet exist in the national view (all cities)
   // Superadmin: everything · Responsable d'antenne: Distribution, Stock, Planning · Resp. Distribution: Distribution only
   const rolePaths: string[] | null = me.role === "admin_local" ? ["/distributions", "/stock", "/planning", "/profil", "/links-benevoles"] : me.role === "resp_distribution" ? ["/distributions", "/profil"] : null;
-  const visibleNav = (isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/flotte", "/profil", "/baremes"].includes(n.href)) : NAV_ITEMS).filter((n) => (me.role ? !rolePaths || rolePaths.includes(n.href) : false));
+  const visibleNav = (isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/flotte", "/profil", "/valeur-des-dons"].includes(n.href)) : NAV_ITEMS).filter((n) => (me.role ? !rolePaths || rolePaths.includes(n.href) : false));
 
   useEffect(() => {
     (async () => {
