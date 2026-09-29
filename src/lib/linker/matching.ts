@@ -10,6 +10,12 @@ export type MatchResult = { id: string; name: string; address: string; distanceK
 const DAY_KEYS = ["lun", "mar", "mer", "jeu", "ven", "sam", "dim"] as const;
 const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
 
+// À Lyon, l'équipe distribue systématiquement à un lieu fixe le lundi et le mardi (village associatif) —
+// pas de calcul de distance ces jours-là : lundi → HEAT, mardi → Maison des étudiants. Indexé par
+// appWeekday (0 = lundi, 1 = mardi). Si le site nommé n'existe plus / est désactivé, on retombe sur le
+// calcul habituel (nearest open) pour ne jamais bloquer une demande de Link.
+const LYON_FIXED_DROPOFF: Record<number, string> = { 0: "HEAT", 1: "Maison des étudiants" };
+
 /** Weekday index used by the "horaires" free-text parser: 0 = Monday … 6 = Sunday. */
 export function appWeekday(dateIso: string): number {
   const js = new Date(dateIso + "T00:00:00").getDay(); // 0 = Sunday … 6 = Saturday
@@ -31,11 +37,27 @@ export async function matchNearestOpenBeneficiary(
   windowFrom?: string,
   windowTo?: string,
 ): Promise<MatchResult | null> {
-  const origin = await geocode(fromAddress);
-  if (!origin) return null;
-  const { data } = await supabase.from("beneficiaries").select("id,name,address,active,fiche").eq("city_id", cityId).eq("active", true).is("deleted_at", null);
-  const rows = (data ?? []) as { id: string; name: string; address: string | null; fiche: { horaires?: string; hours?: Record<string, DayHours> } | null }[];
   const weekday = appWeekday(dateIso);
+  const [origin, cityRow, benefRows] = await Promise.all([
+    geocode(fromAddress),
+    supabase.from("cities").select("name").eq("id", cityId).maybeSingle(),
+    supabase.from("beneficiaries").select("id,name,address,active,fiche").eq("city_id", cityId).eq("active", true).is("deleted_at", null),
+  ]);
+  if (!origin) return null;
+  const rows = (benefRows.data ?? []) as { id: string; name: string; address: string | null; fiche: { horaires?: string; hours?: Record<string, DayHours> } | null }[];
+
+  const fixedName = cityRow.data?.name === "Lyon" ? LYON_FIXED_DROPOFF[weekday] : undefined;
+  if (fixedName) {
+    const fixed = rows.find((b) => b.name === fixedName);
+    if (fixed?.address) {
+      const g = await geocode(fixed.address);
+      if (g) {
+        const d = toKm(g, origin);
+        return { id: fixed.id, name: fixed.name, address: fixed.address, distanceKm: Math.round(Math.hypot(d.x, d.y) * 10) / 10 };
+      }
+    }
+  }
+
   const dayKey = DAY_KEYS[weekday];
   const candidates: MatchResult[] = [];
   for (const b of rows) {
