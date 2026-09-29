@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { CAT_KEYS, CAT_LABELS, DEFAULT_EUR_PER_KG, SUBCAT_SELECT, UNIT_LABEL, isCollectKind, itemValue, kgFromQuantity, subMap, type SubCat, type Unit } from "@/lib/stats";
+import { BAREME_SELECT, CAT_KEYS, CAT_LABELS, DEFAULT_EUR_PER_KG, SUBCAT_SELECT, UNIT_LABEL, isCollectKind, itemValue, kgFromQuantity, mergeBareme, subMap, type Bareme, type SubCat, type Unit } from "@/lib/stats";
 import { DOC_ACCEPT, DOC_SELECT, openDocument, uploadDocument, type DocRow } from "@/lib/documents";
 
-type Item = { id: string; denree: string | null; kg: number | string; subcategory_id: string | null; quantity: number | string | null; unit: string | null };
+type Item = { id: string; denree: string | null; kg: number | string; subcategory_id: string | null; quantity: number | string | null; unit: string | null; value_snapshot: number | string | null };
 type Row = { id: string; scheduled_date: string; scheduled_time: string | null; kind: string; status: string; source: string; motif: string | null; collecte_items: Item[] | null };
 
 const CAT_COLOR: Record<string, string> = Object.fromEntries(CAT_KEYS.map((k, i) => [CAT_LABELS[k], `var(--cat-${i + 1})`]));
@@ -19,11 +19,12 @@ const labelCls = "mb-1 block text-[11.5px] font-semibold text-[var(--slate)]";
 type Preset = "30" | "90" | "365" | "all" | "custom";
 
 /** Admin view of a partner's collections: upcoming planned ones, history with values, manual volume entry. */
-export default function PartnerCollectes({ partnerId, cityId }: { partnerId: string; cityId: string | null }) {
+export default function PartnerCollectes({ partnerId, cityId, category }: { partnerId: string; cityId: string | null; category: string }) {
   const supabase = useMemo(() => createClient(), []);
   const fileInput = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [subs, setSubs] = useState<SubCat[]>([]);
+  const [baremes, setBaremes] = useState<Bareme[]>([]);
   const [docs, setDocs] = useState<DocRow[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -35,38 +36,44 @@ export default function PartnerCollectes({ partnerId, cityId }: { partnerId: str
   // manual entry form
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [vMode, setVMode] = useState<"detail" | "montant">("detail");
   const [fDate, setFDate] = useState(isoOf(new Date()));
   const [fCat, setFCat] = useState(CAT_LABELS.secs);
   const [fSub, setFSub] = useState("");
   const [fQty, setFQty] = useState("");
   const [fUnit, setFUnit] = useState<Unit>("kg");
   const [fFile, setFFile] = useState<File | null>(null);
+  const [mAmount, setMAmount] = useState(""); // mode "montant global" : valeur totale du don
+  const [mKg, setMKg] = useState(""); // mode "montant global" : poids total (obligatoire)
 
   async function load() {
     const { data: auth } = await supabase.auth.getUser();
     setUserId(auth.user?.id ?? null);
-    const [c, s, d] = await Promise.all([
+    const [c, s, bm, d] = await Promise.all([
       supabase
         .from("collectes")
-        .select("id,scheduled_date,scheduled_time,kind,status,source,motif,collecte_items!collecte_id(id,denree,kg,subcategory_id,quantity,unit)")
+        .select("id,scheduled_date,scheduled_time,kind,status,source,motif,collecte_items!collecte_id(id,denree,kg,subcategory_id,quantity,unit,value_snapshot)")
         .eq("partner_id", partnerId)
         .order("scheduled_date", { ascending: false })
         .limit(1500),
       supabase.from("partner_subcategories").select(SUBCAT_SELECT).eq("partner_id", partnerId).order("created_at"),
+      supabase.from("category_baremes").select(BAREME_SELECT).eq("partner_category", category).order("created_at"),
       supabase.from("documents").select(DOC_SELECT).eq("partner_id", partnerId).not("collecte_id", "is", null),
     ]);
     if (c.error) setMsg("Chargement impossible : " + c.error.message + " (la migration 013 est-elle passée ?)");
     setRows(((c.data ?? []) as unknown as Row[]).filter((r) => isCollectKind(r.kind)));
     setSubs(((s.data ?? []) as unknown as SubCat[]).map((x) => ({ ...x, unit_price: x.unit_price == null ? null : Number(x.unit_price), unit_weight_kg: x.unit_weight_kg == null ? null : Number(x.unit_weight_kg) })));
+    setBaremes(((bm.data ?? []) as unknown as Bareme[]).map((x) => ({ ...x, unit_price: Number(x.unit_price), unit_weight_kg: x.unit_weight_kg == null ? null : Number(x.unit_weight_kg) })));
     setDocs((d.data ?? []) as unknown as DocRow[]);
     setLoading(false);
   }
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [partnerId]);
+  }, [partnerId, category]);
 
-  const subsById = useMemo(() => subMap(subs), [subs]);
+  const effectiveSubs = useMemo(() => mergeBareme(category, baremes, subs), [category, baremes, subs]);
+  const subsById = useMemo(() => subMap(effectiveSubs), [effectiveSubs]);
   const today = isoOf(new Date());
 
   function choosePreset(p: Preset) {
@@ -98,19 +105,34 @@ export default function PartnerCollectes({ partnerId, cityId }: { partnerId: str
   const totalKg = done.reduce((s, e) => s + e.kg, 0);
   const totalValue = done.reduce((s, e) => s + e.value, 0);
 
-  // manual form derived values
-  const catSubs = subs.filter((s) => s.category === fCat);
-  const sub = subs.find((s) => s.id === fSub);
+  // manual form derived values (mode "détail")
+  const catSubs = effectiveSubs.filter((s) => s.category === fCat);
+  const sub = effectiveSubs.find((s) => s.id === fSub);
   const unit: Unit = sub ? sub.unit : fUnit;
   const qtyNum = parseFloat(fQty.replace(",", "."));
   const kgResult = Number.isFinite(qtyNum) && qtyNum > 0 ? kgFromQuantity(qtyNum, unit, sub?.unit_weight_kg ?? null) : null;
   const needWeight = sub?.unit === "unite" && !sub.unit_weight_kg;
+  const detailValue = kgResult != null ? itemValue({ kg: kgResult, subcategory_id: sub?.id ?? null, quantity: qtyNum }, subsById).value : null;
+  // mode "montant global" (et "bon de sortie", qui n'en diffère que par le justificatif joint)
+  const mAmountNum = parseFloat(mAmount.replace(",", "."));
+  const mKgNum = parseFloat(mKg.replace(",", "."));
 
   async function submitManual() {
     setMsg(null);
     if (!cityId) return setMsg("Aucune ville sélectionnée.");
     if (!fDate) return setMsg("Choisis la date de la collecte.");
-    if (kgResult == null || kgResult <= 0) return setMsg(needWeight ? "Renseigne d'abord le poids d'une unité dans l'onglet Valorisation RSE." : "Indique une quantité.");
+    let kg: number;
+    let value: number;
+    if (vMode === "detail") {
+      if (kgResult == null || kgResult <= 0) return setMsg(needWeight ? "Renseigne d'abord le poids moyen d'une unité dans l'onglet Valorisation RSE." : "Indique une quantité.");
+      kg = kgResult;
+      value = detailValue ?? 0;
+    } else {
+      if (!Number.isFinite(mAmountNum) || mAmountNum <= 0) return setMsg("Indique le montant total du don.");
+      if (!Number.isFinite(mKgNum) || mKgNum <= 0) return setMsg("Indique le poids total (obligatoire pour une valorisation au montant global).");
+      kg = mKgNum;
+      value = mAmountNum;
+    }
     setBusy(true);
     try {
       const col = await supabase
@@ -119,13 +141,24 @@ export default function PartnerCollectes({ partnerId, cityId }: { partnerId: str
         .select("id")
         .single();
       if (col.error || !col.data) throw new Error(col.error?.message ?? "Création impossible");
-      const it = await supabase.from("collecte_items").insert({ collecte_id: col.data.id, denree: fCat, kg: kgResult, subcategory_id: sub?.id ?? null, quantity: qtyNum, unit });
+      const realSubId = vMode === "detail" && sub && !sub.id.startsWith("barem:") ? sub.id : null;
+      const it = await supabase.from("collecte_items").insert({
+        collecte_id: col.data.id,
+        denree: fCat,
+        kg,
+        subcategory_id: realSubId,
+        quantity: vMode === "detail" ? qtyNum : null,
+        unit: vMode === "detail" ? unit : null,
+        value_snapshot: Math.round(value * 100) / 100,
+      });
       if (it.error) throw new Error(it.error.message);
       if (fFile) await uploadDocument(supabase, { partnerId, file: fFile, source: "admin", userId, collecteId: col.data.id as string });
       setOpen(false);
       setFQty("");
       setFFile(null);
       setFSub("");
+      setMAmount("");
+      setMKg("");
       await load();
     } catch (e) {
       setMsg((e as Error).message);
@@ -197,68 +230,106 @@ export default function PartnerCollectes({ partnerId, cityId }: { partnerId: str
         <div className="mb-4 rounded-2xl border-[1.5px] border-[var(--client-req)] bg-[var(--card)] p-4">
           <h4 className="mb-0.5 text-[14.5px] font-semibold text-[var(--navy)]">Saisie manuelle d&apos;un volume</h4>
           <p className="mb-3 text-[11.5px] text-[var(--slate)]">Compte dans les statistiques et la Valorisation RSE comme une collecte normale, avec le tag « saisie manuelle ». Elle n&apos;apparaît pas dans le Planning.</p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label className={labelCls}>Date</label>
-              <input type="date" className={fieldCls} value={fDate} onChange={(e) => setFDate(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelCls}>Catégorie</label>
-              <select className={fieldCls} value={fCat} onChange={(e) => { setFCat(e.target.value); setFSub(""); }}>
-                {CAT_KEYS.map((k) => (
-                  <option key={k}>{CAT_LABELS[k]}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className={labelCls}>Sous-catégorie (facultatif)</label>
-              <select className={fieldCls} value={fSub} onChange={(e) => setFSub(e.target.value)}>
-                <option value="">Aucune — catégorie entière</option>
-                {catSubs.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                    {s.unit_price != null ? ` — ${s.unit_price} € / ${UNIT_LABEL[s.unit]}` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className={labelCls}>Quantité</label>
-              <div className="flex gap-2">
-                <input type="number" min={0} step="0.01" className={fieldCls} value={fQty} onChange={(e) => setFQty(e.target.value)} placeholder="Ex : 24" />
-                {sub ? (
-                  <span className="flex flex-none items-center rounded-[10px] bg-[var(--track)] px-3 text-[13px] font-bold text-[var(--navy)]">{UNIT_LABEL[sub.unit]}</span>
-                ) : (
-                  <select className={`${fieldCls} !w-[100px]`} value={fUnit} onChange={(e) => setFUnit(e.target.value as Unit)}>
-                    <option value="kg">kg</option>
-                    <option value="litre">litre</option>
+
+          <div className="mb-3 flex gap-1.5 rounded-[40px] bg-[var(--track)] p-1">
+            {([["detail", "Au détail"], ["montant", "Montant global / bon de sortie"]] as const).map(([k, l]) => (
+              <button key={k} type="button" onClick={() => setVMode(k)} className={`flex-1 rounded-[40px] px-3 py-2 text-[12.5px] font-bold ${vMode === k ? "bg-[var(--card)] shadow" : "text-[var(--slate)]"}`}>{l}</button>
+            ))}
+          </div>
+
+          <div>
+            <label className={labelCls}>Date</label>
+            <input type="date" className={`${fieldCls} sm:w-[200px]`} value={fDate} onChange={(e) => setFDate(e.target.value)} />
+          </div>
+
+          {vMode === "detail" ? (
+            <>
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className={labelCls}>Catégorie</label>
+                  <select className={fieldCls} value={fCat} onChange={(e) => { setFCat(e.target.value); setFSub(""); }}>
+                    {CAT_KEYS.map((k) => (
+                      <option key={k}>{CAT_LABELS[k]}</option>
+                    ))}
                   </select>
-                )}
+                </div>
+                <div>
+                  <label className={labelCls}>Sous-catégorie (facultatif)</label>
+                  <select className={fieldCls} value={fSub} onChange={(e) => setFSub(e.target.value)}>
+                    <option value="">Aucune — catégorie entière</option>
+                    {catSubs.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                        {s.unit_price != null ? ` — ${s.unit_price} € / ${UNIT_LABEL[s.unit]}${s.isDefault ? " (barème)" : ""}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>Quantité</label>
+                  <div className="flex gap-2">
+                    <input type="number" min={0} step="0.01" className={fieldCls} value={fQty} onChange={(e) => setFQty(e.target.value)} placeholder="Ex : 24" />
+                    {sub ? (
+                      <span className="flex flex-none items-center rounded-[10px] bg-[var(--track)] px-3 text-[13px] font-bold text-[var(--navy)]">{UNIT_LABEL[sub.unit]}</span>
+                    ) : (
+                      <select className={`${fieldCls} !w-[100px]`} value={fUnit} onChange={(e) => setFUnit(e.target.value as Unit)}>
+                        <option value="kg">kg</option>
+                        <option value="litre">litre</option>
+                      </select>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {sub?.unit === "unite" && (
+                <p className={`mt-2.5 rounded-xl px-3 py-2 text-[12px] font-semibold ${needWeight ? "bg-[var(--critical-bg)] text-[var(--critical)]" : "bg-[var(--warn-bg)] text-[var(--navy)]"}`}>
+                  {needWeight ? "Le poids moyen d'une unité n'est pas renseigné pour cette sous-catégorie : ajoute-le dans l'onglet « Valorisation »." : `1 unité = ${sub.unit_weight_kg} kg${kgResult != null ? ` → ${fmtKg(kgResult)} au total` : ""} (remplaçable par un poids réel pesé, ci-dessous)`}
+                </p>
+              )}
+              {unit === "litre" && kgResult != null && <p className="mt-2.5 text-[12px] text-[var(--slate)]">1 litre compte pour 1 kg dans les statistiques → {fmtKg(kgResult)}.</p>}
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border-[1.5px] border-[var(--good)] bg-[var(--good-bg)] px-4 py-3">
+                <div>
+                  <div className="text-[12px] font-semibold text-[var(--navy)]">Valeur totale du don</div>
+                  <div className="text-[11px] text-[var(--slate)]">
+                    {kgResult != null ? (itemValue({ kg: kgResult, subcategory_id: sub?.id ?? null, quantity: qtyNum }, subsById).custom ? `Au prix de « ${sub?.name} »` : `Calcul par défaut : ${DEFAULT_EUR_PER_KG} € / kg`) : "Renseigne la quantité"}
+                  </div>
+                </div>
+                <div className="font-display text-[24px] font-black text-[var(--navy)] tabular-nums">{detailValue != null ? fmtEur(detailValue) : "—"}</div>
+              </div>
+            </>
+          ) : (
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className={labelCls}>Montant total du don</label>
+                <div className="relative">
+                  <input type="number" min={0} step="0.01" className={`${fieldCls} pr-7`} value={mAmount} onChange={(e) => setMAmount(e.target.value)} placeholder="Ex : 180" />
+                  <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-[12px] font-bold text-[var(--slate)]">€</span>
+                </div>
+              </div>
+              <div>
+                <label className={labelCls}>Poids total (obligatoire)</label>
+                <div className="relative">
+                  <input type="number" min={0} step="0.01" className={`${fieldCls} pr-8`} value={mKg} onChange={(e) => setMKg(e.target.value)} placeholder="Ex : 22" />
+                  <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-[12px] font-bold text-[var(--slate)]">kg</span>
+                </div>
+              </div>
+              <div className="sm:col-span-2">
+                <label className={labelCls}>Catégorie</label>
+                <select className={fieldCls} value={fCat} onChange={(e) => setFCat(e.target.value)}>
+                  {CAT_KEYS.map((k) => (
+                    <option key={k}>{CAT_LABELS[k]}</option>
+                  ))}
+                </select>
               </div>
             </div>
-          </div>
-          {sub?.unit === "unite" && (
-            <p className={`mt-2.5 rounded-xl px-3 py-2 text-[12px] font-semibold ${needWeight ? "bg-[var(--critical-bg)] text-[var(--critical)]" : "bg-[var(--warn-bg)] text-[var(--navy)]"}`}>
-              {needWeight ? "Le poids d'une unité n'est pas renseigné pour cette sous-catégorie : ajoute-le dans l'onglet « Valorisation RSE »." : `1 unité = ${sub.unit_weight_kg} kg${kgResult != null ? ` → ${fmtKg(kgResult)} au total` : ""}`}
-            </p>
           )}
-          {unit === "litre" && kgResult != null && <p className="mt-2.5 text-[12px] text-[var(--slate)]">1 litre compte pour 1 kg dans les statistiques → {fmtKg(kgResult)}.</p>}
-          <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border-[1.5px] border-[var(--good)] bg-[var(--good-bg)] px-4 py-3">
-            <div>
-              <div className="text-[12px] font-semibold text-[var(--navy)]">Valeur totale du don</div>
-              <div className="text-[11px] text-[var(--slate)]">
-                {kgResult != null ? (itemValue({ kg: kgResult, subcategory_id: sub?.id ?? null, quantity: qtyNum }, subsById).custom ? `Au prix de « ${sub?.name} »` : `Calcul par défaut : ${DEFAULT_EUR_PER_KG} € / kg`) : "Renseigne la quantité"}
-              </div>
-            </div>
-            <div className="font-display text-[24px] font-black text-[var(--navy)] tabular-nums">{kgResult != null ? fmtEur(itemValue({ kg: kgResult, subcategory_id: sub?.id ?? null, quantity: qtyNum }, subsById).value) : "—"}</div>
-          </div>
+
           <div className="mt-3">
-            <label className={labelCls}>Justificatif (facultatif)</label>
+            <label className={labelCls}>Justificatif {vMode === "montant" ? "(bon de sortie — recommandé)" : "(facultatif)"}</label>
             <div className="flex flex-wrap items-center gap-2.5">
               <button type="button" onClick={() => fileInput.current?.click()} className="rounded-[40px] border-[1.5px] border-dashed border-[var(--border)] px-3.5 py-2 text-[12.5px] font-bold text-[var(--navy)]">
                 {fFile ? "Changer le fichier" : "Joindre un fichier"}
               </button>
-              <span className="text-[12px] text-[var(--slate)]">{fFile ? fFile.name : "Pense à joindre la facture ou le bon de don : il sera aussi rangé dans « Mes documents »."}</span>
+              <span className="text-[12px] text-[var(--slate)]">{fFile ? fFile.name : "Pense à joindre la facture ou le bon de don : il sera aussi rangé dans « Mes documents », daté de cette collecte."}</span>
               <input ref={fileInput} type="file" hidden accept={DOC_ACCEPT} onChange={(e) => { setFFile(e.target.files?.[0] ?? null); e.target.value = ""; }} />
             </div>
           </div>

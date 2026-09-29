@@ -106,6 +106,16 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: "/baremes",
+    label: "Barèmes",
+    icon: (
+      <>
+        <path d="M6 3 V21 M18 3 V21" />
+        <path d="M4 8 H8 M16 8 H20 M4 13 H8 M16 13 H20 M4 18 H8 M16 18 H20" />
+      </>
+    ),
+  },
+  {
     href: "/profil",
     label: "Profil",
     icon: (
@@ -141,7 +151,7 @@ export function Sidebar() {
   // only Dashboard and Fleet exist in the national view (all cities)
   // Superadmin: everything · Responsable d'antenne: Distribution, Stock, Planning · Resp. Distribution: Distribution only
   const rolePaths: string[] | null = me.role === "admin_local" ? ["/distributions", "/stock", "/planning", "/profil", "/links-benevoles"] : me.role === "resp_distribution" ? ["/distributions", "/profil"] : null;
-  const visibleNav = (isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/flotte", "/profil"].includes(n.href)) : NAV_ITEMS).filter((n) => (me.role ? !rolePaths || rolePaths.includes(n.href) : false));
+  const visibleNav = (isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/flotte", "/profil", "/baremes"].includes(n.href)) : NAV_ITEMS).filter((n) => (me.role ? !rolePaths || rolePaths.includes(n.href) : false));
 
   useEffect(() => {
     (async () => {

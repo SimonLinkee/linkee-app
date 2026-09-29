@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode 
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { compressImage } from "@/lib/photos";
-import { CAT_LABELS, DEFAULT_EUR_PER_KG, SUBCAT_SELECT, buildEvo, isCollectKind, isoOf, rse, subMap, summarize, type CatKey, type StatRow, type SubCat } from "@/lib/stats";
+import { CAT_LABELS, CO2_SOURCE, DEFAULT_EUR_PER_KG, SUBCAT_SELECT, buildEvo, isCollectKind, isoOf, rse, subMap, summarize, type CatKey, type StatRow, type SubCat } from "@/lib/stats";
 import PartnerDocuments from "@/components/partner/PartnerDocuments";
 import PartnerValuation from "@/components/partner/PartnerValuation";
 import PartnerLinks from "@/components/partner/PartnerLinks";
@@ -423,7 +423,7 @@ export default function EspacePartenairePage() {
       if (partners.length) {
         const ids = partners.map((p) => p.id);
         const [col, rq, sb, lk] = await Promise.all([
-          supabase.from("collectes").select("scheduled_date,scheduled_time,kind,status,motif,source,partner_id,partners(name,category),collecte_items!collecte_id(denree,kg,subcategory_id,quantity,unit)").in("partner_id", ids).order("scheduled_date").limit(5000),
+          supabase.from("collectes").select("scheduled_date,scheduled_time,kind,status,motif,source,partner_id,partners(name,category),collecte_items!collecte_id(denree,kg,subcategory_id,quantity,unit,value_snapshot)").in("partner_id", ids).order("scheduled_date").limit(5000),
           supabase.from("exceptional_requests").select("id,partner_id,wished_date,wished_time,denree,volume_kg,comment,status").in("partner_id", ids).order("created_at"),
           supabase.from("partner_subcategories").select(SUBCAT_SELECT).in("partner_id", ids),
           supabase.from("links").select("partner_id,status,kg_estime,weight_actual,don_value,window_date").in("partner_id", ids),
@@ -927,7 +927,7 @@ export default function EspacePartenairePage() {
                 <Tile label="Défiscalisation (60 %)" value={`${fmtNum(dashR.defisc)} €`} />
                 <Tile label="Valeur sociale (×2)" value={`${fmtNum(dashR.social)} €`} />
                 <Tile label="Repas distribués" value={fmtNum(dashR.repas)} />
-                <Tile label="CO₂ évité" value={`${dashR.co2.toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} t`} />
+                <Tile label="CO₂ évité" value={`${fmtNum(dashR.co2)} kg`} />
                 <Tile label="Déchets évités" value={`${fmtNum(dashR.dechets)} kg`} />
               </div>
               <Card title="Bilan RSE" note="Génère votre bilan d'impact RSE officiel Linkee (poids sauvé, valeur du don, défiscalisation, impact social et environnemental) — utilisez « Enregistrer en PDF » dans la fenêtre d'impression de votre navigateur.">
@@ -955,7 +955,7 @@ export default function EspacePartenairePage() {
           {tab === "valorisation" && (
             <div>
               <PanelHead title="Valorisation RSE" sub="Vos sous-catégories de produits et leur valeur unitaire : elles servent à calculer la valeur de vos dons." />
-              {siteKey && <PartnerValuation key={siteKey} partnerId={siteKey} />}
+              {siteKey && <PartnerValuation key={siteKey} partnerId={siteKey} category={partnerRows.find((p) => p.id === siteKey)?.category ?? ""} />}
             </div>
           )}
 
@@ -1026,7 +1026,7 @@ export default function EspacePartenairePage() {
           </div>
           <div>
             <div className="mb-2 font-display text-[13px] font-extrabold">Impact environnemental</div>
-            <RseItem v={`${R.co2.toFixed(2)} T`} l="De CO² évitées" n="Estimation des équivalents CO² évités grâce à la lutte quotidienne contre le gaspillage." />
+            <RseItem v={`${fmtNum(R.co2)} kg`} l="De CO² évitées" n={`Estimation des équivalents CO² évités grâce à la lutte quotidienne contre le gaspillage. ${CO2_SOURCE}.`} />
             <RseItem v={`${fmtNum(R.dechets)} Kg`} l="De déchets évités" n="Estimation du nombre de kg de déchets évités." />
           </div>
         </div>

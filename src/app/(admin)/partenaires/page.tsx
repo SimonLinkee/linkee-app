@@ -629,8 +629,8 @@ export default function PartenairesPage() {
               )}
               <div>
               {current.kind === "partner" && ficheTab === "documents" && <PartnerDocuments key={current.id} partnerId={current.id} role="admin" />}
-              {current.kind === "partner" && ficheTab === "valorisation" && <PartnerValuation key={current.id} partnerId={current.id} />}
-              {current.kind === "partner" && ficheTab === "collectes" && <PartnerCollectes key={current.id} partnerId={current.id} cityId={cityId} />}
+              {current.kind === "partner" && ficheTab === "valorisation" && <PartnerValuation key={current.id} partnerId={current.id} category={current.cat} />}
+              {current.kind === "partner" && ficheTab === "collectes" && <PartnerCollectes key={current.id} partnerId={current.id} cityId={cityId} category={current.cat} />}
 
               {(current.kind !== "partner" || ficheTab === "fiche") && (
               <>

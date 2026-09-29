@@ -15,16 +15,43 @@ const DENREE_TO_KEY: Record<string, CatKey> = Object.fromEntries(CAT_KEYS.map((k
 // ---- Valuation ("Valorisation RSE"): sub-categories with a unit price, per partner ----
 export type Unit = "kg" | "unite" | "litre";
 export const UNIT_LABEL: Record<Unit, string> = { kg: "kg", unite: "unité", litre: "litre" };
-export type SubCat = { id: string; partner_id: string; category: string; name: string; unit_price: number | null; unit: Unit; unit_weight_kg: number | null };
+export type SubCat = { id: string; partner_id: string; category: string; name: string; unit_price: number | null; unit: Unit; unit_weight_kg: number | null; barem_id?: string | null; hidden?: boolean };
 export const DEFAULT_EUR_PER_KG = 8; // value of a donation when the partner has no price for the item
-export const SUBCAT_SELECT = "id,partner_id,category,name,unit_price,unit,unit_weight_kg";
+export const SUBCAT_SELECT = "id,partner_id,category,name,unit_price,unit,unit_weight_kg,barem_id,hidden";
 export const subMap = (list: SubCat[]) => new Map(list.map((s) => [s.id, s]));
 
-type ItemLike = { kg: number | string; subcategory_id?: string | null; quantity?: number | string | null };
+// ---- Barèmes par défaut : un jeu de sous-catégories par TYPE de partenaire (ex. "Boulangerie"), géré côté admin ----
+export type Bareme = { id: string; partner_category: string; category: string; name: string; unit_price: number; unit: Unit; unit_weight_kg: number | null };
+export const BAREME_SELECT = "id,partner_category,category,name,unit_price,unit,unit_weight_kg";
 
-/** Value in € of one weighed line: the partner's price when known, else 8 €/kg. */
+/** Sous-catégorie "effective" affichée pour un partenaire : celles de son barème par défaut (surchargées ou non),
+ * plus celles qu'il a ajoutées lui-même. `isDefault` distingue une valeur héritée du barème d'une valeur
+ * "personnalisée" (surchargée pour ce partenaire) ; les items masqués (hidden) n'apparaissent pas. */
+export type EffectiveSubCat = SubCat & { isDefault: boolean; baremDefault?: { unit_price: number; unit_weight_kg: number | null } };
+export function mergeBareme(partnerCategory: string, baremes: Bareme[], subs: SubCat[]): EffectiveSubCat[] {
+  const overrideByBarem = new Map(subs.filter((s) => s.barem_id).map((s) => [s.barem_id as string, s]));
+  const fromBareme: EffectiveSubCat[] = [];
+  for (const b of baremes) {
+    if (b.partner_category !== partnerCategory) continue;
+    const ov = overrideByBarem.get(b.id);
+    if (ov?.hidden) continue;
+    if (ov) {
+      fromBareme.push({ ...ov, isDefault: false, baremDefault: { unit_price: b.unit_price, unit_weight_kg: b.unit_weight_kg } });
+    } else {
+      fromBareme.push({ id: `barem:${b.id}`, partner_id: "", category: b.category, name: b.name, unit_price: b.unit_price, unit: b.unit, unit_weight_kg: b.unit_weight_kg, barem_id: b.id, isDefault: true });
+    }
+  }
+  const ownRows: EffectiveSubCat[] = subs.filter((s) => !s.barem_id && !s.hidden).map((s) => ({ ...s, isDefault: false }));
+  return [...fromBareme, ...ownRows];
+}
+
+type ItemLike = { kg: number | string; subcategory_id?: string | null; quantity?: number | string | null; value_snapshot?: number | string | null };
+
+/** Value in € of one weighed line: its frozen value if one was recorded at entry time (value_snapshot — the
+ * historical figure never changes afterwards), else the partner's current price, else 8 €/kg. */
 export function itemValue(it: ItemLike, subs: Map<string, SubCat>): { value: number; custom: boolean } {
   const kg = Number(it.kg) || 0;
+  if (it.value_snapshot != null) return { value: Number(it.value_snapshot), custom: true };
   const sub = it.subcategory_id ? subs.get(it.subcategory_id) : undefined;
   if (sub && sub.unit_price != null) {
     const qty = sub.unit === "kg" ? kg : it.quantity != null && Number(it.quantity) > 0 ? Number(it.quantity) : sub.unit === "litre" ? kg : null;
@@ -49,9 +76,9 @@ export type StatRow = {
   source?: string;
   partner_id: string | null;
   partners: Rel | Rel[] | null;
-  collecte_items: { denree: string | null; kg: number | string; subcategory_id?: string | null; quantity?: number | string | null; unit?: string | null }[] | null;
+  collecte_items: { denree: string | null; kg: number | string; subcategory_id?: string | null; quantity?: number | string | null; unit?: string | null; value_snapshot?: number | string | null }[] | null;
 };
-export const STAT_SELECT = "city_id,scheduled_date,kind,status,motif,source,partner_id,partners(name,category),collecte_items!collecte_id(denree,kg,subcategory_id,quantity,unit)";
+export const STAT_SELECT = "city_id,scheduled_date,kind,status,motif,source,partner_id,partners(name,category),collecte_items!collecte_id(denree,kg,subcategory_id,quantity,unit,value_snapshot)";
 
 export type Summary = {
   volume: number;
@@ -152,15 +179,16 @@ export function buildEvo(byDay: Record<string, number>, from: Date, to: Date, ma
 }
 
 // ---- RSE formulas (same as the Linkee "bilan RSE" slide model) ----
+export const CO2_SOURCE = "Estimation, source : FAO 2013";
 export function rse(kg: number, donValue?: number) {
   const don = donValue ?? kg * DEFAULT_EUR_PER_KG; // partner prices when known
   return {
     kg,
     don,
     defisc: don * 0.6,
-    repas: Math.round(kg / 2),
+    repas: Math.round(kg * 2), // 1 repas ≈ 500 g
     social: don * 2,
-    co2: (kg / 1000) * 1.53,
+    co2: kg * 2.5, // kg CO2e évités — FAO 2013
     dechets: Math.round(kg * 1.25),
   };
 }

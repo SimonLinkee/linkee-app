@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
-import { CAT_KEYS, CAT_LABELS, DEFAULT_EUR_PER_KG, STAT_SELECT, SUBCAT_SELECT, buildEvo, isoOf, rse, subMap, summarize, type CatKey, type StatRow, type SubCat, type Summary } from "@/lib/stats";
+import { CAT_KEYS, CAT_LABELS, CO2_SOURCE, DEFAULT_EUR_PER_KG, STAT_SELECT, SUBCAT_SELECT, buildEvo, isoOf, rse, subMap, summarize, type CatKey, type StatRow, type SubCat, type Summary } from "@/lib/stats";
 
 type Gran = "jour" | "semaine" | "mois" | "custom";
 type EvoPoint = { l: string; v: number };
@@ -637,13 +637,14 @@ export default function DashboardPage() {
               ["Défiscalisation (60 %)", eur(r.defisc), "var(--turquoise)"],
               ["Valeur sociale (×2)", eur(r.social), "var(--client-req)"],
               ["Repas distribués", fmt(r.repas), "var(--warn)"],
-              ["CO₂ évité", `${r.co2.toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} t`, "var(--cat-2)"],
+              ["CO₂ évité", `${fmt(r.co2)} kg CO2e`, "var(--cat-2)"],
               ["Déchets évités", `${fmt(r.dechets)} kg`, "var(--slate)"],
             ];
             return tiles.map(([l, v, col]) => (
               <div key={l} className="flex flex-col gap-2 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]" style={{ borderTop: `4px solid ${col}` }}>
                 <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">{l}</span>
                 <span className="font-display text-[26px] leading-none font-black text-[var(--navy)] tabular-nums">{v}</span>
+                {l === "CO₂ évité" && <span className="text-[10px] font-semibold text-[var(--muted)]">{CO2_SOURCE}</span>}
               </div>
             ));
           })()}
