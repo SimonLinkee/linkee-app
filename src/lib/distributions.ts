@@ -30,7 +30,7 @@ export async function countLateDistributions(supabase: SupabaseClient, cityId: s
   const since = new Date(Date.now() - 90 * 86400000);
   const sinceIso = `${since.getFullYear()}-${String(since.getMonth() + 1).padStart(2, "0")}-${String(since.getDate()).padStart(2, "0")}`;
   const [b, d] = await Promise.all([
-    supabase.from("beneficiaries").select("id,category,fiche").eq("city_id", cityId),
+    supabase.from("beneficiaries").select("id,category,fiche").eq("city_id", cityId).is("deleted_at", null),
     supabase.from("distributions").select("beneficiary_id,event_date,status").eq("city_id", cityId).gte("event_date", sinceIso),
   ]);
   const ids = ((b.data ?? []) as { id: string; category: string | null; fiche: { pinned?: boolean } | null }[]).filter((x) => x.category === "Distribution Linkee" || x.fiche?.pinned).map((x) => x.id);

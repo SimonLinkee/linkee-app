@@ -55,7 +55,7 @@ export default function MobileStock() {
     (async () => {
       const { data: auth } = await supabase.auth.getUser();
       setUserId(auth.user?.id ?? null);
-      const { data: bs } = await supabase.from("beneficiaries").select("id,name").eq("city_id", cityId).eq("active", true).order("name");
+      const { data: bs } = await supabase.from("beneficiaries").select("id,name").eq("city_id", cityId).eq("active", true).is("deleted_at", null).order("name");
       const d: Dest[] = [...((bs ?? []) as Dest[]), { id: null, name: OTHER }];
       setDests(d);
       setOutDest(d[0].name);

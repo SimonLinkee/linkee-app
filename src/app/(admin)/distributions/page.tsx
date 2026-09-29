@@ -175,7 +175,7 @@ export default function DistributionsPage() {
   async function load() {
     if (!cityId) return;
     const since = isoOf(new Date(Date.now() - 180 * 86400000));
-    const bq = await supabase.from("beneficiaries").select("id,name,category,address,fiche").eq("city_id", cityId).order("name");
+    const bq = await supabase.from("beneficiaries").select("id,name,category,address,fiche").eq("city_id", cityId).is("deleted_at", null).order("name");
     const pl = ((bq.data ?? []) as { id: string; name: string; category: string | null; address: string | null; fiche: { pinned?: boolean } | null }[])
       .filter((b) => b.category === "Distribution Linkee" || b.fiche?.pinned)
       .map((b) => ({ id: b.id, name: b.name, cat: b.category ?? "", address: b.address ?? "" }));
@@ -183,7 +183,7 @@ export default function DistributionsPage() {
     const ids = pl.map((p) => p.id);
     const aq = await supabase.from("associations").select("id,name,activity_type,archived").eq("city_id", cityId).order("name");
     setAssocs((aq.data ?? []) as Assoc[]);
-    const pq = await supabase.from("partners").select("name").eq("city_id", cityId).order("name");
+    const pq = await supabase.from("partners").select("name").eq("city_id", cityId).is("deleted_at", null).order("name");
     setSuppliers(((pq.data ?? []) as { name: string }[]).map((p) => p.name));
     const [dq, cq] = await Promise.all([
       supabase.from("distributions").select("*,distribution_lines(*),distribution_interventions(*)").eq("city_id", cityId).gte("event_date", since).order("event_date", { ascending: false }),

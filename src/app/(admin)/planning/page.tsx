@@ -341,8 +341,8 @@ export default function PlanningPage() {
     (async () => {
       const [ps, bs, tpl] = await Promise.all([
         // les partenaires "Éligible collecte bénévole" sortent du planning pro classique — ils passent par les Links Bénévoles
-        supabase.from("partners").select("id,name,category,address,passage:fiche->passage").eq("city_id", cityId ?? "").eq("active", true).eq("benevole_only", false).order("name"),
-        supabase.from("beneficiaries").select("id,name,category,address").eq("city_id", cityId ?? "").eq("active", true).order("name"),
+        supabase.from("partners").select("id,name,category,address,passage:fiche->passage").eq("city_id", cityId ?? "").eq("active", true).eq("benevole_only", false).is("deleted_at", null).order("name"),
+        supabase.from("beneficiaries").select("id,name,category,address").eq("city_id", cityId ?? "").eq("active", true).is("deleted_at", null).order("name"),
         supabase.from("checklist_templates").select("weekday,items").eq("city_id", cityId ?? ""),
       ]);
       const list: Place[] = [

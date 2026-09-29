@@ -33,7 +33,7 @@ export async function matchNearestOpenBeneficiary(
 ): Promise<MatchResult | null> {
   const origin = await geocode(fromAddress);
   if (!origin) return null;
-  const { data } = await supabase.from("beneficiaries").select("id,name,address,active,fiche").eq("city_id", cityId).eq("active", true);
+  const { data } = await supabase.from("beneficiaries").select("id,name,address,active,fiche").eq("city_id", cityId).eq("active", true).is("deleted_at", null);
   const rows = (data ?? []) as { id: string; name: string; address: string | null; fiche: { horaires?: string; hours?: Record<string, DayHours> } | null }[];
   const weekday = appWeekday(dateIso);
   const dayKey = DAY_KEYS[weekday];

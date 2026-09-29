@@ -192,14 +192,14 @@ export default function DashboardPage() {
   const toKey = range.to.getTime();
 
   useEffect(() => {
-    let pq = supabase.from("partners").select("id,name,category").order("name");
+    let pq = supabase.from("partners").select("id,name,category").is("deleted_at", null).order("name");
     if (cityId) pq = pq.eq("city_id", cityId);
     pq.then(({ data }) => setPartnerOpts(((data ?? []) as { id: string; name: string; category: string | null }[]).map((p) => ({ id: p.id, name: p.name, cat: p.category ?? "" }))));
   }, [supabase]);
 
   // "lieux de dépose" = bénéficiaires marqués Distribution Linkee (ou épinglés) — même logique que côté planning mobile
   useEffect(() => {
-    let bq = supabase.from("beneficiaries").select("id,name,category,fiche").order("name");
+    let bq = supabase.from("beneficiaries").select("id,name,category,fiche").is("deleted_at", null).order("name");
     if (cityId) bq = bq.eq("city_id", cityId);
     bq.then(({ data }) => {
       const rows = (data ?? []) as { id: string; name: string; category: string | null; fiche: { pinned?: boolean } | null }[];

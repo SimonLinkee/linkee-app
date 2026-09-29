@@ -48,7 +48,7 @@ export default function PartnerLinks({ partnerId }: { partnerId: string }) {
 
   async function load() {
     const [p, l] = await Promise.all([
-      supabase.from("partners").select("city_id,address,allow_backpack,allow_car").eq("id", partnerId).maybeSingle(),
+      supabase.from("partners").select("city_id,address,allow_backpack,allow_car").eq("id", partnerId).is("deleted_at", null).maybeSingle(),
       supabase.from("links").select("id,status,kg_estime,is_fresh,window_date,window_from,window_to,asso_confirmed,beneficiaries(name),linkers(level,profiles(full_name))").eq("partner_id", partnerId).order("created_at", { ascending: false }).limit(30),
     ]);
     setInfo((p.data as PartnerInfo) ?? null);

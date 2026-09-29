@@ -271,6 +271,8 @@ export default function PartenairesPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [activeFilter, setActiveFilter] = useState<"" | "actif" | "inactif">("");
   const [sortBy, setSortBy] = useState<"nom" | "statut">("nom");
+  const [deleteTarget, setDeleteTarget] = useState<Entity | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(["identite"]));
   const [autosaveVisible, setAutosaveVisible] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -296,8 +298,8 @@ export default function PartenairesPage() {
     (async () => {
       // only the selected city's partners and beneficiaries (see the city selector in the menu)
       const [ps, bs] = await Promise.all([
-        supabase.from("partners").select(SELECT_COLS + ",logo_url,benevole_only").eq("city_id", cityId ?? "").order("name"),
-        supabase.from("beneficiaries").select(SELECT_COLS).eq("city_id", cityId ?? "").order("name"),
+        supabase.from("partners").select(SELECT_COLS + ",logo_url,benevole_only").eq("city_id", cityId ?? "").is("deleted_at", null).order("name"),
+        supabase.from("beneficiaries").select(SELECT_COLS).eq("city_id", cityId ?? "").is("deleted_at", null).order("name"),
       ]);
       if (cancelled) return;
       const p = ((ps.data ?? []) as unknown as Row[]).map((r) => rowToEntity("partner", r) as PartnerEntity);
@@ -341,6 +343,25 @@ export default function PartenairesPage() {
     if (error) return showToast("Logo non enregistré : " + error.message);
     setPartners((prev) => prev.map((p) => (p.id === current.id ? { ...p, logoUrl: url } : p)));
     showToast("Logo enregistré — il apparaît partout, y compris dans l'espace du partenaire.");
+  }
+
+  /** Suppression logique (deleted_at) : ne casse pas l'historique des collectes/distributions déjà liées, et
+   * l'élément disparaît de toutes les listes et sélecteurs (qui filtrent tous deleted_at is null). */
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    const table = deleteTarget.kind === "partner" ? "partners" : "beneficiaries";
+    const { error } = await supabase.from(table).update({ deleted_at: new Date().toISOString() }).eq("id", deleteTarget.id);
+    setDeleting(false);
+    if (error) { showToast("Suppression impossible : " + error.message); return; }
+    if (deleteTarget.kind === "partner") setPartners((prev) => prev.filter((p) => p.id !== deleteTarget.id));
+    else setBeneficiaires((prev) => prev.filter((b) => b.id !== deleteTarget.id));
+    if (currentId === deleteTarget.id) {
+      const remaining = (deleteTarget.kind === "partner" ? partners : beneficiaires).filter((e) => e.id !== deleteTarget.id);
+      setCurrentId(remaining[0]?.id ?? "");
+    }
+    showToast(`« ${deleteTarget.name} » supprimé.`);
+    setDeleteTarget(null);
   }
 
   async function createEntity() {
@@ -441,6 +462,19 @@ export default function PartenairesPage() {
           )}
           <span className={`h-2 w-2 rounded-full ${e.active ? "bg-[var(--good)]" : "bg-[var(--muted)]"}`} />
         </span>
+        <button
+          type="button"
+          title="Supprimer"
+          onClick={(ev) => {
+            ev.stopPropagation();
+            setDeleteTarget(e);
+          }}
+          className="flex h-7 w-7 flex-none items-center justify-center rounded-full text-[var(--muted)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]">
+            <path d="M4 7 H20 M9 7 V4.5 A1 1 0 0 1 10 3.5 H14 A1 1 0 0 1 15 4.5 V7 M6.5 7 L7.3 19.5 A2 2 0 0 0 9.3 21.4 H14.7 A2 2 0 0 0 16.7 19.5 L17.5 7" />
+          </svg>
+        </button>
       </div>
     );
   }
@@ -588,6 +622,16 @@ export default function PartenairesPage() {
                       className="min-w-0 flex-1 rounded-lg border-b-[1.5px] border-transparent bg-transparent px-1 py-0.5 font-display text-[27px] font-black text-[var(--navy)] outline-none hover:border-b-[var(--turquoise)] hover:bg-[var(--input-bg)] focus:border-b-[var(--turquoise)] focus:bg-[var(--input-bg)]"
                     />
                     {current.kind === "beneficiaire" && current.pinned && <DistribBadge />}
+                    <button
+                      type="button"
+                      title="Supprimer cette fiche"
+                      onClick={() => setDeleteTarget(current)}
+                      className="flex h-8 w-8 flex-none items-center justify-center rounded-full text-[var(--muted)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[17px] w-[17px]">
+                        <path d="M4 7 H20 M9 7 V4.5 A1 1 0 0 1 10 3.5 H14 A1 1 0 0 1 15 4.5 V7 M6.5 7 L7.3 19.5 A2 2 0 0 0 9.3 21.4 H14.7 A2 2 0 0 0 16.7 19.5 L17.5 7" />
+                      </svg>
+                    </button>
                   </div>
                   <div className="mt-1.5 flex flex-wrap items-center gap-3">
                     <select
@@ -1078,6 +1122,23 @@ export default function PartenairesPage() {
       {toast && (
         <div className="fixed bottom-[26px] left-1/2 z-[999] max-w-[360px] -translate-x-1/2 rounded-[14px] bg-[var(--navy-deep)] px-[18px] py-3 text-center text-[13px] font-semibold text-[var(--panel-fg)] shadow-[var(--shadow)]">
           {toast}
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-[rgba(10,20,40,0.5)] px-4" onClick={() => !deleting && setDeleteTarget(null)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-[380px] rounded-[20px] bg-[var(--card)] p-6 shadow-[var(--shadow)]">
+            <h3 className="mb-2 font-display text-[19px] font-black text-[var(--navy)]">Supprimer « {deleteTarget.name} » ?</h3>
+            <p className="mb-5 text-[13.5px] text-[var(--slate)]">Cette action est définitive.</p>
+            <div className="flex gap-2.5">
+              <button type="button" disabled={deleting} onClick={() => setDeleteTarget(null)} className="flex-1 rounded-[40px] border-[1.5px] border-[var(--border)] py-2.5 font-display text-[13.5px] font-bold text-[var(--slate)] disabled:opacity-60">
+                Annuler
+              </button>
+              <button type="button" disabled={deleting} onClick={confirmDelete} className="flex-1 rounded-[40px] bg-[var(--critical)] py-2.5 font-display text-[13.5px] font-bold text-white disabled:opacity-60">
+                {deleting ? "Suppression…" : "Supprimer"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

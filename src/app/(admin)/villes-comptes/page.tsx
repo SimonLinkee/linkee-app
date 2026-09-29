@@ -101,8 +101,8 @@ export default function VillesComptesPage() {
     setMe(auth.user?.id ?? null);
     const [c, p, b] = await Promise.all([
       supabase.from("cities").select("id,name,color,depot_address").order("name").then((r) => (r.error ? supabase.from("cities").select("id,name").order("name") : r)), // before migration 011
-      supabase.from("partners").select("id,name,city_id").order("name"),
-      supabase.from("beneficiaries").select("id,city_id"),
+      supabase.from("partners").select("id,name,city_id").is("deleted_at", null).order("name"),
+      supabase.from("beneficiaries").select("id,city_id").is("deleted_at", null),
     ]);
     const first = await supabase.from("profiles").select("id,email,full_name,role,city_id,active,partner_users(partner_id)").order("created_at");
     const prof: { data: unknown; error: { message: string } | null } = first.error

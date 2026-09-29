@@ -67,7 +67,7 @@ export default function VillagePage() {
     const [a, i, b] = await Promise.all([
       supabase.from("associations").select(ASSOC_COLS).eq("city_id", cityId).order("name"),
       supabase.from("distribution_interventions").select("association_id,comment,photo_paths,distributions!inner(event_date,beneficiary_id,city_id)").eq("distributions.city_id", cityId).limit(5000),
-      supabase.from("beneficiaries").select("id,name").eq("city_id", cityId),
+      supabase.from("beneficiaries").select("id,name").eq("city_id", cityId).is("deleted_at", null),
     ]);
     if (a.error) setErr(a.error.message + " (la migration 015 est-elle passée ?)");
     setAssocs((a.data ?? []) as Assoc[]);

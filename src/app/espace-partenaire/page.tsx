@@ -415,7 +415,7 @@ export default function EspacePartenairePage() {
 
   useEffect(() => {
     (async () => {
-      const { data: ps, error } = await supabase.from("partners").select("id,name,site_label,category,address,logo_url,photo_url,fiche,city_id,benevole_only").eq("active", true).order("name");
+      const { data: ps, error } = await supabase.from("partners").select("id,name,site_label,category,address,logo_url,photo_url,fiche,city_id,benevole_only").eq("active", true).is("deleted_at", null).order("name");
       if (error) showToast("Chargement impossible : " + error.message);
       const partners = (ps ?? []) as PartnerRow[];
       setPartnerRows(partners);

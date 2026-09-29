@@ -49,7 +49,7 @@ export default function LinksBenevolesAdminPage() {
     const [lk, lnk, pt] = await Promise.all([
       supabase.from("linkers").select("id,character,level,mode,transport,radius_km,cold_ok,kg_saved,links_done,chosen,equipped,profiles(full_name,email,phone)").eq("city_id", cityId).order("level", { ascending: false }),
       supabase.from("links").select("id,status,kg_estime,weight_actual,don_value,is_fresh,denree,window_date,window_from,window_to,is_demo,partners(name),beneficiaries(name),linkers(character,level,profiles(full_name,phone))").eq("city_id", cityId).order("created_at", { ascending: false }).limit(100),
-      supabase.from("partners").select("id,name,address,allow_backpack,allow_car").eq("city_id", cityId).eq("active", true).order("name"),
+      supabase.from("partners").select("id,name,address,allow_backpack,allow_car").eq("city_id", cityId).eq("active", true).is("deleted_at", null).order("name"),
     ]);
     if (lk.error) setMsg(lk.error.message + " (les migrations 019, 020 et 021 sont-elles passées ?)");
     setLinkers((lk.data ?? []) as unknown as LinkerRow[]);

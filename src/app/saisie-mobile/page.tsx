@@ -98,7 +98,7 @@ function Page() {
     (async () => {
       const from = isoAdd(-14);
       const to = isoAdd(14);
-      const b = await supabase.from("beneficiaries").select("id,name,category,fiche").eq("city_id", cityId).order("name");
+      const b = await supabase.from("beneficiaries").select("id,name,category,fiche").eq("city_id", cityId).is("deleted_at", null).order("name");
       const pl = ((b.data ?? []) as { id: string; name: string; category: string | null; fiche: { pinned?: boolean } | null }[]).filter((x) => x.category === "Distribution Linkee" || x.fiche?.pinned).map((x) => ({ id: x.id, name: x.name }));
       setPlaces(pl);
       const ids = pl.map((p) => p.id);

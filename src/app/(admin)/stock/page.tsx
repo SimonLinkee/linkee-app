@@ -120,7 +120,7 @@ export default function StockPage() {
     (async () => {
       const { data: auth } = await supabase.auth.getUser();
       setUserId(auth.user?.id ?? null);
-      const { data: bs } = await supabase.from("beneficiaries").select("id,name").eq("city_id", cityId ?? "").eq("active", true).order("name");
+      const { data: bs } = await supabase.from("beneficiaries").select("id,name").eq("city_id", cityId ?? "").eq("active", true).is("deleted_at", null).order("name");
       const dest: Dest[] = [...((bs ?? []) as Dest[]), { id: null, name: "Autre bénéficiaire / à préciser" }];
       setDestinations(dest);
       setOutDestination(dest[0].name);

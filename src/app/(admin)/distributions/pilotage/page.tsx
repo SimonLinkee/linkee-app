@@ -181,7 +181,7 @@ export default function PilotagePage() {
     if (!cityId) return;
     (async () => {
       const [b, d, a] = await Promise.all([
-        supabase.from("beneficiaries").select("id,name,category,fiche").eq("city_id", cityId).order("name"),
+        supabase.from("beneficiaries").select("id,name,category,fiche").eq("city_id", cityId).is("deleted_at", null).order("name"),
         supabase
           .from("distributions")
           .select("id,beneficiary_id,event_date,registered,presence_rate,baskets,volunteers_total,coordinators,fl_target_kg,comment,distribution_lines(category,weight_kg,don_pct),distribution_interventions(association_id)")

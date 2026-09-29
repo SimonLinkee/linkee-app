@@ -34,7 +34,7 @@ export default function MobileFiches() {
     if (!cityId) return;
     (async () => {
       const cols = "id,name,category,address,active,fiche";
-      const [p, b] = await Promise.all([supabase.from("partners").select(cols).eq("city_id", cityId).order("name"), supabase.from("beneficiaries").select(cols).eq("city_id", cityId).order("name")]);
+      const [p, b] = await Promise.all([supabase.from("partners").select(cols).eq("city_id", cityId).is("deleted_at", null).order("name"), supabase.from("beneficiaries").select(cols).eq("city_id", cityId).is("deleted_at", null).order("name")]);
       if (p.error || b.error) setErr((p.error ?? b.error)!.message);
       setRows({ partner: (p.data ?? []) as Row[], beneficiaire: (b.data ?? []) as Row[] });
       setLoading(false);
