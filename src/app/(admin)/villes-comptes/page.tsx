@@ -24,7 +24,8 @@ function DepotAddressField({ value, onSave }: { value: string; onSave: (v: strin
 type Role = "en_attente" | "admin_principal" | "admin_local" | "resp_distribution" | "logisticien" | "partenaire" | "beneficiaire" | "linker";
 type City = { id: string; name: string; color?: string | null; depot_address?: string | null };
 type PartnerLite = { id: string; name: string; city_id: string };
-type Account = { id: string; name: string; email: string; role: Role; city: string | null; active: boolean; partnerIds: string[] };
+type BeneficiaryLite = { id: string; name: string; city_id: string };
+type Account = { id: string; name: string; email: string; role: Role; city: string | null; active: boolean; partnerIds: string[]; beneficiaryIds: string[] };
 type ProfileRow = {
   id: string;
   email: string | null;
@@ -78,6 +79,7 @@ export default function VillesComptesPage() {
   const [cities, setCities] = useState<City[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [partners, setPartners] = useState<PartnerLite[]>([]);
+  const [beneficiaries, setBeneficiaries] = useState<BeneficiaryLite[]>([]);
   const [benefByCity, setBenefByCity] = useState<Record<string, number>>({});
   const [me, setMe] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -87,7 +89,7 @@ export default function VillesComptesPage() {
   const [draft, setDraft] = useState<Account | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ email: "", full_name: "", role: "logisticien" as Role, city_id: "", password: "", partner_ids: [] as string[] });
+  const [form, setForm] = useState({ email: "", full_name: "", role: "logisticien" as Role, city_id: "", password: "", partner_ids: [] as string[], beneficiary_ids: [] as string[] });
   const [busy, setBusy] = useState(false);
   const [credentials, setCredentials] = useState<{ email: string; password: string; note: string } | null>(null);
 
@@ -99,10 +101,11 @@ export default function VillesComptesPage() {
   async function load() {
     const { data: auth } = await supabase.auth.getUser();
     setMe(auth.user?.id ?? null);
-    const [c, p, b] = await Promise.all([
+    const [c, p, b, bu] = await Promise.all([
       supabase.from("cities").select("id,name,color,depot_address").order("name").then((r) => (r.error ? supabase.from("cities").select("id,name").order("name") : r)), // before migration 011
       supabase.from("partners").select("id,name,city_id").is("deleted_at", null).order("name"),
-      supabase.from("beneficiaries").select("id,city_id").is("deleted_at", null),
+      supabase.from("beneficiaries").select("id,name,city_id").is("deleted_at", null),
+      supabase.from("beneficiary_users").select("profile_id,beneficiary_id"), // absent before migration 030 : tolerated below
     ]);
     const first = await supabase.from("profiles").select("id,email,full_name,role,city_id,active,partner_users(partner_id)").order("created_at");
     const prof: { data: unknown; error: { message: string } | null } = first.error
@@ -111,9 +114,12 @@ export default function VillesComptesPage() {
     if (prof.error) showToast("Chargement impossible : " + prof.error.message);
     setCities((c.data ?? []) as City[]);
     setPartners((p.data ?? []) as PartnerLite[]);
+    setBeneficiaries((b.data ?? []) as BeneficiaryLite[]);
     const counts: Record<string, number> = {};
     ((b.data ?? []) as { city_id: string }[]).forEach((x) => (counts[x.city_id] = (counts[x.city_id] ?? 0) + 1));
     setBenefByCity(counts);
+    const benefIdsByProfile: Record<string, string[]> = {};
+    if (!bu.error) (bu.data ?? []).forEach((x) => (benefIdsByProfile[x.profile_id] = [...(benefIdsByProfile[x.profile_id] ?? []), x.beneficiary_id]));
     setAccounts(
       ((prof.data ?? []) as unknown as ProfileRow[]).map((r) => ({
         id: r.id,
@@ -123,6 +129,7 @@ export default function VillesComptesPage() {
         city: r.city_id,
         active: r.active !== false,
         partnerIds: (r.partner_users ?? []).map((x) => x.partner_id),
+        beneficiaryIds: benefIdsByProfile[r.id] ?? [],
       })),
     );
     setLoading(false);
@@ -135,12 +142,15 @@ export default function VillesComptesPage() {
   const [roleFilter, setRoleFilter] = useState<Role | "">("");
   const [search, setSearch] = useState("");
   const partnerNames = (ids: string[]) => ids.map((id) => partners.find((p) => p.id === id)?.name).filter(Boolean) as string[];
+  const beneficiaryNames = (ids: string[]) => ids.map((id) => beneficiaries.find((b) => b.id === id)?.name).filter(Boolean) as string[];
   const filtered = accounts.filter((a) => {
     if (roleFilter && a.role !== roleFilter) return false;
     const q = norm(search).trim();
     if (!q) return true;
-    // every word typed must be found in at least one column (name, email, role, city, linked partners, status)
-    const haystack = norm([a.name, a.email, ROLE_LABELS[a.role], cities.find((c) => c.id === a.city)?.name ?? "", ...partnerNames(a.partnerIds), a.active ? "actif" : "inactif"].join(" "));
+    // every word typed must be found in at least one column (name, email, role, city, linked partners/bénéficiaires, status)
+    const haystack = norm(
+      [a.name, a.email, ROLE_LABELS[a.role], cities.find((c) => c.id === a.city)?.name ?? "", ...partnerNames(a.partnerIds), ...beneficiaryNames(a.beneficiaryIds), a.active ? "actif" : "inactif"].join(" "),
+    );
     return q.split(/\s+/).every((w) => haystack.includes(w));
   });
 
@@ -195,7 +205,17 @@ export default function VillesComptesPage() {
         if (ins.error) return showToast("Sites non mis à jour : " + ins.error.message);
       }
     }
-    setAccounts((prev) => prev.map((a) => (a.id === draft.id ? { ...draft, partnerIds: wanted } : a)));
+    // beneficiary links (only meaningful for the "beneficiaire" role)
+    const wantedBenef = draft.role === "beneficiaire" ? draft.beneficiaryIds : [];
+    if (JSON.stringify([...wantedBenef].sort()) !== JSON.stringify([...(original?.beneficiaryIds ?? [])].sort())) {
+      const del = await supabase.from("beneficiary_users").delete().eq("profile_id", draft.id);
+      if (del.error) return showToast("Associations non mises à jour : " + del.error.message + " (la migration 030 est-elle passée ?)");
+      if (wantedBenef.length) {
+        const ins = await supabase.from("beneficiary_users").insert(wantedBenef.map((beneficiary_id) => ({ profile_id: draft.id, beneficiary_id })));
+        if (ins.error) return showToast("Associations non mises à jour : " + ins.error.message);
+      }
+    }
+    setAccounts((prev) => prev.map((a) => (a.id === draft.id ? { ...draft, partnerIds: wanted, beneficiaryIds: wantedBenef } : a)));
     setEditingId(null);
     setDraft(null);
     showToast("Compte mis à jour.");
@@ -227,13 +247,13 @@ export default function VillesComptesPage() {
   async function createAccount() {
     if (!form.email.trim()) return showToast("Renseigne l'adresse email.");
     if (form.password.length < 8) return showToast("Mot de passe : 8 caractères minimum (utilise « Générer »).");
-    if (form.role !== "admin_principal" && !form.city_id && form.role !== "partenaire") return showToast("Choisis une ville pour ce compte.");
+    if (form.role !== "admin_principal" && !form.city_id && form.role !== "partenaire" && form.role !== "beneficiaire") return showToast("Choisis une ville pour ce compte.");
     setBusy(true);
     try {
       await callApi("POST", { ...form, city_id: form.city_id || null });
       setCredentials({ email: form.email.trim().toLowerCase(), password: form.password, note: "Compte créé." });
       setCreating(false);
-      setForm({ email: "", full_name: "", role: "logisticien", city_id: cities[0]?.id ?? "", password: "", partner_ids: [] });
+      setForm({ email: "", full_name: "", role: "logisticien", city_id: cities[0]?.id ?? "", password: "", partner_ids: [], beneficiary_ids: [] });
       await load();
     } catch (e) {
       showToast((e as Error).message);
@@ -254,7 +274,7 @@ export default function VillesComptesPage() {
   }
 
   function openCreate() {
-    setForm({ email: "", full_name: "", role: "logisticien", city_id: cities[0]?.id ?? "", password: randomPassword(), partner_ids: [] });
+    setForm({ email: "", full_name: "", role: "logisticien", city_id: cities[0]?.id ?? "", password: randomPassword(), partner_ids: [], beneficiary_ids: [] });
     setCreating(true);
   }
 
@@ -267,6 +287,20 @@ export default function VillesComptesPage() {
           <label key={p.id} className={`inline-flex cursor-pointer items-center gap-1.5 rounded-[40px] border-[1.5px] px-3 py-1.5 text-[11.5px] font-semibold ${selected.includes(p.id) ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)]"}`}>
             <input type="checkbox" className="hidden" checked={selected.includes(p.id)} onChange={() => onToggle(p.id)} />
             {p.name}
+          </label>
+        ))}
+    </div>
+  );
+
+  const beneficiaryChoices = (cityId: string | null, selected: string[], onToggle: (id: string) => void) => (
+    <div className="flex flex-wrap gap-2">
+      {beneficiaries.filter((b) => !cityId || b.city_id === cityId).length === 0 && <span className="text-[11.5px] text-[var(--slate)]">Aucun bénéficiaire dans cette ville pour l&apos;instant.</span>}
+      {beneficiaries
+        .filter((b) => !cityId || b.city_id === cityId)
+        .map((b) => (
+          <label key={b.id} className={`inline-flex cursor-pointer items-center gap-1.5 rounded-[40px] border-[1.5px] px-3 py-1.5 text-[11.5px] font-semibold ${selected.includes(b.id) ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)]"}`}>
+            <input type="checkbox" className="hidden" checked={selected.includes(b.id)} onChange={() => onToggle(b.id)} />
+            {b.name}
           </label>
         ))}
     </div>
@@ -446,6 +480,14 @@ export default function VillesComptesPage() {
               )}
             </div>
           )}
+          {form.role === "beneficiaire" && (
+            <div className="mt-3">
+              <label className={labelCls}>Associations auxquelles ce compte donne accès</label>
+              {beneficiaryChoices(form.city_id || null, form.beneficiary_ids, (id) =>
+                setForm({ ...form, beneficiary_ids: form.beneficiary_ids.includes(id) ? form.beneficiary_ids.filter((x) => x !== id) : [...form.beneficiary_ids, id] }),
+              )}
+            </div>
+          )}
           <div className="mt-4 flex gap-2.5">
             <button type="button" disabled={busy} onClick={createAccount} className="rounded-[40px] bg-[var(--navy-deep)] px-[18px] py-2.5 font-display text-[13.5px] font-bold text-[var(--panel-fg)] disabled:opacity-60">
               {busy ? "Création…" : "Créer le compte"}
@@ -500,7 +542,7 @@ export default function VillesComptesPage() {
         <table className="w-full min-w-[820px] border-collapse text-[12.5px]">
           <thead>
             <tr>
-              {["Nom", "Email", "Rôle", "Ville", "Partenaires reliés", "Statut", ""].map((h) => (
+              {["Nom", "Email", "Rôle", "Ville", "Sites / associations reliés", "Statut", ""].map((h) => (
                 <th key={h} className="border-b border-[var(--border)] px-3 py-3 text-left text-[10px] font-bold tracking-[0.03em] whitespace-nowrap text-[var(--muted)] uppercase">
                   {h}
                 </th>
@@ -551,7 +593,7 @@ export default function VillesComptesPage() {
                           ))}
                         </select>
                       </td>
-                      <td className="border-b border-[var(--border)] px-3 py-2.5 text-[11px] text-[var(--slate)] italic">{draft.role === "partenaire" ? "à choisir ci-dessous" : "—"}</td>
+                      <td className="border-b border-[var(--border)] px-3 py-2.5 text-[11px] text-[var(--slate)] italic">{draft.role === "partenaire" || draft.role === "beneficiaire" ? "à choisir ci-dessous" : "—"}</td>
                       <td className="border-b border-[var(--border)] px-3 py-2.5">
                         <select value={draft.active ? "1" : "0"} onChange={(e) => setDraft({ ...draft, active: e.target.value === "1" })} className={inputCls}>
                           <option value="1">Actif</option>
@@ -591,6 +633,14 @@ export default function VillesComptesPage() {
                             )}
                           </div>
                         )}
+                        {draft.role === "beneficiaire" && (
+                          <div className="mb-3">
+                            <div className={labelCls}>Associations auxquelles ce compte donne accès</div>
+                            {beneficiaryChoices(draft.city, draft.beneficiaryIds, (id) =>
+                              setDraft({ ...draft, beneficiaryIds: draft.beneficiaryIds.includes(id) ? draft.beneficiaryIds.filter((x) => x !== id) : [...draft.beneficiaryIds, id] }),
+                            )}
+                          </div>
+                        )}
                         <button type="button" disabled={busy} onClick={() => resetPassword(a)} className="rounded-[40px] border-[1.5px] border-[var(--border)] bg-[var(--card)] px-3.5 py-1.5 font-display text-[12.5px] font-bold text-[var(--slate)] disabled:opacity-60">
                           Générer un nouveau mot de passe
                         </button>
@@ -626,6 +676,18 @@ export default function VillesComptesPage() {
                         </div>
                       ) : (
                         <span className="text-[11px] font-semibold text-[var(--critical)]">Aucun site relié</span>
+                      )
+                    ) : a.role === "beneficiaire" ? (
+                      beneficiaryNames(a.beneficiaryIds).length > 0 ? (
+                        <div className="flex max-w-[260px] flex-wrap gap-1">
+                          {beneficiaryNames(a.beneficiaryIds).map((n) => (
+                            <span key={n} className="rounded-[40px] px-2 py-[3px] text-[10.5px] font-semibold" style={{ background: ROLE_COLOR.beneficiaire.soft, color: ROLE_COLOR.beneficiaire.text }}>
+                              {n}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-[11px] font-semibold text-[var(--critical)]">Aucune association reliée</span>
                       )
                     ) : (
                       <span className="text-[var(--muted)]">—</span>

@@ -21,6 +21,7 @@ const FICHE_TABS: { k: FicheTab; label: string; color: string; fg: string; icon:
   { k: "valorisation", label: "Valorisation RSE", color: "#1a8f68", fg: "#fdf4ed", icon: <><circle cx="12" cy="12" r="8.5" /><path d="M14.8 9.2 A3.6 3.6 0 1 0 14.8 14.8 M8.5 11 H13 M8.5 13 H13" /></> },
   { k: "collectes", label: "Collectes", color: "#4fc1d6", fg: "#001641", icon: <><path d="M3 6.5 H14 V16 H3 Z M14 9.5 H18 L21 12.5 V16 H14" /><circle cx="7" cy="17.5" r="1.8" /><circle cx="17" cy="17.5" r="1.8" /></> },
 ];
+const BENEFICIAIRE_FICHE_TABS = FICHE_TABS.filter((t) => t.k === "fiche" || t.k === "documents");
 // Coloured top edge of each fiche card
 const SECTION_COLOR: Record<string, string> = {
   identite: "var(--cat-1)",
@@ -103,6 +104,7 @@ type BeneficiaireEntity = {
   network: string;
   description: string;
   isLinkeeSite: boolean;
+  portalEmail?: string;
 };
 
 type Entity = PartnerEntity | BeneficiaireEntity;
@@ -349,6 +351,7 @@ export default function PartenairesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Entity | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(["identite"]));
+  useEffect(() => setFicheTab("fiche"), [currentId]);
   const [autosaveVisible, setAutosaveVisible] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -762,33 +765,32 @@ export default function PartenairesPage() {
                 Modifications enregistrées
               </div>
 
-              {current.kind === "partner" && (
-                <div className="mb-4 grid grid-cols-2 gap-1.5 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-1.5 sm:grid-cols-4">
-                  {FICHE_TABS.map((t) => {
-                    const on = ficheTab === t.k;
-                    return (
-                      <button
-                        key={t.k}
-                        type="button"
-                        onClick={() => setFicheTab(t.k)}
-                        className={`flex min-w-0 items-center justify-center gap-2 rounded-[10px] px-3 py-2.5 transition-colors ${on ? "" : "hover:bg-[var(--input-bg)]"}`}
-                        style={on ? { background: t.color, color: t.fg } : { color: "var(--navy)" }}
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 flex-none" style={on ? undefined : { color: t.color === "#0a1a3f" ? "var(--slate)" : t.color }}>
-                          {t.icon}
-                        </svg>
-                        <span className="truncate text-[13.5px] font-semibold">{t.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+              <div className="mb-4 grid grid-cols-2 gap-1.5 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-1.5 sm:grid-cols-4">
+                {(current.kind === "partner" ? FICHE_TABS : BENEFICIAIRE_FICHE_TABS).map((t) => {
+                  const on = ficheTab === t.k;
+                  return (
+                    <button
+                      key={t.k}
+                      type="button"
+                      onClick={() => setFicheTab(t.k)}
+                      className={`flex min-w-0 items-center justify-center gap-2 rounded-[10px] px-3 py-2.5 transition-colors ${on ? "" : "hover:bg-[var(--input-bg)]"}`}
+                      style={on ? { background: t.color, color: t.fg } : { color: "var(--navy)" }}
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 flex-none" style={on ? undefined : { color: t.color === "#0a1a3f" ? "var(--slate)" : t.color }}>
+                        {t.icon}
+                      </svg>
+                      <span className="truncate text-[13.5px] font-semibold">{t.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
               <div>
               {current.kind === "partner" && ficheTab === "documents" && <PartnerDocuments key={current.id} partnerId={current.id} role="admin" />}
+              {current.kind === "beneficiaire" && ficheTab === "documents" && <PartnerDocuments key={current.id} beneficiaryId={current.id} role="admin" />}
               {current.kind === "partner" && ficheTab === "valorisation" && <PartnerValuation key={current.id} partnerId={current.id} category={current.cat} />}
               {current.kind === "partner" && ficheTab === "collectes" && <PartnerCollectes key={current.id} partnerId={current.id} cityId={cityId} category={current.cat} />}
 
-              {(current.kind !== "partner" || ficheTab === "fiche") && (
+              {ficheTab === "fiche" && (
               <>
               <AccordionSection title="Adresse & accès" sectionKey="identite" open={openSections.has("identite")} onToggle={toggleSection}>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1243,6 +1245,23 @@ export default function PartenairesPage() {
                         Un même partenaire (ex. plusieurs boutiques d&apos;une même enseigne) peut ainsi basculer entre ses sites depuis un seul identifiant, sans recréer un compte à chaque fois.
                       </p>
                     </div>
+                  </div>
+                </AccordionSection>
+              )}
+
+              {current.kind === "beneficiaire" && (
+                <AccordionSection title="Accès espace bénéficiaire" sectionKey="portal" open={openSections.has("portal")} onToggle={toggleSection}>
+                  <div>
+                    <label className={labelCls}>Email de connexion à l&apos;espace bénéficiaire</label>
+                    <input
+                      className={inputCls}
+                      placeholder="contact@association.fr"
+                      value={current.portalEmail || ""}
+                      onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, portalEmail: e.target.value } : entity))}
+                    />
+                    <p className="mt-2 text-[11.5px] text-[var(--slate)]">
+                      Note libre — le compte lui-même se crée dans Comptes &amp; villes en rattachant l&apos;association à ce compte.
+                    </p>
                   </div>
                 </AccordionSection>
               )}

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-// Shared by the partner fiche ("Mes documents"), the partner space and the manual volume entry.
+// Shared by the partner fiche ("Mes documents"), the partner space, the beneficiary space and the manual volume entry.
 
 export const DOC_ACCEPT = ".pdf,.xls,.xlsx,.csv,.png,.jpg,.jpeg,.gif,.webp,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/*";
 export const DOC_MAX_BYTES = 15 * 1024 * 1024;
@@ -8,29 +8,32 @@ export const DOC_MAX_BYTES = 15 * 1024 * 1024;
 const ALLOWED_EXT = ["pdf", "xls", "xlsx", "csv", "png", "jpg", "jpeg", "gif", "webp"];
 export const isAllowedDoc = (name: string) => ALLOWED_EXT.includes((name.split(".").pop() || "").toLowerCase());
 
-export type DocRow = { id: string; partner_id: string; name: string; storage_path: string; size_bytes: number | null; created_at: string; source: "admin" | "partenaire"; collecte_id: string | null };
-export const DOC_SELECT = "id,partner_id,name,storage_path,size_bytes,created_at,source,collecte_id";
+export type DocRow = { id: string; partner_id: string | null; beneficiary_id: string | null; name: string; storage_path: string; size_bytes: number | null; created_at: string; source: "admin" | "partenaire" | "beneficiaire"; collecte_id: string | null };
+export const DOC_SELECT = "id,partner_id,beneficiary_id,name,storage_path,size_bytes,created_at,source,collecte_id";
 
 export const fmtSize = (b: number | null) => (b == null ? "" : b < 1024 ? `${b} o` : b < 1024 * 1024 ? `${Math.round(b / 1024)} Ko` : `${(b / 1024 / 1024).toFixed(1)} Mo`);
 
-/** Uploads one file to the private "documents" bucket and records it. Throws with a readable message. */
+/** Uploads one file to the private "documents" bucket and records it, for a partner OR a beneficiary (exactly
+ * one of the two ids). Throws with a readable message. */
 export async function uploadDocument(
   supabase: SupabaseClient,
-  opts: { partnerId: string; file: File; source: "admin" | "partenaire"; userId: string | null; collecteId?: string | null },
+  opts: { partnerId?: string; beneficiaryId?: string; file: File; source: "admin" | "partenaire" | "beneficiaire"; userId: string | null; collecteId?: string | null },
 ): Promise<DocRow> {
-  const { partnerId, file, source, userId, collecteId } = opts;
+  const { partnerId, beneficiaryId, file, source, userId, collecteId } = opts;
+  const ownerId = partnerId || beneficiaryId;
+  if (!ownerId) throw new Error("Aucun partenaire ni bénéficiaire associé.");
   if (!isAllowedDoc(file.name)) throw new Error(`${file.name} : format non accepté (PDF, Excel, CSV ou image).`);
   if (file.size > DOC_MAX_BYTES) throw new Error(`${file.name} : fichier trop lourd (15 Mo maximum).`);
   const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const path = `${partnerId}/${Date.now()}-${safe}`;
+  const path = `${ownerId}/${Date.now()}-${safe}`;
   const up = await supabase.storage.from("documents").upload(path, file, { contentType: file.type || undefined });
   if (up.error) throw new Error(`${file.name} : ${up.error.message}`);
   const { data, error } = await supabase
     .from("documents")
-    .insert({ partner_id: partnerId, name: file.name, storage_path: path, size_bytes: file.size, uploaded_by: userId, source, collecte_id: collecteId ?? null })
+    .insert({ partner_id: partnerId ?? null, beneficiary_id: beneficiaryId ?? null, name: file.name, storage_path: path, size_bytes: file.size, uploaded_by: userId, source, collecte_id: collecteId ?? null })
     .select(DOC_SELECT)
     .single();
-  if (error || !data) throw new Error(`${file.name} : ${error?.message ?? "erreur"} (la migration 013 est-elle passée ?)`);
+  if (error || !data) throw new Error(`${file.name} : ${error?.message ?? "erreur"} (la migration 030 est-elle passée ?)`);
   return data as DocRow;
 }
 

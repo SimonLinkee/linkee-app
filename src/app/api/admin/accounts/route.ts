@@ -33,6 +33,7 @@ export async function POST(request: Request) {
     role?: string;
     city_id?: string | null;
     partner_ids?: string[];
+    beneficiary_ids?: string[];
   } | null;
   const email = body?.email?.trim().toLowerCase();
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) return NextResponse.json({ error: "Adresse email invalide." }, { status: 400 });
@@ -54,6 +55,10 @@ export async function POST(request: Request) {
 
   if (role === "partenaire" && body.partner_ids?.length) {
     const links = await admin.from("partner_users").insert(body.partner_ids.map((partner_id) => ({ profile_id: id, partner_id })));
+    if (links.error) return NextResponse.json({ error: links.error.message }, { status: 500 });
+  }
+  if (role === "beneficiaire" && body.beneficiary_ids?.length) {
+    const links = await admin.from("beneficiary_users").insert(body.beneficiary_ids.map((beneficiary_id) => ({ profile_id: id, beneficiary_id })));
     if (links.error) return NextResponse.json({ error: links.error.message }, { status: 500 });
   }
   return NextResponse.json({ id });

@@ -6,7 +6,7 @@ export type Role = 'en_attente' | 'admin_principal' | 'admin_local' | 'resp_dist
 //   resp_distribution = Resp. Distribution      : Distribution only
 //   linker             = Linker (bénévole)       : espace 100% client sous /linker (signup, carte, missions, gamification)
 // After sign-in the last two roles land on /version: full PC version or quick mobile entry (/saisie-mobile).
-const SUPER_ONLY = ['/dashboard', '/partenaires', '/beneficiaires', '/flotte', '/todo', '/villes-comptes', '/historique', '/journee', '/espace-partenaire', '/mobile', '/links-benevoles', '/linker', '/valeur-des-dons']
+const SUPER_ONLY = ['/dashboard', '/partenaires', '/beneficiaires', '/flotte', '/todo', '/villes-comptes', '/historique', '/journee', '/espace-partenaire', '/espace-beneficiaire', '/mobile', '/links-benevoles', '/linker', '/valeur-des-dons']
 // '/mobile/links' (visibilité des Links Bénévoles) est aussi ouvert au Responsable d'antenne et au Resp.
 // Distribution, alors que le reste de '/mobile' reste réservé au Superadmin — d'où l'ajout explicite ici.
 // '/valeur-des-dons' (valeur par défaut par type de partenaire, ex-"barèmes") est aussi gérée par le Responsable d'antenne (cf. RLS baremes_write).
@@ -36,6 +36,8 @@ export function homeForRole(role: string): string {
       return '/journee'
     case 'partenaire':
       return '/espace-partenaire'
+    case 'beneficiaire':
+      return '/espace-beneficiaire'
     case 'linker':
       return '/linker/accueil'
     default:
@@ -58,6 +60,7 @@ export function isAllowed(role: string, path: string): boolean {
   if (role === 'resp_distribution') return DISTRIB_PATHS.some((p) => under(path, p))
   if (role === 'logisticien') return under(path, '/journee')
   if (role === 'partenaire') return under(path, '/espace-partenaire')
+  if (role === 'beneficiaire') return under(path, '/espace-beneficiaire')
   if (role === 'linker') return LINKER_PATHS.some((p) => under(path, p))
   return false
 }
