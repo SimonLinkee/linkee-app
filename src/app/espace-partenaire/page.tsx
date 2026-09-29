@@ -14,7 +14,7 @@ type Contact = { type: string; nom: string; tel: string; mail: string };
 type Hours = { open: string; close: string } | null;
 type HistoryEntry = { date: string; time: string; denree: string; kg: number; status: "ok" | "annulee" };
 type Fiche = Record<string, unknown>;
-type PartnerRow = { id: string; name: string; site_label: string | null; category: string | null; address: string | null; logo_url: string | null; photo_url: string | null; fiche: Fiche | null };
+type PartnerRow = { id: string; name: string; site_label: string | null; category: string | null; address: string | null; logo_url: string | null; photo_url: string | null; fiche: Fiche | null; city_id: string; benevole_only: boolean };
 type CollecteRow = StatRow & { scheduled_time: string | null };
 type Site = {
   id: string;
@@ -31,6 +31,8 @@ type Site = {
   adminInfo: { slot: string; denree: string; volumeRange: string; comment: string };
   upcoming: { date: string; time: string; note: string }[];
   history: HistoryEntry[];
+  cityId: string;
+  benevoleOnly: boolean;
 };
 type DashPeriod = {
   periodLabel: string;
@@ -75,6 +77,8 @@ function siteFromRow(r: PartnerRow, upcoming: Site["upcoming"], history: History
     },
     upcoming,
     history,
+    cityId: r.city_id,
+    benevoleOnly: !!r.benevole_only,
   };
 }
 const DENREE_OPTIONS_LIST = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
@@ -243,7 +247,31 @@ function CollectRow({ date, time, note, badge, badgeCls, req }: { date: string; 
   );
 }
 
-function ExcForm({ siteName, onSubmit }: { siteName: string; onSubmit: (r: Omit<Request, "site">) => Promise<boolean> }) {
+/** Affiché aux partenaires "Éligible collecte bénévole" : plus de collecte exceptionnelle classique, mais un
+ * contact direct vers le Responsable d'antenne pour tout ce qui ne passe pas par les Links Bénévoles. */
+function AntenneContactNote({ cityId }: { cityId: string }) {
+  const supabase = useMemo(() => createClient(), []);
+  const [contact, setContact] = useState<{ full_name: string | null; phone: string | null } | null | undefined>(undefined);
+  useEffect(() => {
+    if (!cityId) return;
+    supabase.rpc("antenne_contact", { p_city_id: cityId }).then(({ data }) => setContact((data as { full_name: string | null; phone: string | null }[] | null)?.[0] ?? null));
+  }, [supabase, cityId]);
+  return (
+    <div className="mt-3.5 rounded-[14px] border-[1.5px] border-dashed border-[#eb6834] bg-[rgba(235,104,52,.06)] px-4 py-3">
+      <p className="text-[12.5px] font-bold text-[var(--navy)]">Vous ne pouvez plus faire de collecte exceptionnelle classique</p>
+      <p className="mt-1 text-[11.5px] leading-[1.5] text-[var(--slate)]">
+        Utilisez l&apos;onglet <strong>Links Bénévoles</strong> ci-dessous pour une collecte rapide, ou le bouton au-dessus pour planifier une collecte pro.
+        {contact === undefined ? "" : contact?.phone ? (
+          <> Besoin d&apos;autre chose ? Appelez {contact.full_name || "votre Responsable d'antenne"} au <a href={`tel:${contact.phone}`} className="font-bold text-[#eb6834]">{contact.phone}</a>.</>
+        ) : (
+          " Besoin d'autre chose ? Contactez votre Responsable d'antenne."
+        )}
+      </p>
+    </div>
+  );
+}
+
+function ExcForm({ siteName, onSubmit, pro = false }: { siteName: string; onSubmit: (r: Omit<Request, "site">) => Promise<boolean>; pro?: boolean }) {
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState<string | null>(null);
   const [date, setDate] = useState("");
@@ -276,7 +304,7 @@ function ExcForm({ siteName, onSubmit }: { siteName: string; onSubmit: (r: Omit<
     <>
       <button type="button" onClick={toggle} className="mt-3.5 flex w-full items-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-[var(--border)] bg-[var(--input-bg)] px-4 py-[13px] text-[13.5px] font-bold text-[var(--navy)] hover:border-[var(--client-req)] hover:text-[var(--client-req)]">
         <Icon sw={2.2}><path d="M12 5 V19 M5 12 H19" /></Icon>
-        Faire une demande de collecte exceptionnelle
+        {pro ? "Planifier une collecte pro" : "Faire une demande de collecte exceptionnelle"}
       </button>
       {open && (
         <div className="mt-3.5 border-t border-dashed border-[var(--border)] pt-3.5">
@@ -301,7 +329,7 @@ function ExcForm({ siteName, onSubmit }: { siteName: string; onSubmit: (r: Omit<
         <div className="mt-3.5 rounded-[14px] bg-[var(--client-req-bg)] px-4 py-3.5">
           <div className="mb-2 flex items-center gap-2 text-[12.5px] font-bold text-[var(--client-req)]"><CheckIcon className="h-4 w-4" />Demande envoyée à Linkee</div>
           <div className="flex items-center gap-2.5 rounded-xl border-[1.5px] border-l-4 border-[var(--client-req)] bg-[var(--card)] px-3 py-2.5">
-            <span className="flex-none rounded-[40px] bg-[var(--client-req)] px-2 py-[3px] text-[9px] font-bold text-white uppercase">Demande exceptionnelle client</span>
+            <span className="flex-none rounded-[40px] bg-[var(--client-req)] px-2 py-[3px] text-[9px] font-bold text-white uppercase">{pro ? "Demande de collecte pro" : "Demande exceptionnelle client"}</span>
             <span className="flex-1 text-xs font-semibold">{confirm}</span>
           </div>
           <p className="mt-2 text-[11px] leading-[1.5] text-[var(--slate)] italic">Elle apparaîtra dans le Planning de l&apos;équipe Linkee, en attente de validation par l&apos;administrateur avant d&apos;être confirmée.</p>
@@ -383,7 +411,7 @@ export default function EspacePartenairePage() {
 
   useEffect(() => {
     (async () => {
-      const { data: ps, error } = await supabase.from("partners").select("id,name,site_label,category,address,logo_url,photo_url,fiche").eq("active", true).order("name");
+      const { data: ps, error } = await supabase.from("partners").select("id,name,site_label,category,address,logo_url,photo_url,fiche,city_id,benevole_only").eq("active", true).order("name");
       if (error) showToast("Chargement impossible : " + error.message);
       const partners = (ps ?? []) as PartnerRow[];
       setPartnerRows(partners);
@@ -666,7 +694,8 @@ export default function EspacePartenairePage() {
 
           <Card title="Prochaines collectes" icon={CAL}>
             <UpcomingList site={site} siteKey={siteKey} requests={requests} />
-            <ExcForm key={siteKey} siteName={site.name} onSubmit={addRequest} />
+            <ExcForm key={siteKey} siteName={site.name} onSubmit={addRequest} pro={site.benevoleOnly} />
+            {site.benevoleOnly && <AntenneContactNote cityId={site.cityId} />}
           </Card>
 
           <Card title="Links Bénévoles" icon={LINKS_ICON} note="Petit volume à faire partir vite ? En complément du logisticien, un bénévole peut le collecter — jusqu'à 80 kg.">
@@ -749,7 +778,8 @@ export default function EspacePartenairePage() {
               </Card>
               <Card title="Prochaines collectes" icon={CAL} note="Planifiées par Linkee selon votre créneau habituel.">
                 <UpcomingList site={site} siteKey={siteKey} requests={requests} />
-                <ExcForm key={siteKey} siteName={site.name} onSubmit={addRequest} />
+                <ExcForm key={siteKey} siteName={site.name} onSubmit={addRequest} pro={site.benevoleOnly} />
+                {site.benevoleOnly && <AntenneContactNote cityId={site.cityId} />}
               </Card>
             </div>
           )}

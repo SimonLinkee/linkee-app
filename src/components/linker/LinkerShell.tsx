@@ -10,7 +10,6 @@ const TABS: { href: string; label: string; icon: ReactNode }[] = [
   { href: "/linker/accueil", label: "Accueil", icon: <><path d="M4 11 L12 4 L20 11" /><path d="M6 10 V20 H18 V10" /></> },
   { href: "/linker/carte", label: "Links", icon: <><path d="M12 21 C 8 16.5 5 13 5 9.5 A7 7 0 0 1 19 9.5 C 19 13 16 16.5 12 21 Z" /><circle cx="12" cy="9.5" r="2.3" /></> },
   { href: "/linker/garde-robe", label: "Garde-robe", icon: <><rect x="5" y="8" width="14" height="12" rx="2" /><path d="M9 8 V6 A3 3 0 0 1 15 6 V8" /></> },
-  { href: "/linker/boutique", label: "Boutique", icon: <><path d="M4 8 L6 4 H18 L20 8" /><rect x="4" y="8" width="16" height="12" rx="1.5" /><path d="M9 12 A3 3 0 0 0 15 12" /></> },
   { href: "/linker/profil", label: "Profil", icon: <><circle cx="12" cy="8" r="3.6" /><path d="M4.5 20 C 5.5 15.5 8.3 13.3 12 13.3 C 15.7 13.3 18.5 15.5 19.5 20" /></> },
 ];
 

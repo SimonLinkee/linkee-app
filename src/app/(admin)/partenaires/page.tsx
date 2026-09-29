@@ -60,6 +60,7 @@ type PartnerEntity = {
   passage?: Passage;
   logoUrl?: string | null;
   dureeCollecte?: number;
+  benevoleOnly?: boolean;
   history: HistoryEntry[];
   contacts: Contact[];
   portalEmail?: string;
@@ -118,7 +119,7 @@ const NO_ACCESS: AccessFlags = { digicode: false, quai: false, camion: false, et
 
 const BLANK_PARTNER: Omit<PartnerEntity, "id"> = {
   kind: "partner", name: "Nouveau partenaire", cat: "Commerce", active: true, siren: "", antenne: "Lyon", address: "", creneau: "",
-  denrees: NO_DENREES, conditionnement: "Carton", access: NO_ACCESS, accessNote: "", history: [], contacts: [],
+  denrees: NO_DENREES, conditionnement: "Carton", access: NO_ACCESS, accessNote: "", history: [], contacts: [], benevoleOnly: false,
 };
 const BLANK_BENEFICIAIRE: Omit<BeneficiaireEntity, "id"> = {
   kind: "beneficiaire", name: "Nouveau bénéficiaire", cat: "Association partenaire", pinned: false, active: true, address: "", tel: "", mail: "",
@@ -126,20 +127,24 @@ const BLANK_BENEFICIAIRE: Omit<BeneficiaireEntity, "id"> = {
   stockageM2: 0, denrees: NO_DENREES, contacts: [],
 };
 
-// The full "fiche" lives in a jsonb column; name / category / address / active are also real columns.
-type Row = { id: string; name: string; category: string | null; address: string | null; active: boolean; fiche: Record<string, unknown> | null; logo_url?: string | null };
+// The full "fiche" lives in a jsonb column; name / category / address / active / benevole_only are also real columns.
+type Row = { id: string; name: string; category: string | null; address: string | null; active: boolean; fiche: Record<string, unknown> | null; logo_url?: string | null; benevole_only?: boolean };
 function rowToEntity(kind: "partner" | "beneficiaire", r: Row): Entity {
   const base = kind === "partner" ? BLANK_PARTNER : BLANK_BENEFICIAIRE;
   const e = { ...base, ...(r.fiche ?? {}), id: r.id, kind, name: r.name, cat: r.category ?? base.cat, address: r.address ?? "", active: r.active, logoUrl: r.logo_url ?? null } as Entity;
   if (e.kind === "beneficiaire") e.pinned = !!e.pinned || e.cat === "Distribution Linkee"; // the category is what makes a place a Linkee distribution
+  if (e.kind === "partner") e.benevoleOnly = !!r.benevole_only;
   return e;
 }
 function entityToRow(e: Entity) {
-  const { id, kind, name, cat, address, active, logoUrl, ...fiche } = e;
+  const { id, kind, name, cat, address, active, logoUrl, ...rest } = e;
+  const fiche = { ...rest } as Record<string, unknown>;
+  delete fiche.benevoleOnly;
   void id;
-  void kind;
   void logoUrl; // stored in its own column
-  return { name, category: cat, address, active, fiche };
+  const row: Record<string, unknown> = { name, category: cat, address, active, fiche };
+  if (kind === "partner") row.benevole_only = !!(rest as { benevoleOnly?: boolean }).benevoleOnly;
+  return row;
 }
 
 /** Blue badge shown next to the name of a place where Linkee runs a distribution. */
@@ -278,7 +283,7 @@ export default function PartenairesPage() {
     (async () => {
       // only the selected city's partners and beneficiaries (see the city selector in the menu)
       const [ps, bs] = await Promise.all([
-        supabase.from("partners").select(SELECT_COLS + ",logo_url").eq("city_id", cityId ?? "").order("name"),
+        supabase.from("partners").select(SELECT_COLS + ",logo_url,benevole_only").eq("city_id", cityId ?? "").order("name"),
         supabase.from("beneficiaries").select(SELECT_COLS).eq("city_id", cityId ?? "").order("name"),
       ]);
       if (cancelled) return;
@@ -577,6 +582,22 @@ export default function PartenairesPage() {
                   </button>
                 </div>
               </div>
+              {current.kind === "partner" && (
+                <label className="mb-4 flex items-start gap-2.5 rounded-[14px] border-[1.5px] p-3" style={{ borderColor: current.benevoleOnly ? "#eb6834" : "var(--border)", background: current.benevoleOnly ? "rgba(235,104,52,.08)" : "var(--card)" }}>
+                  <input
+                    type="checkbox"
+                    checked={!!current.benevoleOnly}
+                    onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, benevoleOnly: e.target.checked } : entity))}
+                    className="mt-0.5 h-[17px] w-[17px] accent-[#eb6834]"
+                  />
+                  <span>
+                    <span className="block text-[13px] font-bold text-[var(--navy)]">Éligible collecte bénévole</span>
+                    <span className="block text-[11.5px] leading-[1.4] text-[var(--slate)]">
+                      Ce partenaire sort du planning pro classique et n&apos;a plus accès à la collecte exceptionnelle classique — il passe par les Links Bénévoles (ou une collecte « pro » planifiée, relabellisée pour lui). Pense aussi à activer 🎒 et/ou 🚗 dans Links Bénévoles.
+                    </span>
+                  </span>
+                </label>
+              )}
               <div className={`mb-4 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--good)] transition-opacity ${autosaveVisible ? "opacity-100" : "opacity-0"}`}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" className="h-[13px] w-[13px]">
                   <path d="M20 6 L9 17 L4 12" />

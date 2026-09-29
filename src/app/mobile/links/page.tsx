@@ -13,6 +13,7 @@ type LinkRow = {
   status: string;
   kg_estime: number;
   is_fresh: boolean;
+  denree: string | null;
   window_date: string;
   window_from: string;
   window_to: string;
@@ -53,7 +54,7 @@ export default function MobileLinksPage() {
     setLoading(true);
     supabase
       .from("links")
-      .select("id,status,kg_estime,is_fresh,window_date,window_from,window_to,is_demo,partners(name),beneficiaries(name),linkers(character,level,profiles(full_name,phone))")
+      .select("id,status,kg_estime,is_fresh,denree,window_date,window_from,window_to,is_demo,partners(name),beneficiaries(name),linkers(character,level,profiles(full_name,phone))")
       .eq("city_id", cityId)
       .order("created_at", { ascending: false })
       .limit(60)
@@ -124,7 +125,7 @@ export default function MobileLinksPage() {
                       <span className="flex-none rounded-[40px] px-2.5 py-1 text-[11px] font-bold" style={{ background: st.bg, color: st.fg }}>{st.l}</span>
                     </div>
                     <div className="mt-0.5 text-[12px] font-semibold text-[var(--slate)]">
-                      {fmtDay(l.window_date)} · {l.window_from.slice(0, 5)}–{l.window_to.slice(0, 5)} · {l.kg_estime} kg{l.is_fresh ? " · 🧊" : ""}{l.is_demo ? " · démo" : ""}
+                      {fmtDay(l.window_date)} · {l.window_from.slice(0, 5)}–{l.window_to.slice(0, 5)} · {l.kg_estime} kg{l.denree ? ` · ${l.denree}` : ""}{l.is_fresh ? " · 🧊" : ""}{l.is_demo ? " · démo" : ""}
                     </div>
                     {linker ? (
                       <div className="mt-2 flex items-center gap-2.5 rounded-[14px] bg-[var(--input-bg)] px-3 py-2">

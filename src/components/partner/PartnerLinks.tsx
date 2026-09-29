@@ -2,12 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import PhotoStrip from "@/components/PhotoStrip";
 import { MAX_KG } from "@/lib/linker/gamification";
 import { matchNearestOpenBeneficiary } from "@/lib/linker/matching";
 
 const ORANGE = "#eb6834";
 const fieldCls = "h-[46px] w-full rounded-[14px] border-2 border-[var(--border)] bg-[var(--input-bg)] px-3.5 text-[14px] font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]";
 const labelCls = "mb-1.5 block text-[12px] font-bold text-[var(--navy)]";
+const DENREE_OPTIONS = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
+// départs toutes les 30 min, 6h à 22h — la fenêtre dure toujours 1h pile (fin calculée automatiquement)
+const START_OPTIONS = Array.from({ length: 33 }, (_, i) => { const m = 360 + i * 30; return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; });
 
 type PartnerInfo = { city_id: string; address: string | null; allow_backpack: boolean; allow_car: boolean };
 type LinkRow = { id: string; status: string; kg_estime: number; is_fresh: boolean; window_date: string; window_from: string; window_to: string; asso_confirmed: boolean; beneficiaries: { name: string } | { name: string }[] | null; linkers: { level: number; profiles: { full_name: string | null } | { full_name: string | null }[] | null } | { level: number; profiles: { full_name: string | null } | { full_name: string | null }[] | null }[] | null };
@@ -35,11 +39,12 @@ export default function PartnerLinks({ partnerId }: { partnerId: string }) {
   const [busy, setBusy] = useState(false);
   const [ok, setOk] = useState<string | null>(null);
   const [mode, setMode] = useState<"walk" | "car">("walk");
+  const [denree, setDenree] = useState(DENREE_OPTIONS[0]);
   const [kg, setKg] = useState("10");
   const [fresh, setFresh] = useState(false);
   const [date, setDate] = useState(todayIso());
-  const [from, setFrom] = useState("17:30");
-  const [to, setTo] = useState("19:00");
+  const [start, setStart] = useState("17:30");
+  const [photoPaths, setPhotoPaths] = useState<string[]>([]);
 
   async function load() {
     const [p, l] = await Promise.all([
@@ -61,12 +66,12 @@ export default function PartnerLinks({ partnerId }: { partnerId: string }) {
 
   const cap = MAX_KG[mode];
   const vol = Math.min(Number(kg) || 0, cap);
-  const durMin = toMin(to) - toMin(from);
-  const leadMin = date === todayIso() ? toMin(from) - nowHM() : 999;
+  const end = `${String(Math.floor((toMin(start) + 60) / 60) % 24).padStart(2, "0")}:${String((toMin(start) + 60) % 60).padStart(2, "0")}`;
+  const leadMin = date === todayIso() ? toMin(start) - nowHM() : 999;
   const conds: [string, boolean][] = [
     [`Volume ≤ ${cap} kg (${mode === "walk" ? "sac à dos 🎒" : "voiture 🚗"})`, vol > 0 && vol <= cap],
-    ["Fenêtre d'au moins 1 heure", durMin >= 60],
     ["Au moins 30 min entre maintenant et le début de la fenêtre", leadMin >= 30],
+    ["Photo des produits à collecter", photoPaths.length > 0],
     [mode === "walk" ? "Collecte en sac à dos activée sur ta fiche 🎒" : "Collecte en voiture activée sur ta fiche 🚗", mode === "walk" ? info.allow_backpack : info.allow_car],
   ];
   const okAll = conds.every(([, k]) => k);
@@ -77,20 +82,22 @@ export default function PartnerLinks({ partnerId }: { partnerId: string }) {
     if (!okAll) return setMsg("Corrige les conditions ci-dessous avant d'envoyer.");
     if (!info!.address) return setMsg("Ajoute d'abord ton adresse dans « Ma fiche ».");
     setBusy(true);
-    const match = await matchNearestOpenBeneficiary(supabase, info!.city_id, info!.address, date, from, to);
+    const match = await matchNearestOpenBeneficiary(supabase, info!.city_id, info!.address, date, start, end);
     if (!match) {
       setBusy(false);
       return setMsg("Aucune association disponible sur ce créneau. Essaie une autre date ou un autre horaire.");
     }
     const { error } = await supabase.from("links").insert({
       city_id: info!.city_id, partner_id: partnerId, beneficiary_id: match.id, status: "proposee",
-      kg_estime: vol, is_fresh: fresh, mode_required: mode, window_date: date, window_from: from + ":00", window_to: to + ":00",
+      kg_estime: vol, is_fresh: fresh, mode_required: mode, window_date: date, window_from: start + ":00", window_to: end + ":00",
+      denree, photo_paths: photoPaths,
     });
     setBusy(false);
-    if (error) return setMsg("Envoi impossible : " + error.message + " (la migration 021 est-elle passée ?)");
+    if (error) return setMsg("Envoi impossible : " + error.message + " (la migration 025 est-elle passée ?)");
     setOk(`Demande envoyée aux Linkers proches — destination : ${match.name} (${match.distanceKm} km).`);
     setKg("10");
     setFresh(false);
+    setPhotoPaths([]);
     await load();
   }
 
@@ -122,6 +129,11 @@ export default function PartnerLinks({ partnerId }: { partnerId: string }) {
           </button>
         </div>
 
+        <label className={labelCls}>Produits à collecter</label>
+        <select className={fieldCls + " mb-3"} value={denree} onChange={(e) => setDenree(e.target.value)}>
+          {DENREE_OPTIONS.map((d) => <option key={d}>{d}</option>)}
+        </select>
+
         <label className={labelCls}>Volume estimé : <b style={{ color: ORANGE }}>{vol} kg</b></label>
         <input type="range" min={1} max={cap} value={vol} onChange={(e) => setKg(e.target.value)} className="mb-3 h-8 w-full accent-[#eb6834]" />
 
@@ -133,11 +145,17 @@ export default function PartnerLinks({ partnerId }: { partnerId: string }) {
           </button>
         </div>
 
-        <label className={labelCls}>Fenêtre de collecte</label>
-        <div className="mb-3 grid grid-cols-3 gap-2">
+        <label className={labelCls}>Fenêtre de collecte <span className="font-semibold text-[var(--muted)]">(1h, 30 min de préavis minimum)</span></label>
+        <div className="mb-3 grid grid-cols-2 gap-2">
           <input type="date" className={fieldCls} value={date} onChange={(e) => setDate(e.target.value)} />
-          <input type="time" className={fieldCls} value={from} onChange={(e) => setFrom(e.target.value)} />
-          <input type="time" className={fieldCls} value={to} onChange={(e) => setTo(e.target.value)} />
+          <select className={fieldCls} value={start} onChange={(e) => setStart(e.target.value)}>
+            {START_OPTIONS.map((t) => <option key={t} value={t}>{t} – {`${String(Math.floor((toMin(t) + 60) / 60) % 24).padStart(2, "0")}:${String((toMin(t) + 60) % 60).padStart(2, "0")}`}</option>)}
+          </select>
+        </div>
+
+        <label className={labelCls}>Photo des produits à collecter</label>
+        <div className="mb-3">
+          <PhotoStrip paths={photoPaths} folder={`link-photos/${partnerId}`} onChange={setPhotoPaths} accent={ORANGE} size={80} label="Ajouter une photo" />
         </div>
 
         <div className="mb-3 rounded-[14px] bg-[#f4f8ff] p-3">

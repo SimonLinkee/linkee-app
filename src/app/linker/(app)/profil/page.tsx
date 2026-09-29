@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useLinker, type AvailWindow } from "@/components/linker/LinkerContext";
-import { MAX_KG, typology, type Mode } from "@/lib/linker/gamification";
+import { MAX_KG, typology } from "@/lib/linker/gamification";
 import AddressSearch, { type AddressHit } from "@/components/AddressSearch";
 
 const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
@@ -36,7 +36,6 @@ export default function LinkerProfilPage() {
 
   if (!ready || !linker) return <p className="py-10 text-center text-[14px] font-semibold text-[var(--slate)]">Chargement…</p>;
 
-  const walk = linker.mode === "walk";
   const ty = typology(linker.mode, linker.radius_km);
   const flash = () => { setSaved(true); setErr(""); window.setTimeout(() => setSaved(false), 1400); };
 
@@ -44,11 +43,11 @@ export default function LinkerProfilPage() {
     const supabase = createClient();
     const { data, error } = await supabase
       .from("linker_availability")
-      .insert({ linker_id: linker!.id, weekday: day, start_time: "09:00", end_time: "12:00" })
+      .insert({ linker_id: linker!.id, weekday: day, start_time: "08:00", end_time: "20:00" })
       .select("id")
       .single();
     if (error || !data) return setErr("Créneau non ajouté : " + (error?.message ?? "erreur"));
-    setAvail((prev) => [...prev, { id: data.id as string, weekday: day, start: "09:00", end: "12:00" }]);
+    setAvail((prev) => [...prev, { id: data.id as string, weekday: day, start: "08:00", end: "20:00" }]);
     flash();
   }
   async function removeWindow(w: AvailWindow) {
@@ -70,10 +69,6 @@ export default function LinkerProfilPage() {
     const { error } = await supabase.from("linker_availability").update({ start_time: next.start, end_time: next.end }).eq("id", w.id);
     setBusyIds((p) => { const n = new Set(p); n.delete(w.id); return n; });
     if (error) { setAvail(prevAvail); return setErr("Créneau non enregistré : " + error.message); }
-    flash();
-  }
-  async function setMode(m: Mode) {
-    await patchLinker({ mode: m, radius_km: m === "car" ? Math.max(linker!.radius_km, 10) : Math.min(linker!.radius_km, 10) });
     flash();
   }
   async function setRadius(v: number) {
@@ -126,49 +121,44 @@ export default function LinkerProfilPage() {
       </div>
 
       <label className={labelCls}>Mon mode de déplacement</label>
-      <div className="flex gap-2.5">
-        {(["walk", "car"] as Mode[]).map((m) => (
-          <button key={m} type="button" onClick={() => setMode(m)} className="flex-1 rounded-[18px] border-[3px] p-3 text-center" style={{ borderColor: linker.mode === m ? "var(--turquoise)" : "var(--border)", background: linker.mode === m ? "#e3f6fa" : "var(--card)" }}>
-            <div className="text-[26px]">{m === "walk" ? "🚶🚲" : "🚗"}</div>
-            <div className="font-display text-[15px] font-extrabold text-[var(--navy)]">{m === "walk" ? "À pied / vélo" : "Voiture"}</div>
-            <div className="text-[11px] font-bold text-[var(--slate)]">{MAX_KG[m]} kg max</div>
-          </button>
-        ))}
+      <div className="flex items-center gap-3 rounded-[18px] border-[3px] p-3 text-center" style={{ borderColor: "var(--turquoise)", background: "#e3f6fa" }}>
+        <span className="text-[26px]">🚶🚲</span>
+        <div className="min-w-0 flex-1 text-left">
+          <div className="font-display text-[15px] font-extrabold text-[var(--navy)]">À pied / vélo</div>
+          <div className="text-[11px] font-bold text-[var(--slate)]">{MAX_KG.walk} kg max</div>
+        </div>
       </div>
+      <p className="-mt-1 text-[11px] font-semibold text-[var(--muted)]">La collecte en voiture arrivera bientôt.</p>
 
       <label className={labelCls}>Mon rayon d&apos;intervention : <b style={{ color: "#eb6834" }}>{linker.radius_km} km</b></label>
-      <input type="range" min={walk ? 1 : 5} max={walk ? 10 : 50} step={walk ? 1 : 5} value={linker.radius_km} onChange={(e) => setRadius(+e.target.value)} className="h-9 w-full accent-[#eb6834]" />
-      <div className="-mt-2 flex justify-between text-[11px] font-bold text-[var(--muted)]"><span>{walk ? "1 km" : "5 km"}</span><span>{walk ? "10 km" : "50 km"}</span></div>
+      <input type="range" min={1} max={25} step={1} value={linker.radius_km} onChange={(e) => setRadius(+e.target.value)} className="h-9 w-full accent-[#eb6834]" />
+      <div className="-mt-2 flex justify-between text-[11px] font-bold text-[var(--muted)]"><span>1 km</span><span>25 km</span></div>
 
-      <label className={labelCls}>Mes disponibilités <span className="font-semibold text-[var(--muted)]">(jusqu&apos;à 2 fenêtres par jour, à l&apos;heure que tu veux)</span></label>
+      <label className={labelCls}>Mes disponibilités <span className="font-semibold text-[var(--muted)]">(un créneau par jour)</span></label>
       <div className="flex flex-col gap-2">
         {DAYS.map((d, di) => {
-          const windows = avail.filter((w) => w.weekday === di);
+          const w = avail.find((x) => x.weekday === di) ?? null;
           return (
-            <div key={di} className="rounded-[16px] border-2 border-[var(--border)] bg-[var(--card)] p-2.5">
-              <div className="mb-1.5 flex items-center justify-between">
-                <span className="text-[13px] font-bold text-[var(--navy)]">{d}</span>
-                {windows.length < 2 && (
-                  <button type="button" onClick={() => addWindow(di)} className="text-[11.5px] font-bold text-[var(--turquoise-d,#0a8a9c)]">+ Ajouter un créneau</button>
-                )}
-              </div>
-              {windows.length === 0 ? (
-                <p className="text-[11.5px] font-semibold text-[var(--muted)]">Indisponible</p>
-              ) : (
-                <div className="flex flex-col gap-1.5">
-                  {windows.map((w) => (
-                    <div key={w.id} className="flex items-center gap-1.5">
-                      <select className={selectCls} value={w.start} onChange={(e) => editWindow(w, { start: e.target.value })}>
-                        {TIME_OPTIONS.filter((t) => t < w.end).map((t) => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                      <span className="text-[12px] font-bold text-[var(--slate)]">à</span>
-                      <select className={selectCls} value={w.end} onChange={(e) => editWindow(w, { end: e.target.value })}>
-                        {TIME_OPTIONS.filter((t) => t > w.start).map((t) => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                      <button type="button" onClick={() => removeWindow(w)} aria-label="Retirer ce créneau" className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-[var(--input-bg)] text-[18px] text-[var(--slate)]">×</button>
-                    </div>
-                  ))}
-                </div>
+            <div key={di} className="flex items-center gap-2 rounded-[16px] border-2 border-[var(--border)] bg-[var(--card)] p-2.5">
+              <span className="w-[80px] flex-none text-[13px] font-bold text-[var(--navy)]">{d}</span>
+              <select
+                className={`${selectCls} flex-none !w-[112px]`}
+                value={w ? "on" : "off"}
+                onChange={(e) => (e.target.value === "on" ? addWindow(di) : w && removeWindow(w))}
+              >
+                <option value="on">Disponible</option>
+                <option value="off">Fermé</option>
+              </select>
+              {w && (
+                <>
+                  <select className={selectCls} value={w.start} onChange={(e) => editWindow(w, { start: e.target.value })}>
+                    {TIME_OPTIONS.filter((t) => t < w.end).map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <span className="text-[12px] font-bold text-[var(--slate)]">à</span>
+                  <select className={selectCls} value={w.end} onChange={(e) => editWindow(w, { end: e.target.value })}>
+                    {TIME_OPTIONS.filter((t) => t > w.start).map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </>
               )}
             </div>
           );

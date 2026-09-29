@@ -73,7 +73,7 @@ export default function MobilePlanning() {
     if (!cityId) return;
     (async () => {
       const [p, b] = await Promise.all([
-        supabase.from("partners").select("id,name").eq("city_id", cityId).eq("active", true).order("name"),
+        supabase.from("partners").select("id,name").eq("city_id", cityId).eq("active", true).eq("benevole_only", false).order("name"),
         supabase.from("beneficiaries").select("id,name").eq("city_id", cityId).eq("active", true).order("name"),
       ]);
       setPartners((p.data ?? []) as Opt[]);
