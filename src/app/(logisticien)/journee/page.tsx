@@ -17,7 +17,7 @@ const RouteMap = dynamic(() => import("@/components/RouteMap"), {
   loading: () => <div className="flex h-[300px] items-center justify-center text-[12.5px] text-[var(--slate)]">Chargement de la carte…</div>,
 });
 
-type Kind = "partner" | "dropoff" | "stock" | "exceptionnel" | "pause";
+type Kind = "partner" | "dropoff" | "stock" | "exceptionnel" | "pause" | "dechetterie";
 type ResultItem = { denree?: string; name?: string; kg: number; from?: string; sourceId?: string; stockId?: string; colis?: number; subcategoryId?: string; quantity?: number; unit?: string };
 type StopResult = { items?: ResultItem[]; totalKg?: number; photos?: number; photoPaths?: string[]; motif?: string };
 type ChecklistItem = { id: string; label: string };
@@ -62,6 +62,8 @@ type Stop = {
 
 const DENREE_OPTIONS = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
 const DEFAULT_DEPOT_ADDRESS = "110 Rue du Companet, 69140 Rillieux-la-Pape"; // used when the city has no depot address yet
+const DECHETTERIE_NAME = "Déchetterie";
+const DECHETTERIE_ADDRESS = "11 Av. du Dr Schweitzer, 69330 Meyzieu";
 
 function one<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
@@ -75,7 +77,7 @@ const ACCESS_KEY_MAP: Record<string, string> = { digicode: "digicode", quai: "qu
 function rowToStop(r: DbStop, all: DbStop[], depotAddress: string): Stop {
   const rel = one(r.partners) ?? one(r.beneficiaries);
   const fiche = (rel?.fiche ?? {}) as { access?: Record<string, boolean>; accessNote?: string; denrees?: Record<string, boolean> };
-  const kind: Kind = r.kind === "dropoff" ? "dropoff" : r.kind === "stock" ? "stock" : r.kind === "partner" ? "partner" : r.kind === "pause" ? "pause" : "exceptionnel";
+  const kind: Kind = r.kind === "dropoff" ? "dropoff" : r.kind === "stock" ? "stock" : r.kind === "partner" ? "partner" : r.kind === "pause" ? "pause" : r.kind === "dechetterie" ? "dechetterie" : "exceptionnel";
   const items: ResultItem[] = (r.collecte_items ?? []).map((it) => {
     const src = it.source_collecte_id ? all.find((x) => x.id === it.source_collecte_id) : null;
     const srcRel = src ? (one(src.partners) ?? one(src.beneficiaries)) : null;
@@ -85,12 +87,12 @@ function rowToStop(r: DbStop, all: DbStop[], depotAddress: string): Stop {
   return {
     id: r.id,
     time: r.scheduled_time ? r.scheduled_time.slice(0, 5) : "",
-    name: rel?.name ?? r.label ?? "Point de tournée",
-    cat: rel?.category ?? (r.kind === "stock" ? "Dépôt stock" : ""),
+    name: rel?.name ?? r.label ?? (r.kind === "dechetterie" ? DECHETTERIE_NAME : "Point de tournée"),
+    cat: rel?.category ?? (r.kind === "stock" ? "Dépôt stock" : r.kind === "dechetterie" ? "Déchetterie" : ""),
     access: Object.entries(fiche.access ?? {}).filter(([, on]) => on).map(([k]) => ACCESS_KEY_MAP[k] ?? k),
     status,
     kind,
-    address: rel?.address ?? (r.kind === "stock" ? depotAddress : ""),
+    address: rel?.address ?? (r.kind === "stock" ? depotAddress : r.kind === "dechetterie" ? DECHETTERIE_ADDRESS : ""),
     partnerId: r.partner_id ?? undefined,
     accessDetails: fiche.accessNote || undefined,
     planned: r.planned_items?.map((p) => ({ id: p.id, name: p.name, colis: p.colis })),
@@ -263,12 +265,15 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
   const [errCollecte, setErrCollecte] = useState("");
   const [errAnnule, setErrAnnule] = useState("");
 
-  const okLabel = s.kind === "stock" ? "Pris" : s.kind === "dropoff" ? "Déposé" : "Collecté";
+  const okLabel = s.kind === "stock" ? "Pris" : s.kind === "dropoff" ? "Déposé" : s.kind === "dechetterie" ? "Confirmé" : "Collecté";
   const earlier = stops.map((st, idx) => ({ st, idx })).filter(({ st, idx }) => idx < index && (st.kind === "partner" || st.kind === "stock") && st.status === "collecte" && st.result?.items?.length);
   const allowed = s.allowedTypes || [];
 
   function validateCollecte() {
-    if (s.kind === "stock") {
+    if (s.kind === "dechetterie") {
+      if (photos < 1) return setErrCollecte("Ajoutez une photo pour confirmer le passage.");
+      onDone({ items: [], totalKg: 0, photos, photoPaths }, "collecte");
+    } else if (s.kind === "stock") {
       const taken = (s.presetItems ?? []).filter((it) => (stockCounts[it.id] ?? 0) > 0);
       if (taken.length < 1 || photos < 1) return setErrCollecte("Indiquez au moins un produit pris en stock (nombre de colis) et ajoutez une photo.");
       const items: ResultItem[] = taken.map((it) => ({ name: it.name, denree: it.category || undefined, kg: Math.round(((stockCounts[it.id] ?? 0) * it.upc * it.grammage) / 10) / 100, stockId: it.id, colis: stockCounts[it.id] }));
@@ -314,10 +319,12 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
         <div className="mt-3.5 flex flex-col gap-3.5">
           <StepBlock
             n={1}
-            title={s.kind === "stock" ? "Que prenez-vous au stock ?" : s.kind === "dropoff" ? "Que laissez-vous ici ?" : "Qu'avez-vous collecté ?"}
-            sub={s.kind === "stock" ? "Indiquez le nombre de colis pour chaque produit." : s.kind === "dropoff" ? "Cochez les produits déposés. Seuls les types acceptés par l'association sont sélectionnables." : "Une carte par type de denrée : choisissez le type, puis le poids."}
+            title={s.kind === "stock" ? "Que prenez-vous au stock ?" : s.kind === "dropoff" ? "Que laissez-vous ici ?" : s.kind === "dechetterie" ? "Passage déchetterie" : "Qu'avez-vous collecté ?"}
+            sub={s.kind === "stock" ? "Indiquez le nombre de colis pour chaque produit." : s.kind === "dropoff" ? "Cochez les produits déposés. Seuls les types acceptés par l'association sont sélectionnables." : s.kind === "dechetterie" ? "Rien à saisir, juste à confirmer avec une photo à l'étape suivante." : "Une carte par type de denrée : choisissez le type, puis le poids."}
           >
-          {s.kind === "partner" || s.kind === "exceptionnel" ? (
+          {s.kind === "dechetterie" ? (
+            <p className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--input-bg)] px-3.5 py-3 text-[12.5px] leading-[1.5] text-[var(--slate)]">Confirmez simplement que le passage a eu lieu — prenez une photo à l&apos;étape 2.</p>
+          ) : s.kind === "partner" || s.kind === "exceptionnel" ? (
             <div>
               <div className="flex flex-col gap-3">
                 {rows.map((row, idx) => (
@@ -503,7 +510,7 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
           </StepBlock>
           {errCollecte && <div className="rounded-xl bg-[var(--critical-bg)] px-3.5 py-2.5 text-[12.5px] font-semibold text-[var(--critical)]">{errCollecte}</div>}
           <button type="button" onClick={validateCollecte} className="min-h-[56px] rounded-[40px] bg-[var(--good)] px-4 py-3.5 font-display text-[16px] font-bold text-white">
-            {s.kind === "stock" ? "Valider la sortie de stock" : s.kind === "dropoff" ? "Valider la dépose" : "Valider la collecte"}
+            {s.kind === "stock" ? "Valider la sortie de stock" : s.kind === "dropoff" ? "Valider la dépose" : s.kind === "dechetterie" ? "Confirmer le passage" : "Valider la collecte"}
           </button>
         </div>
       )}
@@ -904,7 +911,7 @@ export default function JourneePage() {
     if (!mapOpen || stops.length === 0) return;
     let cancelled = false;
     (async () => {
-      const hex: Record<Kind, string> = { partner: "#0a1a3f", stock: "#b97600", dropoff: "#1a8f68", exceptionnel: "#1f93a8", pause: "#7a7f8c" };
+      const hex: Record<Kind, string> = { partner: "#0a1a3f", stock: "#b97600", dropoff: "#1a8f68", exceptionnel: "#1f93a8", pause: "#7a7f8c", dechetterie: "#6b7f3a" };
       const depot = await geocode(depotAddr);
       const found: { s: Stop; i: number; g: { lat: number; lng: number } }[] = [];
       for (let i = 0; i < stops.length; i++) {
@@ -1120,9 +1127,9 @@ export default function JourneePage() {
             {stops.map((s, i) => {
               const done = s.status !== "todo";
               const isPause = s.kind === "pause";
-              const badge = isPause ? "Pause" : s.status === "collecte" ? (s.kind === "stock" ? "Pris" : s.kind === "dropoff" ? "Déposé" : "Collecté") : s.status === "annule" ? "Annulé" : "À faire";
-              const borderCls = isPause ? "border-l-[3px] border-dashed border-l-[var(--muted)]" : s.kind === "stock" ? "border-l-[3px] border-l-[var(--stock-accent)]" : s.kind === "dropoff" ? "border-l-[3px] border-l-[var(--dropoff)]" : s.kind === "exceptionnel" ? "border-l-[3px] border-l-[var(--exc-accent)]" : "";
-              const iconCls = isPause ? "bg-[var(--todo-bg)] text-[var(--slate)]" : s.kind === "stock" ? "bg-[var(--stock-accent-bg)] text-[var(--stock-accent)]" : s.kind === "dropoff" ? "bg-[var(--dropoff-bg)] text-[var(--dropoff)]" : s.kind === "exceptionnel" ? "bg-[var(--exc-accent-bg)] text-[var(--exc-accent)]" : "bg-[var(--todo-bg)] text-[var(--slate)]";
+              const badge = isPause ? "Pause" : s.status === "collecte" ? (s.kind === "stock" ? "Pris" : s.kind === "dropoff" ? "Déposé" : s.kind === "dechetterie" ? "Confirmé" : "Collecté") : s.status === "annule" ? "Annulé" : "À faire";
+              const borderCls = isPause ? "border-l-[3px] border-dashed border-l-[var(--muted)]" : s.kind === "stock" ? "border-l-[3px] border-l-[var(--stock-accent)]" : s.kind === "dropoff" ? "border-l-[3px] border-l-[var(--dropoff)]" : s.kind === "exceptionnel" ? "border-l-[3px] border-l-[var(--exc-accent)]" : s.kind === "dechetterie" ? "border-l-[3px] border-l-[#6b7f3a]" : "";
+              const iconCls = isPause ? "bg-[var(--todo-bg)] text-[var(--slate)]" : s.kind === "stock" ? "bg-[var(--stock-accent-bg)] text-[var(--stock-accent)]" : s.kind === "dropoff" ? "bg-[var(--dropoff-bg)] text-[var(--dropoff)]" : s.kind === "exceptionnel" ? "bg-[var(--exc-accent-bg)] text-[var(--exc-accent)]" : s.kind === "dechetterie" ? "bg-[#6b7f3a1a] text-[#6b7f3a]" : "bg-[var(--todo-bg)] text-[var(--slate)]";
               const badgeCls = isPause ? "bg-[var(--todo-bg)] text-[var(--slate)]" : s.status === "collecte" ? (s.kind === "dropoff" ? "bg-[var(--dropoff-bg)] text-[var(--dropoff)]" : "bg-[var(--good-bg)] text-[var(--good)]") : s.status === "annule" ? "bg-[var(--critical-bg)] text-[var(--critical)]" : "bg-[var(--todo-bg)] text-[var(--slate)]";
               const orderCls = s.status === "collecte" ? "bg-[var(--good-bg)] text-[var(--good)]" : s.status === "annule" ? "bg-[var(--critical-bg)] text-[var(--critical)]" : "bg-[var(--todo-bg)] text-[var(--navy)]";
               return (
@@ -1146,7 +1153,7 @@ export default function JourneePage() {
                         </span>
                       </span>
                       <span className="min-w-0 flex-1">
-                        <div className="mb-0.5 text-[9.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">{isPause ? "Pause à" : s.kind === "dropoff" ? "Dépose prévue à" : s.kind === "stock" ? "Prise prévue à" : "Collecte prévue à"}</div>
+                        <div className="mb-0.5 text-[9.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">{isPause ? "Pause à" : s.kind === "dropoff" ? "Dépose prévue à" : s.kind === "stock" ? "Prise prévue à" : s.kind === "dechetterie" ? "Déchetterie prévue à" : "Collecte prévue à"}</div>
                         <div className="font-display text-[19px] leading-none font-black text-[var(--navy)]">{s.time || "—"}</div>
                         <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[15.5px] leading-tight font-bold text-[var(--navy)]">
                           <span>{s.name}</span>

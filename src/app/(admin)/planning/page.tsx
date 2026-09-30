@@ -17,7 +17,7 @@ const RouteMap = dynamic(() => import("@/components/RouteMap"), {
 });
 const TRAFFIC_FACTOR = 1.15; // city traffic margin applied to the raw road durations
 
-type Kind = "partner" | "dropoff" | "stock" | "exceptionnel" | "demande_client" | "pause";
+type Kind = "partner" | "dropoff" | "stock" | "exceptionnel" | "demande_client" | "pause" | "dechetterie";
 type Status = "planifie" | "annule";
 type Coords = { x: number; y: number };
 type Stop = {
@@ -40,7 +40,7 @@ type Stop = {
 type StopC = Stop & { coords: Coords };
 type EnrichedStop = StopC & { scheduledTime: string | null; travelFromPrev: number; travelKmFromPrev: number; arrivalMin?: number; waitMin?: number };
 type ChecklistItem = { id: string; label: string };
-type Place = { key: string; kind: "partner" | "dropoff" | "stock"; name: string; cat: string; address: string; partnerId: string | null; beneficiaryId: string | null; passage?: Passage; creneaux?: Creneaux };
+type Place = { key: string; kind: "partner" | "dropoff" | "stock" | "dechetterie"; name: string; cat: string; address: string; partnerId: string | null; beneficiaryId: string | null; passage?: Passage; creneaux?: Creneaux };
 type DbRel = { name: string; category: string | null; address: string | null; passage?: Passage | null; creneaux?: Creneaux | null };
 type DbCollecte = {
   id: string;
@@ -74,6 +74,13 @@ const LUNCH_DEFAULT_DURATION = 30; // durée mini par défaut à l'ajout, modifi
 const HARD_LIMIT = 18 * 60;
 const DEPOT_NAME = "Entrepôt Linkee"; // the depot address depends on the city (cities.depot_address)
 const depotPlace = (address: string): Place => ({ key: "depot", kind: "stock", name: DEPOT_NAME, cat: "Dépôt stock", address, partnerId: null, beneficiaryId: null });
+
+// Passage déchetterie : un seul lieu fixe, créneau hebdomadaire par défaut (mardi + mercredi) — pas de fiche
+// dédiée, contrairement aux partenaires/bénéficiaires, donc adresse et créneaux sont ici des constantes.
+const DECHETTERIE_NAME = "Déchetterie";
+const DECHETTERIE_ADDRESS = "11 Av. du Dr Schweitzer, 69330 Meyzieu";
+const DECHETTERIE_CRENEAUX: Creneaux = { mar: [{ open: "09:00", close: "10:00" }], mer: [{ open: "10:00", close: "11:00" }] };
+const DECHETTERIE_PLACE: Place = { key: "dechetterie", kind: "dechetterie", name: DECHETTERIE_NAME, cat: "Déchetterie", address: DECHETTERIE_ADDRESS, partnerId: null, beneficiaryId: null, creneaux: DECHETTERIE_CRENEAUX };
 
 const DENREE_OPTIONS = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
 const DOW_NAMES = ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
@@ -139,20 +146,20 @@ function rowToStop(r: DbCollecte, depotAddress: string): Stop {
   const rel = p ?? b;
   return {
     id: r.id,
-    name: rel?.name ?? r.label ?? "Point de tournée",
-    cat: rel?.category ?? (r.kind === "stock" ? "Dépôt stock" : ""),
+    name: rel?.name ?? r.label ?? (r.kind === "dechetterie" ? DECHETTERIE_NAME : "Point de tournée"),
+    cat: rel?.category ?? (r.kind === "stock" ? "Dépôt stock" : r.kind === "dechetterie" ? "Déchetterie" : ""),
     kind: r.kind,
     duration: r.duration_min ?? 10,
     status: r.status === "annule" ? "annule" : "planifie",
     dbStatus: r.status,
     comment: r.comment ?? undefined,
-    address: rel?.address ?? (r.kind === "stock" ? depotAddress : ""),
+    address: rel?.address ?? (r.kind === "stock" ? depotAddress : r.kind === "dechetterie" ? DECHETTERIE_ADDRESS : ""),
     partnerId: r.partner_id,
     beneficiaryId: r.beneficiary_id,
     label: r.label,
     photoPaths: r.photo_paths ?? [],
     passage: p?.passage ?? undefined,
-    creneaux: p?.creneaux ?? b?.creneaux ?? undefined,
+    creneaux: p?.creneaux ?? b?.creneaux ?? (r.kind === "dechetterie" ? DECHETTERIE_CRENEAUX : undefined),
   };
 }
 
@@ -192,7 +199,7 @@ function computeSchedule(stops: StopC[], legs: Leg[] | undefined, dayStart: numb
     const natural = t + travel;
     // arrivée avant l'ouverture du créneau habituel du partenaire : on attend (non bloquant, intégré aux
     // horaires) ; arrivée après la fermeture de tous les créneaux du jour : rien à faire, juste signalé.
-    const { arrival, waitMin } = (s.kind === "partner" || s.kind === "dropoff") && s.creneaux ? resolveArrival(natural, slotsForDate(s.creneaux, dateIso)) : { arrival: natural, waitMin: 0 };
+    const { arrival, waitMin } = (s.kind === "partner" || s.kind === "dropoff" || s.kind === "dechetterie") && s.creneaux ? resolveArrival(natural, slotsForDate(s.creneaux, dateIso)) : { arrival: natural, waitMin: 0 };
     totalTravel += travel;
     totalKm += km;
     const arrivalMin = arrival;
@@ -216,7 +223,7 @@ function computeSchedule(stops: StopC[], legs: Leg[] | undefined, dayStart: numb
   return { stops: enriched, dayEnd: t, totalTravel, totalKm, totalDuration, returnMin, returnKm };
 }
 
-const KIND_BADGE: Record<string, string> = { stock: "Stock", dropoff: "Dépose", demande_client: "Demande exceptionnelle client", exceptionnel: "Exceptionnel", pause: "Pause" };
+const KIND_BADGE: Record<string, string> = { stock: "Stock", dropoff: "Dépose", demande_client: "Demande exceptionnelle client", exceptionnel: "Exceptionnel", pause: "Pause", dechetterie: "Déchetterie" };
 const KIND_BORDER: Record<Kind, string> = {
   partner: "",
   stock: "border-l-4 border-l-[var(--stock-accent)]",
@@ -224,6 +231,7 @@ const KIND_BORDER: Record<Kind, string> = {
   exceptionnel: "border-l-4 border-l-[var(--exc-accent)]",
   demande_client: "border-l-4 border-l-[var(--client-req)] bg-[var(--client-req-bg)]",
   pause: "border-l-4 border-l-[var(--muted)] border-dashed bg-[var(--input-bg)]",
+  dechetterie: "border-l-4 border-l-[#6b7f3a]",
 };
 const KIND_BADGE_CLS: Record<string, string> = {
   stock: "bg-[var(--stock-accent-bg)] text-[var(--stock-accent)]",
@@ -231,6 +239,7 @@ const KIND_BADGE_CLS: Record<string, string> = {
   exceptionnel: "bg-[var(--exc-accent-bg)] text-[var(--exc-accent)]",
   demande_client: "bg-[var(--client-req)] text-white",
   pause: "bg-[var(--track)] text-[var(--slate)]",
+  dechetterie: "bg-[#6b7f3a1a] text-[#6b7f3a]",
 };
 
 const SELECT_DAY =
@@ -385,6 +394,7 @@ export default function PlanningPage() {
           key: "b:" + b.id, kind: "dropoff" as const, name: b.name, cat: b.category ?? "", address: b.address ?? "", partnerId: null, beneficiaryId: b.id, creneaux: b.creneaux ?? undefined,
         })),
         DEPOT_PLACE,
+        DECHETTERIE_PLACE,
       ];
       setPlaces(list);
       const firstPartner = list.find((p) => p.kind === "partner");
@@ -485,10 +495,11 @@ export default function PlanningPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cityId, iso]);
 
-  // Dépose fixe hebdomadaire : toute association dont la fiche a un "Créneau de livraison fixe" renseigné
-  // (Adresse & accès) pour le jour affiché est ajoutée automatiquement au planning, si elle n'y est pas déjà
-  // — plus besoin de la recréer chaque semaine à la main. Ne remonte jamais dans le passé (on ne réécrit pas
-  // l'historique d'un jour jamais consulté).
+  // Arrêts fixes hebdomadaires : toute association dont la fiche a un "Créneau de livraison fixe" renseigné
+  // (Adresse & accès), et le passage déchetterie (créneau constant, mardi + mercredi), sont ajoutés
+  // automatiquement au planning pour le jour affiché, s'ils n'y sont pas déjà — plus besoin de les recréer
+  // chaque semaine à la main. Ne remonte jamais dans le passé (on ne réécrit pas l'historique d'un jour
+  // jamais consulté).
   const autoDropoffChecked = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (ro || loadingDay || !cityId || !places.length) return;
@@ -496,10 +507,13 @@ export default function PlanningPage() {
     const key = `${cityId}|${iso}`;
     if (autoDropoffChecked.current.has(key)) return;
     autoDropoffChecked.current.add(key);
-    const toAdd = places.filter(
-      (p) => p.kind === "dropoff" && p.creneaux && slotsForDate(p.creneaux, iso).length > 0 && !stops.some((s) => s.kind === "dropoff" && s.beneficiaryId === p.beneficiaryId),
-    );
-    toAdd.forEach((p) => insertStop(p, "dropoff", {}));
+    const toAdd = places.filter((p) => {
+      if (!p.creneaux || slotsForDate(p.creneaux, iso).length === 0) return false;
+      if (p.kind === "dropoff") return !stops.some((s) => s.kind === "dropoff" && s.beneficiaryId === p.beneficiaryId);
+      if (p.kind === "dechetterie") return !stops.some((s) => s.kind === "dechetterie");
+      return false;
+    });
+    toAdd.forEach((p) => insertStop(p, p.kind === "dechetterie" ? "dechetterie" : "dropoff", {}));
   }, [ro, loadingDay, cityId, iso, places, stops]);
 
   /* ---------- write back order / times after user edits ---------- */
@@ -573,12 +587,12 @@ export default function PlanningPage() {
         kind,
         partner_id: place.partnerId,
         beneficiary_id: place.beneficiaryId,
-        label: place.key === "depot" ? place.name : null,
+        label: !place.partnerId && !place.beneficiaryId ? place.name : null,
         scheduled_date: iso,
         sort_order: stops.length,
         status: "todo",
         comment: extra.comment || null,
-        duration_min: 10,
+        duration_min: kind === "dechetterie" ? 60 : 10,
         denree: extra.denree ?? null,
         volume_kg: extra.volume ?? null,
       })
@@ -586,9 +600,9 @@ export default function PlanningPage() {
       .single();
     if (error || !data) return fail("Ajout impossible", error?.message ?? "erreur inconnue");
     const stop: Stop = {
-      id: data.id as string, name: place.name, cat: place.cat, kind, duration: 10, status: "planifie", dbStatus: "todo",
+      id: data.id as string, name: place.name, cat: place.cat, kind, duration: kind === "dechetterie" ? 60 : 10, status: "planifie", dbStatus: "todo",
       comment: extra.comment || undefined, address: place.address, partnerId: place.partnerId, beneficiaryId: place.beneficiaryId,
-      label: place.key === "depot" ? place.name : null,
+      label: !place.partnerId && !place.beneficiaryId ? place.name : null,
       photoPaths: [],
       passage: place.passage,
       creneaux: place.creneaux,
@@ -707,7 +721,7 @@ export default function PlanningPage() {
   }
 
   /* ---------- map projection (km → svg) ---------- */
-  const KIND_HEX: Record<Kind, string> = { partner: "#0a1a3f", stock: "#b97600", dropoff: "#1a8f68", exceptionnel: "#1f93a8", demande_client: "#7c5cd9", pause: "#7a7f8c" };
+  const KIND_HEX: Record<Kind, string> = { partner: "#0a1a3f", stock: "#b97600", dropoff: "#1a8f68", exceptionnel: "#1f93a8", demande_client: "#7c5cd9", pause: "#7a7f8c", dechetterie: "#6b7f3a" };
   const mapPoints: MapPoint[] = [];
   if (depotGeo) mapPoints.push({ lat: depotGeo.lat, lng: depotGeo.lng, label: "Entrepôt Linkee — départ", color: "#4FC1D6", num: "home", time: `Début de journée ${fmtTime(dayStart)}` });
   activeStops.forEach((s) => {
@@ -1061,7 +1075,7 @@ export default function PlanningPage() {
                     </span>
                     <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-full bg-[var(--track)] font-display text-xs font-extrabold text-[var(--navy)]">{i + 1}</span>
                     <span className={`w-[70px] flex-none leading-tight ${cancelled ? "opacity-60" : ""}`}>
-                      <span className="block text-[9.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">{s.kind === "dropoff" ? "Dépose" : s.kind === "stock" ? "Prise stock" : s.kind === "pause" ? "Pause" : "Collecte"}</span>
+                      <span className="block text-[9.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">{s.kind === "dropoff" ? "Dépose" : s.kind === "stock" ? "Prise stock" : s.kind === "pause" ? "Pause" : s.kind === "dechetterie" ? "Déchetterie" : "Collecte"}</span>
                       <span className="block font-display text-[18px] font-extrabold text-[var(--navy)]">{s.scheduledTime || "—"}</span>
                       {s.arrivalMin !== undefined && (
                         <span className="block text-[10.5px] text-[var(--slate)]">→ {fmtTime(s.kind === "pause" ? Math.max(LUNCH_RESUME_FLOOR, s.arrivalMin + s.duration) : s.arrivalMin + s.duration)}</span>
@@ -1091,7 +1105,7 @@ export default function PlanningPage() {
                         )}
                       </div>
                       <div className="text-[11.5px] text-[var(--slate)]">{s.cat}</div>
-                      {(s.kind === "partner" || s.kind === "dropoff") && s.creneaux && (() => {
+                      {(s.kind === "partner" || s.kind === "dropoff" || s.kind === "dechetterie") && s.creneaux && (() => {
                         const todaySlots = slotsForDate(s.creneaux, iso);
                         if (!todaySlots.length) return null;
                         const mismatch = s.arrivalMin !== undefined && outsideUsualSlots(s.arrivalMin, todaySlots);

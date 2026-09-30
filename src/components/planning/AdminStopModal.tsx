@@ -117,7 +117,9 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
         return;
       }
       let items: { denree: string | null; name: string | null; kg: number; subcategory_id?: string | null; quantity?: number | null; unit?: string | null; source_collecte_id?: string | null }[] = [];
-      if (stop.kind === "stock") {
+      if (stop.kind === "dechetterie") {
+        items = [];
+      } else if (stop.kind === "stock") {
         const taken = stock.filter((it) => (stockCounts[it.id] ?? 0) > 0);
         if (taken.length < 1) throw new Error("Indique au moins un produit pris en stock (nombre de colis).");
         const take = await supabase.rpc("take_stock", { p_items: taken.map((it) => ({ id: it.id, colis: stockCounts[it.id] })), p_destination: `Tournée du ${date}`, p_day: date, p_time: null });
@@ -158,7 +160,7 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
     const kg = rowKg(r);
     return kg == null ? s : s + itemValue({ kg, subcategory_id: r.sub || null, quantity: parseFloat(r.qty.replace(",", ".")) }, subsById).value;
   }, 0);
-  const okLabel = stop.kind === "stock" ? "Pris" : stop.kind === "dropoff" ? "Déposé" : "Collecté";
+  const okLabel = stop.kind === "stock" ? "Pris" : stop.kind === "dropoff" ? "Déposé" : stop.kind === "dechetterie" ? "Passage confirmé" : "Collecté";
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/45 p-4" onClick={onClose}>
@@ -214,6 +216,8 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
               </label>
             ))}
           </div>
+        ) : stop.kind === "dechetterie" ? (
+          <p className="rounded-xl bg-[var(--input-bg)] px-3.5 py-3 text-[13px] leading-[1.5] text-[var(--slate)]">Rien à saisir — confirme juste que le passage à la déchetterie a bien eu lieu (photo facultative ci-dessous).</p>
         ) : (
           <div>
             <div className="flex flex-col gap-2.5">
