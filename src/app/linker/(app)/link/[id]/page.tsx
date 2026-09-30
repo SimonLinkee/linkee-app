@@ -138,15 +138,18 @@ export default function LinkFichePage() {
 
         {row.status === "proposee" && !row.linker_id && (
           <>
-            <button type="button" onClick={toggleConfirmed} className="mt-3 flex min-h-[50px] w-full items-center gap-2.5 rounded-[16px] border-2 p-3 text-left text-[13.5px] font-bold" style={{ borderColor: row.asso_confirmed ? "var(--good)" : "var(--sun-d,#e0a800)", background: row.asso_confirmed ? "var(--good-bg)" : "#fff7dd" }}>
-              <span className="flex h-6 w-6 flex-none items-center justify-center rounded-[8px] text-white" style={{ background: row.asso_confirmed ? "var(--good)" : "#fff", border: row.asso_confirmed ? "none" : "2px solid var(--sun-d,#e0a800)", color: row.asso_confirmed ? "#fff" : "transparent" }}>✓</span>
-              Asso contactée, livraison OK
+            <div className="mt-3 rounded-[14px] bg-[#fff7dd] px-3.5 py-3 text-[12.5px] leading-[1.5] font-semibold text-[var(--navy)]">
+              ⚠️ Avant de partir, n&apos;oublie pas de contacter l&apos;association pour t&apos;assurer qu&apos;elle peut réceptionner le don.
+            </div>
+            <button type="button" onClick={toggleConfirmed} className="mt-2.5 flex min-h-[46px] w-full items-center gap-2.5 rounded-[14px] border-2 p-2.5 text-left text-[13px] font-bold" style={{ borderColor: row.asso_confirmed ? "var(--good)" : "var(--border)", background: row.asso_confirmed ? "var(--good-bg)" : "var(--card)" }}>
+              <span className="flex h-6 w-6 flex-none items-center justify-center rounded-[8px] text-white" style={{ background: row.asso_confirmed ? "var(--good)" : "#fff", border: row.asso_confirmed ? "none" : "2px solid var(--border)", color: row.asso_confirmed ? "#fff" : "transparent" }}>✓</span>
+              Association contactée, livraison OK
             </button>
             {err && <p className="mt-2 rounded-[12px] bg-[var(--critical-bg)] px-3 py-2 text-[12.5px] font-bold text-[var(--critical)]">{err}</p>}
-            <button type="button" disabled={!row.asso_confirmed || busy} onClick={accept} className="mt-3 flex min-h-[52px] w-full items-center justify-center rounded-[40px] bg-[var(--navy-deep)] font-display text-[16px] font-bold text-[var(--panel-fg)] disabled:opacity-45">
+            <button type="button" disabled={busy} onClick={accept} className="mt-3 flex min-h-[52px] w-full items-center justify-center rounded-[40px] bg-[var(--navy-deep)] font-display text-[16px] font-bold text-[var(--panel-fg)] disabled:opacity-45">
               {busy ? "…" : "Accepter ce Link"}
             </button>
-            <p className="mt-1.5 text-center text-[11px] font-semibold text-[var(--muted)]">Premier arrivé, premier servi — appelle l&apos;asso avant d&apos;accepter.</p>
+            <p className="mt-1.5 text-center text-[11px] font-semibold text-[var(--muted)]">Premier arrivé, premier servi.</p>
           </>
         )}
 
