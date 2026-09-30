@@ -11,10 +11,13 @@ export const BACKUP_TABLES = [
 
 const KEEP_DAYS = 30;
 const AUDIT_KEEP_DAYS = 400;
-// Notifications sont éphémères (juste une cloche de suivi) : purge après 90 jours, lues ou non — contrairement
-// à audit_log/day_sessions qui sont un historique métier, pas gardées ici par prudence (retenue de justificatifs
-// de temps de travail : à trancher avec Simon avant d'y toucher).
+// Notifications sont éphémères (juste une cloche de suivi) : purge après 90 jours, lues ou non.
 const NOTIFICATIONS_KEEP_DAYS = 90;
+// day_sessions = justificatif des heures travaillées par le logisticien (checklist + horaires de la journée).
+// Le code du travail ne fixe pas de durée précise pour ce type de justificatif, mais la pratique courante
+// (alignée sur la conservation des bulletins de paie, Art. D3243-8) est de 5 ans — choisi par défaut ici en
+// l'absence d'un avis juridique formel (décision Simon, 30/09/2026 : "fais ce qui te parait le mieux").
+const DAY_SESSIONS_KEEP_DAYS = 1825;
 
 async function fetchAll(admin: SupabaseClient, table: string) {
   const rows: unknown[] = [];
@@ -47,6 +50,7 @@ export async function runBackup(admin: SupabaseClient) {
   if (old.length && (list.data ?? []).length - old.length >= 1) await admin.storage.from("backups").remove(old);
   await admin.from("audit_log").delete().lt("at", new Date(Date.now() - AUDIT_KEEP_DAYS * 86400000).toISOString());
   await admin.from("notifications").delete().lt("created_at", new Date(Date.now() - NOTIFICATIONS_KEEP_DAYS * 86400000).toISOString());
+  await admin.from("day_sessions").delete().lt("day", new Date(Date.now() - DAY_SESSIONS_KEEP_DAYS * 86400000).toISOString().slice(0, 10));
 
   return { name, size: body.length, counts };
 }

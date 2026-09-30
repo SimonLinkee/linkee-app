@@ -39,10 +39,26 @@ async function viaOsrm(points: Pt[]): Promise<RouteResult> {
   };
 }
 
+// Limite anti-abus par utilisateur (best-effort : en mémoire par instance serverless, donc pas garanti
+// sur plusieurs instances, mais suffit à contrer un script naïf qui viserait à épuiser le quota ORS payant).
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 30;
+const hits = new Map<string, number[]>();
+
+function rateLimited(userId: string): boolean {
+  const now = Date.now();
+  const recent = (hits.get(userId) ?? []).filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+  recent.push(now);
+  hits.set(userId, recent);
+  if (hits.size > 5000) for (const [k, v] of hits) if (now - v[v.length - 1] > RATE_LIMIT_WINDOW_MS) hits.delete(k);
+  return recent.length > RATE_LIMIT_MAX;
+}
+
 export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return NextResponse.json({ error: "Non connecté" }, { status: 401 });
+  if (rateLimited(auth.user.id)) return NextResponse.json({ error: "Trop de requêtes, réessayez dans une minute." }, { status: 429 });
 
   const body = (await request.json().catch(() => null)) as { points?: Pt[] } | null;
   const points = body?.points;
