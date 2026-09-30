@@ -5,11 +5,13 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useLinker } from "@/components/linker/LinkerContext";
 import { geocode, toKm } from "@/lib/geocode";
+import { signedUrls } from "@/lib/photos";
 
 type Rel = { name: string; address: string | null; contacts?: { tel?: string }[] } | null;
 type LinkRow = {
   id: string; status: string; kg_estime: number; is_fresh: boolean; window_date: string; window_from: string; window_to: string;
-  asso_confirmed: boolean; linker_id: string | null; partners: Rel; beneficiaries: (Rel & { contacts?: { type?: string; tel?: string }[] }) | null;
+  asso_confirmed: boolean; linker_id: string | null; denree: string | null; photo_paths: string[];
+  partners: Rel; beneficiaries: (Rel & { contacts?: { type?: string; tel?: string }[] }) | null;
 };
 
 const fmtWin = (r: LinkRow) => `${r.window_from.slice(0, 5)} – ${r.window_to.slice(0, 5)}`;
@@ -26,17 +28,19 @@ export default function LinkFichePage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [weight, setWeight] = useState("");
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
 
   async function load() {
     const { data } = await supabase
       .from("links")
-      .select("id,status,kg_estime,is_fresh,window_date,window_from,window_to,asso_confirmed,linker_id,partners(name,address),beneficiaries(name,address,contacts)")
+      .select("id,status,kg_estime,is_fresh,window_date,window_from,window_to,asso_confirmed,linker_id,denree,photo_paths,partners(name,address),beneficiaries(name,address,contacts)")
       .eq("id", params.id)
       .maybeSingle();
     const r = data as unknown as LinkRow | null;
     setRow(r);
     setWeight(r ? String(r.kg_estime) : "");
     setLoading(false);
+    if (r?.photo_paths?.length) signedUrls(supabase, r.photo_paths).then((urls) => setPhotoUrls(urls.filter(Boolean)));
     if (r?.partners?.address && r?.beneficiaries?.address) {
       const [a, b] = await Promise.all([geocode(r.partners.address), geocode(r.beneficiaries.address)]);
       if (a && b) setDist(Math.hypot(toKm(b, a).x, toKm(b, a).y));
@@ -95,6 +99,15 @@ export default function LinkFichePage() {
         </span>
         <h1 className="mt-2 font-display text-[24px] font-black text-[var(--navy)]">{row.partners?.name}</h1>
         <p className="text-[13px] font-semibold text-[var(--slate)]">{row.partners?.address}</p>
+        {row.denree && <p className="mt-1 text-[12.5px] font-bold text-[var(--navy)]">🧺 {row.denree}</p>}
+        {photoUrls.length > 0 && (
+          <div className="mt-2 flex gap-2 overflow-x-auto">
+            {photoUrls.map((u, i) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={i} src={u} alt="" className="h-20 w-20 flex-none rounded-[14px] object-cover" />
+            ))}
+          </div>
+        )}
 
         <div className="mt-3 grid grid-cols-3 gap-2">
           <div className="rounded-[14px] bg-[var(--track)] p-2.5 text-center">
