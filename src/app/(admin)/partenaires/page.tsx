@@ -270,10 +270,19 @@ function SlotsEditor({ value, onChange }: { value: Creneaux; onChange: (v: Crene
             ) : (
               <div className="mt-1.5 flex flex-col gap-1.5">
                 {slots.map((s, i) => (
-                  <div key={i} className="flex items-center gap-2">
+                  <div key={i} className="flex flex-wrap items-center gap-2">
                     <input type="time" className={`${inputCls} !w-auto !px-2 !py-1.5 !text-xs`} value={s.open} onChange={(e) => updateSlot(d.k, i, { open: e.target.value })} />
                     <span className="text-[11px] text-[var(--muted)]">à</span>
                     <input type="time" className={`${inputCls} !w-auto !px-2 !py-1.5 !text-xs`} value={s.close} onChange={(e) => updateSlot(d.k, i, { close: e.target.value })} />
+                    <select
+                      className={`${inputCls} !w-auto !px-2 !py-1.5 !text-xs`}
+                      value={s.weekParity ?? "toutes"}
+                      onChange={(e) => updateSlot(d.k, i, { weekParity: e.target.value === "toutes" ? undefined : (e.target.value as "even" | "odd") })}
+                    >
+                      <option value="toutes">Toutes les semaines</option>
+                      <option value="even">Une semaine sur deux — semaines paires</option>
+                      <option value="odd">Une semaine sur deux — semaines impaires</option>
+                    </select>
                     <button type="button" onClick={() => removeSlot(d.k, i)} title="Supprimer ce créneau" className="ml-1 flex h-6 w-6 flex-none items-center justify-center rounded-full border-[1.5px] border-[var(--border)] text-[var(--slate)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]">
                       ×
                     </button>
