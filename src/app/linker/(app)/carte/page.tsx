@@ -77,12 +77,11 @@ export default function LinkerCartePage() {
 
   const compatible = useMemo(() => {
     if (!linker) return [];
+    // L'option voiture est retirée : toutes les collectes se font en sac à dos / vélo désormais.
     return rows.filter((r) => {
-      if (linker.mode === "walk" ? r.mode_required === "car" : false) return false; // a car-only Link needs a car
-      if (r.kg_estime > MAX_KG[linker.mode]) return false;
+      if (r.kg_estime > MAX_KG.walk) return false;
       if (r.is_fresh && !linker.cold_ok) return false;
-      if (!r.partners?.allow_backpack && linker.mode === "walk") return false;
-      if (!r.partners?.allow_car && linker.mode === "car") return false;
+      if (!r.partners?.allow_backpack) return false;
       return true;
     });
   }, [rows, linker]);
