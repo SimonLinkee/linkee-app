@@ -21,6 +21,7 @@ export default function LinkerInscriptionPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [sentTo, setSentTo] = useState("");
+  const [consent, setConsent] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -83,6 +84,7 @@ export default function LinkerInscriptionPage() {
     if (d.password.length < 8) return setErr("Mot de passe : 8 caractères minimum.");
     if (!d.name.trim()) return setErr("Indique ton prénom.");
     if (!d.cityId) return setErr("Choisis ta ville.");
+    if (!consent) return setErr("Coche la case pour accepter l'utilisation de tes données avant de continuer.");
     setBusy(true);
     saveDraft(d);
     const { data, error } = await supabase.auth.signUp({
@@ -168,11 +170,21 @@ export default function LinkerInscriptionPage() {
         <label className={labelCls}>Légumes</label>
         <div className="grid grid-cols-4 gap-2">{LEGUMES.map(charCell)}</div>
 
+        {showAuthFields && (
+          <label className="mt-4 flex cursor-pointer items-start gap-2.5 text-[12.5px] leading-[1.5] font-semibold text-[var(--slate)]">
+            <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5 h-[17px] w-[17px] flex-none accent-[var(--turquoise)]" />
+            <span>
+              J&apos;accepte que Linkee utilise mes données (prénom, téléphone, ville) pour organiser les collectes bénévoles — voir la{" "}
+              <a href="/politique-de-confidentialite" target="_blank" rel="noopener noreferrer" className="font-bold text-[var(--turquoise)] underline">politique de confidentialité</a>.
+            </span>
+          </label>
+        )}
+
         {err && <div className="mt-3 rounded-[14px] bg-[var(--critical-bg)] px-3.5 py-2.5 text-[12.5px] font-bold text-[var(--critical)]">{err}</div>}
 
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || (showAuthFields && !consent)}
           onClick={showAuthFields ? submitForm : finishSignup}
           className="mt-5 flex min-h-[54px] w-full items-center justify-center rounded-[40px] bg-[var(--navy-deep)] font-display text-[17px] font-bold text-[var(--panel-fg)] disabled:opacity-60"
         >

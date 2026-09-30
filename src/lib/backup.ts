@@ -11,6 +11,10 @@ export const BACKUP_TABLES = [
 
 const KEEP_DAYS = 30;
 const AUDIT_KEEP_DAYS = 400;
+// Notifications sont éphémères (juste une cloche de suivi) : purge après 90 jours, lues ou non — contrairement
+// à audit_log/day_sessions qui sont un historique métier, pas gardées ici par prudence (retenue de justificatifs
+// de temps de travail : à trancher avec Simon avant d'y toucher).
+const NOTIFICATIONS_KEEP_DAYS = 90;
 
 async function fetchAll(admin: SupabaseClient, table: string) {
   const rows: unknown[] = [];
@@ -42,6 +46,7 @@ export async function runBackup(admin: SupabaseClient) {
   const old = (list.data ?? []).filter((f) => f.created_at && new Date(f.created_at).getTime() < cutoff).map((f) => f.name);
   if (old.length && (list.data ?? []).length - old.length >= 1) await admin.storage.from("backups").remove(old);
   await admin.from("audit_log").delete().lt("at", new Date(Date.now() - AUDIT_KEEP_DAYS * 86400000).toISOString());
+  await admin.from("notifications").delete().lt("created_at", new Date(Date.now() - NOTIFICATIONS_KEEP_DAYS * 86400000).toISOString());
 
   return { name, size: body.length, counts };
 }

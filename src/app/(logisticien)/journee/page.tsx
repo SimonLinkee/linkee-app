@@ -560,6 +560,7 @@ export default function JourneePage() {
   const [dayState, setDayState] = useState<"idle" | "running" | "closed">("idle");
   const supabase = useMemo(() => createClient(), []);
   const [stops, setStops] = useState<Stop[]>([]);
+  const [sitePhotoUrls, setSitePhotoUrls] = useState<Record<string, string>>({});
   const [subList, setSubList] = useState<SubCat[]>([]); // partners' sub-categories (valuation), optional when weighing
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
@@ -738,7 +739,13 @@ export default function JourneePage() {
       const cityRow = prof.data?.city_id ? await supabase.from("cities").select("depot_address").eq("id", prof.data.city_id).maybeSingle() : null;
       const depotAddr = (cityRow?.data as { depot_address?: string | null } | null)?.depot_address || DEFAULT_DEPOT_ADDRESS;
       setDepotAddr(depotAddr);
-      setStops(rows.map((r) => rowToStop(r, rows, depotAddr)).map((s) => (s.kind === "stock" ? { ...s, presetItems: presets } : s)));
+      const builtStops = rows.map((r) => rowToStop(r, rows, depotAddr)).map((s) => (s.kind === "stock" ? { ...s, presetItems: presets } : s));
+      setStops(builtStops);
+      // sitePhoto stocke un chemin privé (coffre collecte-photos) — on le résout en URL signée pour l'affichage
+      const sitePhotoPaths = Array.from(new Set(builtStops.map((s) => s.sitePhoto).filter((p): p is string => !!p)));
+      if (sitePhotoPaths.length) {
+        signedUrls(supabase, sitePhotoPaths).then((urls) => setSitePhotoUrls(Object.fromEntries(sitePhotoPaths.map((p, i) => [p, urls[i]]).filter(([, u]) => u))));
+      }
       setChecklist((ovr.data?.items ?? tpl.data?.items ?? []) as ChecklistItem[]);
       setVehicle((veh.data as { id: string; name: string; plate: string | null } | null) ?? null);
       setWeekRows((wk.data ?? []) as unknown as WeekRow[]);
@@ -1202,9 +1209,9 @@ export default function JourneePage() {
                         </button>
                         {accessOpen.has(i) && <div className="mt-[7px] rounded-[10px] border border-[var(--border)] bg-[var(--input-bg)] px-[11px] py-[9px] text-[11.5px] leading-[1.5] text-[var(--slate)]">
                           {s.accessDetails}
-                          {s.sitePhoto && (
+                          {s.sitePhoto && sitePhotoUrls[s.sitePhoto] && (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={s.sitePhoto} alt="Lieu de collecte" className="mt-2 max-h-40 w-full rounded-lg object-cover" />
+                            <img src={sitePhotoUrls[s.sitePhoto]} alt="Lieu de collecte" className="mt-2 max-h-40 w-full rounded-lg object-cover" />
                           )}
                         </div>}
                       </>

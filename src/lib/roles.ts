@@ -55,6 +55,8 @@ export function isAllowed(role: string, path: string): boolean {
   if (under(path, '/en-attente')) return true
   // the Linker intro page and the self-signup flow are reachable while still "en_attente" (or logged out — see middleware.ts)
   if (path === '/linker' || under(path, '/linker/inscription')) return true
+  // readable by anyone, logged in or not (see middleware.ts for the logged-out case)
+  if (path === '/politique-de-confidentialite') return true
   if (role === 'admin_principal') return [...SUPER_ONLY, ...ANTENNE_PATHS].some((p) => under(path, p))
   if (role === 'admin_local') return ANTENNE_PATHS.some((p) => under(path, p))
   if (role === 'resp_distribution') return DISTRIB_PATHS.some((p) => under(path, p))

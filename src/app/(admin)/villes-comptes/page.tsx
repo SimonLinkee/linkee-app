@@ -222,6 +222,7 @@ export default function VillesComptesPage() {
   }
 
   const [confirmDelete, setConfirmDelete] = useState<Account | null>(null);
+  const [anonymizeOffer, setAnonymizeOffer] = useState<Account | null>(null);
   async function deleteAccount() {
     if (!confirmDelete) return;
     setBusy(true);
@@ -231,16 +232,40 @@ export default function VillesComptesPage() {
       setConfirmDelete(null);
       await load();
     } catch (e) {
+      const err = e as Error & { canAnonymize?: boolean };
+      if (err.canAnonymize) {
+        setAnonymizeOffer(confirmDelete);
+        setConfirmDelete(null);
+      } else {
+        showToast(err.message);
+        setConfirmDelete(null);
+      }
+    }
+    setBusy(false);
+  }
+  async function anonymizeAccount() {
+    if (!anonymizeOffer) return;
+    setBusy(true);
+    try {
+      await callApi("DELETE", { id: anonymizeOffer.id, anonymize: true });
+      showToast(`Compte de ${anonymizeOffer.name || anonymizeOffer.email} anonymisé (nom, téléphone et adresse retirés).`);
+      setAnonymizeOffer(null);
+      await load();
+    } catch (e) {
       showToast((e as Error).message);
-      setConfirmDelete(null);
+      setAnonymizeOffer(null);
     }
     setBusy(false);
   }
 
   async function callApi(method: "POST" | "PATCH" | "DELETE", payload: object) {
     const res = await fetch("/api/admin/accounts", { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    const json = (await res.json().catch(() => ({}))) as { error?: string; id?: string };
-    if (!res.ok) throw new Error(json.error ?? "Erreur inconnue");
+    const json = (await res.json().catch(() => ({}))) as { error?: string; id?: string; canAnonymize?: boolean; anonymized?: boolean };
+    if (!res.ok) {
+      const err = new Error(json.error ?? "Erreur inconnue") as Error & { canAnonymize?: boolean };
+      err.canAnonymize = json.canAnonymize;
+      throw err;
+    }
     return json;
   }
 
@@ -746,6 +771,31 @@ export default function VillesComptesPage() {
               </button>
               <button type="button" disabled={busy} onClick={deleteAccount} className="flex-1 rounded-[40px] bg-[var(--critical)] px-4 py-3 font-display text-[14px] font-bold text-white disabled:opacity-60">
                 {busy ? "Suppression…" : "Oui, supprimer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {anonymizeOffer && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/55 p-4" onClick={() => !busy && setAnonymizeOffer(null)}>
+          <div className="w-full max-w-[440px] rounded-[20px] bg-[var(--card)] p-6 shadow-[var(--shadow)]" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-[var(--warn-bg)] text-[var(--warn)]">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                <circle cx="12" cy="8" r="3.2" /><path d="M5 20 C5 15.5 8 13 12 13 C16 13 19 15.5 19 20" />
+              </svg>
+            </div>
+            <h3 className="font-display text-[19px] font-black text-[var(--navy)]">Suppression impossible — anonymiser à la place ?</h3>
+            <p className="mt-2 text-[13.5px] leading-[1.5] text-[var(--slate)]">
+              <strong className="text-[var(--navy)]">{anonymizeOffer.name || "Sans nom"}</strong> a déjà des Links à son actif : le supprimer casserait cet historique.
+              Anonymiser retire son nom, son téléphone et son adresse de référence, désactive sa connexion, et garde les statistiques (kg sauvés, nombre de Links) de façon anonyme.
+            </p>
+            <p className="mt-2 text-[12.5px] leading-[1.5] text-[var(--slate)]">Cette action est <strong>définitive</strong> et ne peut pas être annulée.</p>
+            <div className="mt-5 flex gap-2.5">
+              <button type="button" autoFocus disabled={busy} onClick={() => setAnonymizeOffer(null)} className="flex-1 rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-3 font-display text-[14px] font-bold text-[var(--navy)]">
+                Annuler
+              </button>
+              <button type="button" disabled={busy} onClick={anonymizeAccount} className="flex-1 rounded-[40px] bg-[var(--warn)] px-4 py-3 font-display text-[14px] font-bold text-white disabled:opacity-60">
+                {busy ? "Anonymisation…" : "Anonymiser"}
               </button>
             </div>
           </div>

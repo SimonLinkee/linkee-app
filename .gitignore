@@ -40,6 +40,9 @@ yarn-error.log*
 # local database exports made by scripts/db.mjs (contain real data — never commit)
 /backups/
 
+# scratch files (reports, one-off exports) — not part of the app
+/.scratch/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

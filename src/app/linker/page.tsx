@@ -96,6 +96,9 @@ export default function LinkerIntroPage() {
         <p className="mt-6 text-center text-[11.5px] leading-relaxed text-[var(--slate)]">
           📵 Ajoute Linkee à ton écran d&apos;accueil pour recevoir les notifications (indispensable sur iPhone). Le lien s&apos;affichera dès ta première connexion.
         </p>
+        <Link href="/politique-de-confidentialite" className="mt-4 block text-center text-[11.5px] font-bold text-[var(--slate)] underline">
+          Politique de confidentialité
+        </Link>
       </div>
     </div>
   );

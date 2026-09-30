@@ -47,6 +47,7 @@ export async function updateSession(request: NextRequest) {
   if (!user) {
     // the Linker intro page and self-signup flow are public: volunteers discover the app before creating an account
     if (path === '/linker' || path.startsWith('/linker/inscription')) return supabaseResponse
+    if (path === '/politique-de-confidentialite') return supabaseResponse
     return path === '/login' ? supabaseResponse : redirectTo('/login')
   }
 

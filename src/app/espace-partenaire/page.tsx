@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { compressImage } from "@/lib/photos";
+import { compressImage, signedUrls } from "@/lib/photos";
 import { CAT_LABELS, CO2_SOURCE, DEFAULT_EUR_PER_KG, SUBCAT_SELECT, buildEvo, isCollectKind, isoOf, rse, subMap, summarize, type CatKey, type StatRow, type SubCat } from "@/lib/stats";
 import PartnerDocuments from "@/components/partner/PartnerDocuments";
 import PartnerValuation from "@/components/partner/PartnerValuation";
@@ -598,20 +598,26 @@ export default function EspacePartenairePage() {
     autosave();
     showToast("Logo mis à jour — visible partout dans votre espace (ordinateur et mobile).");
   }
-  const sitePhoto = partnerRows.find((r) => r.id === siteKey)?.photo_url ?? null;
+  // photo_url stocke désormais un chemin privé (coffre collecte-photos), pas une URL publique — on la résout
+  // en URL signée temporaire pour l'affichage.
+  const sitePhotoPath = partnerRows.find((r) => r.id === siteKey)?.photo_url ?? null;
+  const [sitePhoto, setSitePhoto] = useState<string | null>(null);
+  useEffect(() => {
+    if (!sitePhotoPath) return setSitePhoto(null);
+    signedUrls(supabase, [sitePhotoPath]).then((urls) => setSitePhoto(urls[0] || null));
+  }, [sitePhotoPath, supabase]);
   async function onSitePhoto(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
     if (!file.type.startsWith("image/")) return showToast("Choisissez une image.");
     const blob = await compressImage(file);
-    const path = `${siteKey}/photo-${Date.now()}.jpg`;
-    const up = await supabase.storage.from("logos").upload(path, blob, { contentType: "image/jpeg", upsert: true });
-    if (up.error) return showToast("Import de la photo impossible : " + up.error.message);
-    const url = supabase.storage.from("logos").getPublicUrl(path).data.publicUrl;
-    const { error } = await supabase.from("partners").update({ photo_url: url }).eq("id", siteKey);
+    const path = `site-photos/${siteKey}/photo-${Date.now()}.jpg`;
+    const up = await supabase.storage.from("collecte-photos").upload(path, blob, { contentType: "image/jpeg", upsert: true });
+    if (up.error) return showToast("Import de la photo impossible : " + up.error.message + " (la migration 034 est-elle passée ?)");
+    const { error } = await supabase.from("partners").update({ photo_url: path }).eq("id", siteKey);
     if (error) return showToast("Photo non enregistrée : " + error.message);
-    setPartnerRows((prev) => prev.map((r) => (r.id === siteKey ? { ...r, photo_url: url } : r)));
+    setPartnerRows((prev) => prev.map((r) => (r.id === siteKey ? { ...r, photo_url: path } : r)));
     autosave();
     showToast("Photo enregistrée — le logisticien la verra sous l'adresse.");
   }

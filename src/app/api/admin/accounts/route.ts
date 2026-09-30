@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 
@@ -65,13 +66,15 @@ export async function POST(request: Request) {
 }
 
 // Permanently delete an account (main admin only). Accounts with recorded work days must be deactivated instead,
-// so the working-time history of the dashboard stays intact.
+// so the working-time history of the dashboard stays intact. A Linker (a private individual volunteer) who has
+// at least one Link to their name can't be hard-deleted either (collectes history would break) — offer to
+// anonymize their personal fields instead, so the RGPD right-to-erasure request is actually honoured.
 export async function DELETE(request: Request) {
   const me = await requireMainAdmin();
   if (!me) return NextResponse.json({ error: "Réservé à l'administrateur principal." }, { status: 403 });
   const admin = adminClient();
   if (!admin) return NextResponse.json({ error: "La clé serveur SUPABASE_SERVICE_ROLE_KEY n'est pas configurée sur Vercel." }, { status: 500 });
-  const body = (await request.json().catch(() => null)) as { id?: string } | null;
+  const body = (await request.json().catch(() => null)) as { id?: string; anonymize?: boolean } | null;
   if (!body?.id) return NextResponse.json({ error: "Compte manquant." }, { status: 400 });
   if (body.id === me.id) return NextResponse.json({ error: "Tu ne peux pas supprimer ton propre compte." }, { status: 400 });
 
@@ -82,6 +85,31 @@ export async function DELETE(request: Request) {
       { status: 409 },
     );
   }
+
+  const prof = await admin.from("profiles").select("role").eq("id", body.id).maybeSingle();
+  if (prof.data?.role === "linker") {
+    const { count: linkCount } = await admin.from("links").select("id", { count: "exact", head: true }).eq("linker_id", body.id);
+    if (linkCount && linkCount > 0) {
+      if (!body.anonymize) {
+        return NextResponse.json(
+          {
+            error: `Ce bénévole a ${linkCount} Link(s) à son actif : la suppression casserait cet historique. Utilise "Anonymiser" pour retirer son nom, son téléphone et son adresse tout en gardant les statistiques.`,
+            canAnonymize: true,
+          },
+          { status: 409 },
+        );
+      }
+      const anonEmail = `linker-efface-${body.id.slice(0, 8)}@anonymise.linkee.local`;
+      const p1 = await admin.from("profiles").update({ full_name: "Ancien bénévole", phone: null, email: anonEmail, active: false }).eq("id", body.id);
+      if (p1.error) return NextResponse.json({ error: p1.error.message }, { status: 500 });
+      const p2 = await admin.from("linkers").update({ address_ref: null }).eq("id", body.id);
+      if (p2.error) return NextResponse.json({ error: p2.error.message }, { status: 500 });
+      const p3 = await admin.auth.admin.updateUserById(body.id, { email: anonEmail, password: randomUUID() + randomUUID() });
+      if (p3.error) return NextResponse.json({ error: "Anonymisé partiellement (identifiants de connexion non modifiés) : " + p3.error.message }, { status: 500 });
+      return NextResponse.json({ ok: true, anonymized: true });
+    }
+  }
+
   const res = await admin.auth.admin.deleteUser(body.id);
   if (res.error) return NextResponse.json({ error: res.error.message }, { status: 400 });
   return NextResponse.json({ ok: true });
