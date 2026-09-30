@@ -33,7 +33,7 @@ export default function LinkFichePage() {
   async function load() {
     const { data } = await supabase
       .from("links")
-      .select("id,status,kg_estime,is_fresh,window_date,window_from,window_to,asso_confirmed,linker_id,denree,photo_paths,partners(name,address),beneficiaries(name,address,contacts)")
+      .select("id,status,kg_estime,is_fresh,window_date,window_from,window_to,asso_confirmed,linker_id,denree,photo_paths,partners(name,address),beneficiaries(name,address,contacts:fiche->contacts)")
       .eq("id", params.id)
       .maybeSingle();
     const r = data as unknown as LinkRow | null;
