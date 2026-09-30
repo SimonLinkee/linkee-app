@@ -13,7 +13,7 @@ const DENREE_OPTIONS = ["Secs", "Fruits et légumes", "Produits frais", "Plats p
 // départs toutes les 30 min, 6h à 22h — la fenêtre dure toujours 1h pile (fin calculée automatiquement)
 const START_OPTIONS = Array.from({ length: 33 }, (_, i) => { const m = 360 + i * 30; return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; });
 
-type PartnerInfo = { city_id: string; address: string | null; allow_backpack: boolean; allow_car: boolean };
+type PartnerInfo = { city_id: string; address: string | null; allow_backpack: boolean };
 type LinkRow = { id: string; status: string; kg_estime: number; is_fresh: boolean; window_date: string; window_from: string; window_to: string; asso_confirmed: boolean; beneficiaries: { name: string } | { name: string }[] | null; linkers: { level: number; profiles: { full_name: string | null } | { full_name: string | null }[] | null } | { level: number; profiles: { full_name: string | null } | { full_name: string | null }[] | null }[] | null };
 
 const STATUS_UI: Record<string, { l: string; bg: string; fg: string }> = {
@@ -38,9 +38,7 @@ export default function PartnerLinks({ partnerId }: { partnerId: string }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [ok, setOk] = useState<string | null>(null);
-  const [mode, setMode] = useState<"walk" | "car">("walk");
-  const [denree, setDenree] = useState(DENREE_OPTIONS[0]);
-  const [kg, setKg] = useState("10");
+  const [catKg, setCatKg] = useState<Record<string, string>>({});
   const [fresh, setFresh] = useState(false);
   const [date, setDate] = useState(todayIso());
   const [start, setStart] = useState("17:30");
@@ -48,13 +46,12 @@ export default function PartnerLinks({ partnerId }: { partnerId: string }) {
 
   async function load() {
     const [p, l] = await Promise.all([
-      supabase.from("partners").select("city_id,address,allow_backpack,allow_car").eq("id", partnerId).is("deleted_at", null).maybeSingle(),
+      supabase.from("partners").select("city_id,address,allow_backpack").eq("id", partnerId).is("deleted_at", null).maybeSingle(),
       supabase.from("links").select("id,status,kg_estime,is_fresh,window_date,window_from,window_to,asso_confirmed,beneficiaries(name),linkers(level,profiles(full_name))").eq("partner_id", partnerId).order("created_at", { ascending: false }).limit(30),
     ]);
     setInfo((p.data as PartnerInfo) ?? null);
     setLinks((l.data ?? []) as unknown as LinkRow[]);
     setLoading(false);
-    if (p.data) setMode((p.data as PartnerInfo).allow_backpack ? "walk" : "car");
   }
   useEffect(() => {
     load();
@@ -64,15 +61,18 @@ export default function PartnerLinks({ partnerId }: { partnerId: string }) {
   if (loading) return <p className="text-[13px] text-[var(--slate)]">Chargement…</p>;
   if (!info) return <p className="text-[13px] text-[var(--slate)]">Fiche introuvable.</p>;
 
-  const cap = MAX_KG[mode];
-  const vol = Math.min(Number(kg) || 0, cap);
+  const cap = MAX_KG.walk;
+  const catRows = DENREE_OPTIONS.map((d) => ({ denree: d, kg: Math.max(0, Number((catKg[d] ?? "0").replace(",", ".")) || 0) })).filter((r) => r.kg > 0);
+  const vol = Math.round(catRows.reduce((s, r) => s + r.kg, 0) * 10) / 10;
+  const denreeSummary = catRows.map((r) => `${r.denree} (${r.kg} kg)`).join(", ");
   const end = `${String(Math.floor((toMin(start) + 60) / 60) % 24).padStart(2, "0")}:${String((toMin(start) + 60) % 60).padStart(2, "0")}`;
   const leadMin = date === todayIso() ? toMin(start) - nowHM() : 999;
   const conds: [string, boolean][] = [
-    [`Volume ≤ ${cap} kg (${mode === "walk" ? "sac à dos 🎒" : "voiture 🚗"})`, vol > 0 && vol <= cap],
+    ["Au moins une catégorie avec un poids renseigné", catRows.length > 0],
+    [`Volume total ≤ ${cap} kg`, vol > 0 && vol <= cap],
     ["Au moins 30 min entre maintenant et le début de la fenêtre", leadMin >= 30],
     ["Photo des produits à collecter", photoPaths.length > 0],
-    [mode === "walk" ? "Collecte en sac à dos activée sur ta fiche 🎒" : "Collecte en voiture activée sur ta fiche 🚗", mode === "walk" ? info.allow_backpack : info.allow_car],
+    ["Collecte bénévole activée sur ta fiche 🎒", info.allow_backpack],
   ];
   const okAll = conds.every(([, k]) => k);
 
@@ -89,13 +89,13 @@ export default function PartnerLinks({ partnerId }: { partnerId: string }) {
     }
     const { error } = await supabase.from("links").insert({
       city_id: info!.city_id, partner_id: partnerId, beneficiary_id: match.id, status: "proposee",
-      kg_estime: vol, is_fresh: fresh, mode_required: mode, window_date: date, window_from: start + ":00", window_to: end + ":00",
-      denree, photo_paths: photoPaths,
+      kg_estime: vol, is_fresh: fresh, mode_required: "walk", window_date: date, window_from: start + ":00", window_to: end + ":00",
+      denree: denreeSummary, photo_paths: photoPaths,
     });
     setBusy(false);
     if (error) return setMsg("Envoi impossible : " + error.message + " (la migration 025 est-elle passée ?)");
     setOk(`Demande envoyée aux Linkers proches — destination : ${match.name} (${match.distanceKm} km).`);
-    setKg("10");
+    setCatKg({});
     setFresh(false);
     setPhotoPaths([]);
     await load();
@@ -106,36 +106,38 @@ export default function PartnerLinks({ partnerId }: { partnerId: string }) {
       <div className="rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-4" style={{ borderTop: `4px solid ${ORANGE}` }}>
         <h3 className="font-display text-[17px] font-extrabold text-[var(--navy)]">Demander un Link</h3>
         <p className="mt-0.5 mb-3 text-[12.5px] text-[var(--slate)]">
-          Un petit volume à faire partir vite, sans attendre la tournée du logisticien ? Un bénévole (Linker) peut venir le chercher à pied, à vélo ou en voiture — jusqu&apos;à 80 kg.
+          Un petit volume à faire partir vite, sans attendre la tournée du logisticien ? Un bénévole (Linker) peut venir le chercher à pied ou à vélo — jusqu&apos;à {cap} kg.
         </p>
 
-        {!info.allow_backpack && !info.allow_car && (
+        {!info.allow_backpack && (
           <div className="mb-3 rounded-[14px] bg-[var(--warn-bg)] px-3.5 py-2.5 text-[12.5px] font-semibold text-[var(--navy)]">
-            Aucune collecte bénévole n&apos;est encore activée sur ta fiche. Demande à ton contact Linkee d&apos;activer 🎒 et/ou 🚗.
+            Aucune collecte bénévole n&apos;est encore activée sur ta fiche. Demande à ton contact Linkee de l&apos;activer 🎒.
           </div>
         )}
 
-        <label className={labelCls}>Type de collecte</label>
-        <div className="mb-3 flex gap-2.5">
-          <button type="button" disabled={!info.allow_backpack} onClick={() => setMode("walk")} className="flex-1 rounded-[16px] border-2 p-2.5 text-center disabled:opacity-40" style={{ borderColor: mode === "walk" ? "var(--turquoise)" : "var(--border)", background: mode === "walk" ? "#e3f6fa" : "var(--card)" }}>
-            <div className="text-[22px]">🎒</div>
-            <div className="font-display text-[13.5px] font-extrabold text-[var(--navy)]">Sac à dos</div>
-            <div className="text-[10.5px] font-bold text-[var(--slate)]">25 kg max</div>
-          </button>
-          <button type="button" disabled={!info.allow_car} onClick={() => setMode("car")} className="flex-1 rounded-[16px] border-2 p-2.5 text-center disabled:opacity-40" style={{ borderColor: mode === "car" ? "var(--turquoise)" : "var(--border)", background: mode === "car" ? "#e3f6fa" : "var(--card)" }}>
-            <div className="text-[22px]">🚗</div>
-            <div className="font-display text-[13.5px] font-extrabold text-[var(--navy)]">Voiture</div>
-            <div className="text-[10.5px] font-bold text-[var(--slate)]">80 kg max</div>
-          </button>
+        <label className={labelCls}>Produits à collecter — poids estimé par catégorie</label>
+        <div className="mb-3 flex flex-col gap-1.5">
+          {DENREE_OPTIONS.map((d) => (
+            <div key={d} className="flex items-center gap-2.5 rounded-[12px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-3 py-2">
+              <span className="min-w-0 flex-1 text-[13px] font-semibold text-[var(--navy)]">{d}</span>
+              <input
+                type="number"
+                min={0}
+                step="0.5"
+                inputMode="decimal"
+                placeholder="0"
+                value={catKg[d] ?? ""}
+                onChange={(e) => setCatKg((prev) => ({ ...prev, [d]: e.target.value }))}
+                className="w-20 rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--card)] px-2 py-1.5 text-center text-[13px] font-bold text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
+              />
+              <span className="flex-none text-[11.5px] font-bold text-[var(--slate)]">kg</span>
+            </div>
+          ))}
+          <div className="mt-1 flex items-center justify-between rounded-[12px] bg-[var(--track)] px-3.5 py-2">
+            <span className="text-[12px] font-bold text-[var(--slate)]">Total</span>
+            <span className="font-display text-[16px] font-black" style={{ color: ORANGE }}>{vol} kg</span>
+          </div>
         </div>
-
-        <label className={labelCls}>Produits à collecter</label>
-        <select className={fieldCls + " mb-3"} value={denree} onChange={(e) => setDenree(e.target.value)}>
-          {DENREE_OPTIONS.map((d) => <option key={d}>{d}</option>)}
-        </select>
-
-        <label className={labelCls}>Volume estimé : <b style={{ color: ORANGE }}>{vol} kg</b></label>
-        <input type="range" min={1} max={cap} value={vol} onChange={(e) => setKg(e.target.value)} className="mb-3 h-8 w-full accent-[#eb6834]" />
 
         <div className="mb-3 flex items-center gap-3 rounded-[14px] border border-[var(--border)] bg-[var(--input-bg)] px-3.5 py-2.5">
           <span className="text-[22px]">🧊</span>
