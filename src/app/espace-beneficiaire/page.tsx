@@ -57,6 +57,7 @@ const CAL = <><rect x="3.5" y="4.5" width="17" height="16" rx="2" /><path d="M3.
 const STORE = <><path d="M4 8 L8 4 H16 L20 8" /><rect x="4" y="8" width="16" height="11" rx="1.5" /><path d="M4 8 H20" /></>;
 const DOC = <><path d="M7 3 H14 L19 8 V21 H7 Z" /><path d="M14 3 V8 H19" /></>;
 const CLOCK = <><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5 V12 L15 14" /></>;
+const PHONE = <><path d="M5 4.5 C5 4.5 7 4 8 6 C8.8 7.7 7.5 8.3 7.2 9 C6.8 10 9 14 11.5 15.5 C12 15.8 12.8 14.5 13.8 14.2 C15.5 13.8 16 16 16 16 C16 17 15.5 19.5 13.5 19.5 C9.5 19.5 5 15 5 11 C5 8.5 5 4.5 5 4.5 Z" /></>;
 const CheckIcon = ({ className = "h-3.5 w-3.5" }: { className?: string }) => <Icon className={className} sw={2.4}><path d="M20 6 L9 17 L4 12" /></Icon>;
 
 function Wordmark() {
@@ -102,6 +103,50 @@ function CollectRow({ date, note, badge, badgeCls, photos }: { date: string; not
       )}
       <span className={`flex-none rounded-[40px] px-2.5 py-[5px] text-[10px] font-bold whitespace-nowrap uppercase ${badgeCls ?? "bg-[var(--track)] text-[var(--slate)]"}`}>{badge}</span>
     </div>
+  );
+}
+
+type StaffContact = { full_name: string | null; phone: string | null } | null | undefined;
+
+function ContactLine({ role, contact }: { role: string; contact: StaffContact }) {
+  return (
+    <div className="flex items-center gap-3.5 rounded-[14px] border border-[var(--border)] bg-[var(--input-bg)] px-4 py-3.5">
+      <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-[var(--navy-deep)] text-[var(--panel-fg)]"><Icon className="h-[18px] w-[18px]">{PHONE}</Icon></span>
+      <span className="min-w-0 flex-1">
+        <div className="text-[10.5px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">{role}</div>
+        {contact === undefined ? (
+          <div className="mt-0.5 text-[12.5px] text-[var(--slate)]">Chargement…</div>
+        ) : contact?.phone ? (
+          <>
+            <div className="text-[14px] font-bold text-[var(--navy)]">{contact.full_name || role}</div>
+            <a href={`tel:${contact.phone}`} className="text-[13px] font-bold text-[var(--turquoise)]">{contact.phone}</a>
+          </>
+        ) : (
+          <div className="mt-0.5 text-[12.5px] text-[var(--slate)]">Non renseigné pour l&apos;instant.</div>
+        )}
+      </span>
+    </div>
+  );
+}
+
+/** Onglet "Nous contacter" : coordonnées du Responsable d'antenne et du Logisticien de la ville de
+ * l'association, via les mêmes fonctions techniques que côté partenaires (migrations 025 et 040). */
+function ContactTab({ cityId }: { cityId: string }) {
+  const supabase = useMemo(() => createClient(), []);
+  const [antenne, setAntenne] = useState<StaffContact>(undefined);
+  const [logisticien, setLogisticien] = useState<StaffContact>(undefined);
+  useEffect(() => {
+    if (!cityId) return;
+    supabase.rpc("antenne_contact", { p_city_id: cityId }).then(({ data }) => setAntenne((data as StaffContact[] | null)?.[0] ?? null));
+    supabase.rpc("logisticien_contact", { p_city_id: cityId }).then(({ data }) => setLogisticien((data as StaffContact[] | null)?.[0] ?? null));
+  }, [supabase, cityId]);
+  return (
+    <Card title="Nous contacter" icon={PHONE} note="Pour toute question sur vos livraisons ou votre fiche.">
+      <div className="flex flex-col gap-3">
+        <ContactLine role="Responsable d'antenne" contact={antenne} />
+        <ContactLine role="Logisticien" contact={logisticien} />
+      </div>
+    </Card>
   );
 }
 
@@ -194,7 +239,7 @@ function summarizeDropoffs(rows: CollecteRow[]) {
   };
 }
 
-type Tab = "livraisons" | "fiche" | "documents";
+type Tab = "livraisons" | "fiche" | "documents" | "contact";
 
 export default function EspaceBeneficiairePage() {
   const router = useRouter();
@@ -325,6 +370,7 @@ export default function EspaceBeneficiairePage() {
     { k: "livraisons", l: "Mes livraisons", icon: CAL },
     { k: "fiche", l: "Ma fiche", icon: STORE },
     { k: "documents", l: "Mes documents", icon: DOC },
+    { k: "contact", l: "Nous contacter", icon: PHONE },
   ];
 
   return (
@@ -513,6 +559,7 @@ export default function EspaceBeneficiairePage() {
         )}
 
         {tab === "documents" && <PartnerDocuments key={currentId} beneficiaryId={currentId} role="beneficiaire" />}
+        {tab === "contact" && <ContactTab key={currentId} cityId={current.city_id} />}
       </div>
       {toastEl}
     </div>
