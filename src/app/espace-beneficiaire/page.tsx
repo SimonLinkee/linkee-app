@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import PartnerDocuments from "@/components/partner/PartnerDocuments";
 import { signedUrls } from "@/lib/photos";
 import { CAT_KEYS, CAT_LABELS, buildEvo, isoOf, type CatKey } from "@/lib/stats";
+import { CRENEAUX_DAYS, type Creneaux, type Slot as CreneauSlot } from "@/lib/creneaux";
 
 type Contact = { type: string; nom: string; tel: string; mail: string };
 type Hours = { open: string; close: string } | null;
 type Fiche = Record<string, unknown>;
-type BeneficiaryRow = { id: string; name: string; category: string | null; address: string | null; city_id: string; fiche: Fiche | null };
+type BeneficiaryRow = { id: string; name: string; category: string | null; address: string | null; city_id: string; fiche: Fiche | null; logo_url: string | null };
 type CollecteRow = {
   id: string;
   beneficiary_id: string | null;
@@ -150,6 +151,101 @@ function ContactTab({ cityId }: { cityId: string }) {
   );
 }
 
+const fieldCls = "w-full rounded-[11px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[12.5px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]";
+
+/** Créneaux de livraison fixe (en plus des horaires d'ouverture) : même éditeur jour × créneaux que côté
+ * partenaire (admin), ici en self-service pour l'association. */
+function SlotsEditor({ value, onChange }: { value: Creneaux; onChange: (v: Creneaux) => void }) {
+  function addSlot(day: string) {
+    const cur = value[day] ?? [];
+    onChange({ ...value, [day]: [...cur, { open: "09:00", close: "10:00" }] });
+  }
+  function updateSlot(day: string, i: number, patch: Partial<CreneauSlot>) {
+    const cur = (value[day] ?? []).map((s, idx) => (idx === i ? { ...s, ...patch } : s));
+    onChange({ ...value, [day]: cur });
+  }
+  function removeSlot(day: string, i: number) {
+    const cur = (value[day] ?? []).filter((_, idx) => idx !== i);
+    onChange({ ...value, [day]: cur });
+  }
+  return (
+    <div className="flex flex-col overflow-hidden rounded-[14px] border border-[var(--border)]">
+      {CRENEAUX_DAYS.map((d) => {
+        const slots = value[d.k] ?? [];
+        return (
+          <div key={d.k} className="border-b border-[var(--border)] bg-[var(--card)] px-3 py-2.5 last:border-b-0">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[12.5px] font-bold text-[var(--navy)]">{d.l}</span>
+              <button type="button" onClick={() => addSlot(d.k)} className="flex-none rounded-[40px] border-[1.5px] border-dashed border-[var(--border)] px-2.5 py-1 text-[11px] font-bold text-[var(--slate)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]">
+                + Créneau
+              </button>
+            </div>
+            {slots.length === 0 ? (
+              <p className="mt-1 text-[11px] text-[var(--muted)]">Aucun créneau fixe</p>
+            ) : (
+              <div className="mt-1.5 flex flex-col gap-1.5">
+                {slots.map((s, i) => (
+                  <div key={i} className="flex flex-wrap items-center gap-2">
+                    <input type="time" className={`${fieldCls} !w-auto !px-2 !py-1.5 !text-xs`} value={s.open} onChange={(e) => updateSlot(d.k, i, { open: e.target.value })} />
+                    <span className="text-[11px] text-[var(--muted)]">à</span>
+                    <input type="time" className={`${fieldCls} !w-auto !px-2 !py-1.5 !text-xs`} value={s.close} onChange={(e) => updateSlot(d.k, i, { close: e.target.value })} />
+                    <select
+                      className={`${fieldCls} !w-auto !px-2 !py-1.5 !text-xs`}
+                      value={s.weekParity ?? "toutes"}
+                      onChange={(e) => updateSlot(d.k, i, { weekParity: e.target.value === "toutes" ? undefined : (e.target.value as "even" | "odd") })}
+                    >
+                      <option value="toutes">Toutes les semaines</option>
+                      <option value="even">Une semaine sur deux — semaines paires</option>
+                      <option value="odd">Une semaine sur deux — semaines impaires</option>
+                    </select>
+                    <button type="button" onClick={() => removeSlot(d.k, i)} title="Supprimer ce créneau" className="ml-1 flex h-6 w-6 flex-none items-center justify-center rounded-full border-[1.5px] border-[var(--border)] text-[var(--slate)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]">
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Contacts de l'association, modifiables directement (comme côté partenaire). */
+function ContactsEditor({ value, onChange }: { value: Contact[]; onChange: (v: Contact[]) => void }) {
+  return (
+    <div>
+      <div className="mb-2.5 flex flex-col gap-2.5">
+        {value.map((c, idx) => (
+          <div key={idx} className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[110px_1fr_1fr_1fr_30px]">
+            <select className={fieldCls} value={c.type} onChange={(e) => onChange(value.map((row, i) => (i === idx ? { ...row, type: e.target.value } : row)))}>
+              {["Admin", "Opérationnel", "Comptable"].map((t) => <option key={t}>{t}</option>)}
+            </select>
+            <input className={fieldCls} placeholder="Nom" value={c.nom} onChange={(e) => onChange(value.map((row, i) => (i === idx ? { ...row, nom: e.target.value } : row)))} />
+            <input className={fieldCls} placeholder="Téléphone" value={c.tel} onChange={(e) => onChange(value.map((row, i) => (i === idx ? { ...row, tel: e.target.value } : row)))} />
+            <input className={fieldCls} placeholder="Email" value={c.mail} onChange={(e) => onChange(value.map((row, i) => (i === idx ? { ...row, mail: e.target.value } : row)))} />
+            <button
+              type="button"
+              onClick={() => onChange(value.filter((_, i) => i !== idx))}
+              className="flex h-7 w-7 items-center justify-center rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-[13px] w-[13px]"><path d="M6 6 L18 18 M18 6 L6 18" /></svg>
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => onChange([...value, { type: "Opérationnel", nom: "", tel: "", mail: "" }])}
+        className="w-full rounded-[11px] border-[1.5px] border-dashed border-[var(--border)] bg-[var(--input-bg)] py-2 text-[12.5px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]"
+      >
+        + Ajouter un contact
+      </button>
+    </div>
+  );
+}
+
 function Chip({ label, on }: { label: string; on: boolean }) {
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-[40px] border-[1.5px] px-3 py-1.5 text-[11.5px] font-semibold ${on ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--muted)]"}`}>
@@ -255,6 +351,10 @@ export default function EspaceBeneficiairePage() {
   const [reqSent, setReqSent] = useState(false);
   const [gran, setGran] = useState<"semaine" | "mois" | "tout">("semaine");
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
+  const [saved, setSaved] = useState(false);
+  const ficheT = useRef<number | null>(null);
+  const savedT = useRef<number | null>(null);
+  const logoInput = useRef<HTMLInputElement>(null);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -269,7 +369,7 @@ export default function EspaceBeneficiairePage() {
       const ids = (links.data ?? []).map((r) => r.beneficiary_id as string);
       if (!ids.length) return setLoading(false);
       const [b, c] = await Promise.all([
-        supabase.from("beneficiaries").select("id,name,category,address,city_id,fiche").in("id", ids).is("deleted_at", null).order("name"),
+        supabase.from("beneficiaries").select("id,name,category,address,city_id,fiche,logo_url").in("id", ids).is("deleted_at", null).order("name"),
         supabase.from("collectes").select("id,beneficiary_id,scheduled_date,scheduled_time,status,collecte_items!collecte_id(denree,kg),photo_paths").in("beneficiary_id", ids).order("scheduled_date", { ascending: false }).limit(300),
       ]);
       if (b.error) showToast("Chargement impossible : " + b.error.message + " (la migration 030 est-elle passée ?)");
@@ -329,8 +429,11 @@ export default function EspaceBeneficiairePage() {
   const statut = (fiche.statut as string) ?? "";
   const publicCibles = (fiche.publicCibles as Record<string, boolean>) ?? {};
   const beneficiaryCount = (fiche.beneficiaryCount as string) ?? "";
+  const beneficiaryCountNum = Math.min(1500, Math.max(1, parseInt(beneficiaryCount, 10) || 50));
   const network = (fiche.network as string) ?? "";
   const description = (fiche.description as string) ?? "";
+  const acceptsFresh = !!(fiche.acceptsFresh as boolean | undefined);
+  const creneaux = (fiche.creneaux as Creneaux) ?? {};
 
   async function logout() {
     await supabase.auth.signOut();
@@ -346,6 +449,45 @@ export default function EspaceBeneficiairePage() {
     setReqMsg("");
     setReqSent(true);
     showToast("Demande envoyée à l'équipe Linkee.");
+  }
+
+  function autosave() {
+    setSaved(true);
+    if (savedT.current) window.clearTimeout(savedT.current);
+    savedT.current = window.setTimeout(() => setSaved(false), 1500);
+  }
+  // Champs en self-service (logo, frais, jauge, description, contacts, créneaux de livraison fixe) : écrits
+  // directement dans beneficiaries.fiche. Le reste de la fiche (horaires, accès, denrées…) reste géré par
+  // l'équipe Linkee, via la demande de modification ci-dessous.
+  function patchFiche(p: Partial<Fiche>) {
+    if (!currentId) return;
+    const cur = rows.find((r) => r.id === currentId);
+    if (!cur) return;
+    const f: Fiche = { ...(cur.fiche ?? {}), ...p };
+    setRows((prev) => prev.map((r) => (r.id === currentId ? { ...r, fiche: f } : r)));
+    if (ficheT.current) window.clearTimeout(ficheT.current);
+    const id = currentId;
+    ficheT.current = window.setTimeout(async () => {
+      const { error } = await supabase.from("beneficiaries").update({ fiche: f }).eq("id", id);
+      if (error) showToast("Enregistrement impossible : " + error.message);
+      else autosave();
+    }, 700);
+  }
+  async function onLogo(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !currentId) return;
+    if (!file.type.startsWith("image/") || file.size > 2 * 1024 * 1024) return showToast("Choisissez une image de 2 Mo maximum.");
+    const ext = (file.name.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const path = `${currentId}/logo-${Date.now()}.${ext}`;
+    const up = await supabase.storage.from("logos").upload(path, file, { contentType: file.type, upsert: true });
+    if (up.error) return showToast("Import du logo impossible : " + up.error.message + " (la migration 041 est-elle passée ?)");
+    const url = supabase.storage.from("logos").getPublicUrl(path).data.publicUrl;
+    const { error } = await supabase.from("beneficiaries").update({ logo_url: url }).eq("id", currentId);
+    if (error) return showToast("Logo non enregistré : " + error.message);
+    setRows((prev) => prev.map((r) => (r.id === currentId ? { ...r, logo_url: url } : r)));
+    autosave();
+    showToast("Logo mis à jour.");
   }
 
   const toastEl = toast && <div className="fixed bottom-[22px] left-1/2 z-[99] max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-[14px] bg-[var(--navy-deep)] px-[18px] py-3 text-center text-[12.5px] font-semibold text-[var(--panel-fg)] shadow-[var(--shadow)]">{toast}</div>;
@@ -470,6 +612,19 @@ export default function EspaceBeneficiairePage() {
 
         {tab === "fiche" && (
           <>
+            <Card title="Logo de votre structure" icon={STORE} note="Affiché en haut de votre espace.">
+              <div className="flex items-center gap-4">
+                <div className="flex h-16 w-16 flex-none items-center justify-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--input-bg)]">
+                  {current.logo_url ? <img src={current.logo_url} alt="Logo" className="h-full w-full object-cover" /> : <span className="text-[10px] font-semibold text-[var(--muted)]">Aucun logo</span>}
+                </div>
+                <button type="button" onClick={() => logoInput.current?.click()} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-2 text-[12.5px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]">
+                  Changer le logo
+                </button>
+                <input ref={logoInput} type="file" accept="image/*" hidden onChange={onLogo} />
+                {saved && <span className="text-[11.5px] font-semibold text-[var(--good)]">Enregistré ✓</span>}
+              </div>
+            </Card>
+
             <Card title="Informations générales" icon={STORE}>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Info label="Nom" value={current.name} />
@@ -477,9 +632,38 @@ export default function EspaceBeneficiairePage() {
                 <Info label="Adresse" value={current.address || "Non renseignée"} />
                 <Info label="Statut" value={statut || "Non renseigné"} />
                 <Info label="Réseau / fédération" value={network || "—"} />
-                <Info label="Nombre de bénéficiaires" value={beneficiaryCount || "Non renseigné"} />
               </div>
-              {description && <p className="mt-3 text-[12.5px] leading-[1.5] text-[var(--slate)]">{description}</p>}
+
+              <div className="mt-4">
+                <span className="mb-1.5 block text-[10.5px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">Nombre de bénéficiaires accueillis par semaine</span>
+                <div className="flex items-center gap-3.5">
+                  <input type="range" min={1} max={1500} value={beneficiaryCountNum} onChange={(e) => patchFiche({ beneficiaryCount: e.target.value })} className="h-1.5 flex-1 accent-[var(--turquoise)]" />
+                  <span className="w-16 flex-none text-right font-display text-[18px] font-black text-[var(--navy)]">{beneficiaryCountNum}</span>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <span className="mb-1.5 block text-[10.5px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">Produits frais</span>
+                <button
+                  type="button"
+                  onClick={() => patchFiche({ acceptsFresh: !acceptsFresh })}
+                  className={`inline-flex items-center gap-1.5 rounded-[40px] border-[1.5px] px-3.5 py-2 text-xs font-semibold ${acceptsFresh ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)]"}`}
+                >
+                  {acceptsFresh && <CheckIcon className="h-3 w-3" />}
+                  {acceptsFresh ? "Peut recevoir des produits frais" : "Ne peut pas recevoir de produits frais"}
+                </button>
+              </div>
+
+              <div className="mt-4">
+                <span className="mb-1.5 block text-[10.5px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">Présentez votre structure et vos missions</span>
+                <textarea
+                  className="w-full rounded-[13px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-3.5 py-[11px] text-sm font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
+                  rows={3}
+                  placeholder="Qui êtes-vous, qui accueillez-vous, quelles sont vos missions…"
+                  value={description}
+                  onChange={(e) => patchFiche({ description: e.target.value })}
+                />
+              </div>
             </Card>
 
             <Card title="Horaires d'ouverture" icon={CLOCK}>
@@ -494,6 +678,10 @@ export default function EspaceBeneficiairePage() {
                   );
                 })}
               </div>
+            </Card>
+
+            <Card title="Créneau de livraison fixe" icon={CLOCK} note="En plus de vos horaires d'ouverture ci-dessus : le ou les créneaux où Linkee peut passer régulièrement.">
+              <SlotsEditor value={creneaux} onChange={(v) => patchFiche({ creneaux: v })} />
             </Card>
 
             <Card title="Denrées acceptées" icon={STORE}>
@@ -519,18 +707,9 @@ export default function EspaceBeneficiairePage() {
               {accessNote && <p className="mt-2.5 text-[12px] text-[var(--slate)]">{accessNote}</p>}
             </Card>
 
-            {contacts.length > 0 && (
-              <Card title="Contacts" icon={STORE}>
-                <div className="flex flex-col gap-2">
-                  {contacts.map((c, i) => (
-                    <div key={i} className="rounded-[12px] border border-[var(--border)] bg-[var(--input-bg)] px-3.5 py-2.5 text-[12.5px]">
-                      <div className="font-bold text-[var(--navy)]">{c.nom || "Sans nom"} {c.type && <span className="font-normal text-[var(--slate)]">— {c.type}</span>}</div>
-                      <div className="mt-0.5 text-[var(--slate)]">{[c.tel, c.mail].filter(Boolean).join(" · ") || "—"}</div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            )}
+            <Card title="Contacts" icon={STORE}>
+              <ContactsEditor value={contacts} onChange={(v) => patchFiche({ contacts: v })} />
+            </Card>
 
             {comment && (
               <Card title="Commentaires de l'équipe Linkee" icon={STORE}>
@@ -538,7 +717,7 @@ export default function EspaceBeneficiairePage() {
               </Card>
             )}
 
-            <Card title="Demander une modification" icon={STORE} note="Cette fiche est gérée par l'équipe Linkee. Pour signaler un changement (adresse, horaires, contact…), envoyez une demande ci-dessous.">
+            <Card title="Demander une modification" icon={STORE} note="Le logo, les champs ci-dessus et les contacts sont modifiables directement. Pour le reste (horaires, accès, types de denrées…), envoyez une demande ci-dessous.">
               <textarea
                 className="w-full rounded-[13px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-3.5 py-[11px] text-sm font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
                 rows={3}
