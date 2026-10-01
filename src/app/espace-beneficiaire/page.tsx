@@ -4,12 +4,25 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import PartnerDocuments from "@/components/partner/PartnerDocuments";
+import { signedUrls } from "@/lib/photos";
+import { CAT_KEYS, CAT_LABELS, buildEvo, isoOf, type CatKey } from "@/lib/stats";
 
 type Contact = { type: string; nom: string; tel: string; mail: string };
 type Hours = { open: string; close: string } | null;
 type Fiche = Record<string, unknown>;
 type BeneficiaryRow = { id: string; name: string; category: string | null; address: string | null; city_id: string; fiche: Fiche | null };
-type CollecteRow = { id: string; beneficiary_id: string | null; scheduled_date: string; scheduled_time: string | null; status: string; collecte_items: { denree: string | null; kg: number | string | null }[] | null };
+type CollecteRow = {
+  id: string;
+  beneficiary_id: string | null;
+  scheduled_date: string;
+  scheduled_time: string | null;
+  status: string;
+  collecte_items: { denree: string | null; kg: number | string | null }[] | null;
+  photo_paths: string[] | null;
+};
+const CAT_COLORS: Record<CatKey, string> = { secs: "var(--cat-1)", fl: "var(--cat-2)", frais: "var(--cat-3)", plats: "var(--cat-4)", boulang: "var(--cat-5)" };
+const MONTHS_SHORT = ["jan.", "fév.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+const DENREE_TO_CAT: Partial<Record<string, CatKey>> = Object.fromEntries(CAT_KEYS.map((k) => [CAT_LABELS[k], k]));
 
 const DAYS = [
   { k: "lun", l: "Lundi" }, { k: "mar", l: "Mardi" }, { k: "mer", l: "Mercredi" }, { k: "jeu", l: "Jeudi" },
@@ -65,7 +78,7 @@ function Card({ title, icon, note, children }: { title?: string; icon?: ReactNod
   );
 }
 
-function CollectRow({ date, note, badge, badgeCls }: { date: string; note: string; badge: string; badgeCls?: string }) {
+function CollectRow({ date, note, badge, badgeCls, photos }: { date: string; note: string; badge: string; badgeCls?: string; photos?: string[] }) {
   const d = fmtDateShort(date);
   return (
     <div className="flex items-center gap-3.5 border-b border-[var(--border)] py-3 last:border-b-0">
@@ -76,6 +89,17 @@ function CollectRow({ date, note, badge, badgeCls }: { date: string; note: strin
       <span className="min-w-0 flex-1">
         <div className="text-[12.5px] text-[var(--slate)]">{note}</div>
       </span>
+      {photos && photos.length > 0 && (
+        <span className="flex flex-none -space-x-2">
+          {photos.slice(0, 3).map((url, i) =>
+            url ? (
+              <a key={i} href={url} target="_blank" rel="noreferrer" className="block h-9 w-9 overflow-hidden rounded-[10px] border-2 border-[var(--card)] shadow-[var(--shadow)]">
+                <img src={url} alt="Photo de la dépose" className="h-full w-full object-cover" />
+              </a>
+            ) : null
+          )}
+        </span>
+      )}
       <span className={`flex-none rounded-[40px] px-2.5 py-[5px] text-[10px] font-bold whitespace-nowrap uppercase ${badgeCls ?? "bg-[var(--track)] text-[var(--slate)]"}`}>{badge}</span>
     </div>
   );
@@ -88,6 +112,86 @@ function Chip({ label, on }: { label: string; on: boolean }) {
       {label}
     </span>
   );
+}
+
+function GranToggle({ options, value, onChange }: { options: [string, string][]; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="mb-4 flex w-fit rounded-[40px] border border-[var(--border)] bg-[var(--card)] p-[3px] shadow-[var(--shadow)]">
+      {options.map(([k, l]) => (
+        <button key={k} type="button" onClick={() => onChange(k)} className={`rounded-[40px] px-4 py-2 font-display text-[12.5px] font-bold ${value === k ? "bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "text-[var(--slate)]"}`}>
+          {l}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] px-[18px] py-4 shadow-[var(--shadow)]">
+      <span className="mb-1.5 block text-[11px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">{label}</span>
+      <span className="font-display text-[26px] font-black tabular-nums">{value}</span>
+      {sub && <div className="mt-1 text-[11.5px] text-[var(--slate)]">{sub}</div>}
+    </div>
+  );
+}
+
+function EvoChart({ data }: { data: { l: string; v: number }[] }) {
+  const W = 560, H = 200, padL = 40, padR = 10, padT = 10, padB = 24;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const niceMax = Math.ceil(Math.max(...data.map((p) => p.v)) / 100) * 100 || 100;
+  const step = plotW / (data.length - 1 || 1);
+  const pts = data.map((p, i) => ({ x: padL + i * step, y: padT + plotH - (p.v / niceMax) * plotH, l: p.l }));
+  const line = "M " + pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" L ");
+  const area = `${line} L ${pts[pts.length - 1].x.toFixed(1)},${padT + plotH} L ${pts[0].x.toFixed(1)},${padT + plotH} Z`;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
+      <path d={area} fill="var(--turquoise)" opacity={0.12} />
+      <path d={line} fill="none" stroke="var(--turquoise)" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+      {pts.map((p, i) => (
+        <g key={i}>
+          <circle cx={p.x} cy={p.y} r={3} fill="var(--turquoise)" />
+          {(i % Math.ceil(pts.length / 8 || 1) === 0 || i === pts.length - 1) && (
+            <text x={p.x} y={H - 6} fontSize={9.5} textAnchor="middle" fill="var(--slate)">{p.l}</text>
+          )}
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+/** Statistiques des livraisons reçues par une association (poids, typologie), sans aucune valorisation —
+ * équivalent du tableau de bord partenaire mais côté réception, cf. demande de Simon du 01/10/2026. */
+function summarizeDropoffs(rows: CollecteRow[]) {
+  let volume = 0;
+  let ok = 0;
+  let annulees = 0;
+  const kgByCat: Record<CatKey, number> = { secs: 0, fl: 0, frais: 0, plats: 0, boulang: 0 };
+  const byDay: Record<string, number> = {};
+  for (const r of rows) {
+    if (r.status === "annule") { annulees++; continue; }
+    if (r.status !== "collecte") continue;
+    ok++;
+    let kg = 0;
+    for (const it of r.collecte_items ?? []) {
+      const v = Number(it.kg) || 0;
+      kg += v;
+      const key = it.denree ? DENREE_TO_CAT[it.denree] : undefined;
+      if (key) kgByCat[key] += v;
+    }
+    volume += kg;
+    byDay[r.scheduled_date] = (byDay[r.scheduled_date] ?? 0) + kg;
+  }
+  const totalCat = Object.values(kgByCat).reduce((a, b) => a + b, 0);
+  return {
+    volume: Math.round(volume * 10) / 10,
+    ok,
+    annulees,
+    avg: ok ? Math.round((volume / ok) * 10) / 10 : 0,
+    taux: ok + annulees ? Math.round((ok / (ok + annulees)) * 100) : 0,
+    denrees: CAT_KEYS.map((k) => ({ k, kg: Math.round(kgByCat[k] * 10) / 10, pct: totalCat ? Math.round((kgByCat[k] / totalCat) * 100) : 0 })),
+    byDay,
+  };
 }
 
 type Tab = "livraisons" | "fiche" | "documents";
@@ -104,6 +208,8 @@ export default function EspaceBeneficiairePage() {
   const [reqMsg, setReqMsg] = useState("");
   const [sendingReq, setSendingReq] = useState(false);
   const [reqSent, setReqSent] = useState(false);
+  const [gran, setGran] = useState<"semaine" | "mois" | "tout">("semaine");
+  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
 
   function showToast(msg: string) {
     setToast(msg);
@@ -119,13 +225,19 @@ export default function EspaceBeneficiairePage() {
       if (!ids.length) return setLoading(false);
       const [b, c] = await Promise.all([
         supabase.from("beneficiaries").select("id,name,category,address,city_id,fiche").in("id", ids).is("deleted_at", null).order("name"),
-        supabase.from("collectes").select("id,beneficiary_id,scheduled_date,scheduled_time,status,collecte_items!collecte_id(denree,kg)").in("beneficiary_id", ids).order("scheduled_date", { ascending: false }).limit(300),
+        supabase.from("collectes").select("id,beneficiary_id,scheduled_date,scheduled_time,status,collecte_items!collecte_id(denree,kg),photo_paths").in("beneficiary_id", ids).order("scheduled_date", { ascending: false }).limit(300),
       ]);
       if (b.error) showToast("Chargement impossible : " + b.error.message + " (la migration 030 est-elle passée ?)");
       const list = (b.data ?? []) as BeneficiaryRow[];
       setRows(list);
       if (list[0]) setCurrentId(list[0].id);
-      setColRows((c.data ?? []) as unknown as CollecteRow[]);
+      const cRows = (c.data ?? []) as unknown as CollecteRow[];
+      setColRows(cRows);
+      const allPaths = Array.from(new Set(cRows.flatMap((r) => r.photo_paths ?? [])));
+      if (allPaths.length) {
+        const urls = await signedUrls(supabase, allPaths);
+        setPhotoUrls(Object.fromEntries(allPaths.map((p, i) => [p, urls[i]])));
+      }
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -137,6 +249,30 @@ export default function EspaceBeneficiairePage() {
   const myCollectes = colRows.filter((r) => r.beneficiary_id === currentId);
   const upcoming = myCollectes.filter((r) => r.status === "todo" && r.scheduled_date >= todayIso).sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date));
   const history = myCollectes.filter((r) => r.status === "collecte").slice(0, 20);
+
+  function periodStats(g: "semaine" | "mois" | "tout") {
+    const now = new Date();
+    let f: Date, t: Date, label: string;
+    if (g === "semaine") {
+      f = new Date(now); f.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+      t = new Date(f); t.setDate(f.getDate() + 6);
+      label = `Semaine du ${f.getDate()} au ${t.getDate()} ${MONTHS_SHORT[t.getMonth()]} ${t.getFullYear()}`;
+    } else if (g === "mois") {
+      f = new Date(now.getFullYear(), now.getMonth(), 1);
+      t = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      label = f.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+    } else {
+      const first = myCollectes.length ? myCollectes.reduce((a, b) => (a.scheduled_date < b.scheduled_date ? a : b)).scheduled_date : null;
+      f = first ? new Date(first + "T00:00:00") : new Date(now.getFullYear(), 0, 1);
+      t = now;
+      label = `Depuis ${f.toLocaleDateString("fr-FR", { month: "long", year: "numeric" })}`;
+    }
+    const fk = isoOf(f), tk = isoOf(t);
+    const s = summarizeDropoffs(myCollectes.filter((r) => r.scheduled_date >= fk && r.scheduled_date <= tk));
+    return { ...s, periodLabel: label, evo: buildEvo(s.byDay, f, t) };
+  }
+  const dash = periodStats(gran);
+  const maxPct = Math.max(1, ...dash.denrees.map((x) => x.pct));
 
   const contacts = (fiche.contacts as Contact[]) ?? [];
   const access = (fiche.access as Record<string, boolean>) ?? {};
@@ -241,16 +377,48 @@ export default function EspaceBeneficiairePage() {
                 <p className="text-[11.5px] text-[var(--slate)]">Aucune livraison planifiée pour l&apos;instant.</p>
               )}
             </Card>
-            <Card title="Historique des livraisons" icon={CLOCK} note="Quantités reçues lors de vos dernières livraisons Linkee.">
+            <Card title="Historique des livraisons" icon={CLOCK} note="Quantités reçues lors de vos dernières livraisons Linkee, avec la photo prise par le logisticien.">
               {history.length ? (
                 history.map((r) => {
                   const s = summarizeItems(r.collecte_items);
-                  return <CollectRow key={r.id} date={r.scheduled_date} note={s.denree} badge={`${s.kg} kg`} badgeCls="bg-[var(--good-bg)] text-[var(--good)]" />;
+                  const photos = (r.photo_paths ?? []).map((p) => photoUrls[p]).filter(Boolean);
+                  return <CollectRow key={r.id} date={r.scheduled_date} note={s.denree} badge={`${s.kg} kg`} badgeCls="bg-[var(--good-bg)] text-[var(--good)]" photos={photos} />;
                 })
               ) : (
                 <p className="text-[11.5px] text-[var(--slate)]">Aucun historique pour l&apos;instant.</p>
               )}
             </Card>
+
+            <div className="mt-8 mb-3.5 flex items-center gap-3.5">
+              <h2 className="font-display text-[20px] font-black whitespace-nowrap text-[var(--navy)]">Tableau de bord</h2>
+              <span className="h-px flex-1 bg-[var(--border)]" />
+            </div>
+            <GranToggle options={[["semaine", "Semaine"], ["mois", "Mois"], ["tout", "Depuis le début"]]} value={gran} onChange={(v) => setGran(v as typeof gran)} />
+            <p className="mb-3.5 text-[12px] text-[var(--slate)]">{dash.periodLabel}</p>
+            <div className="mb-4 grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+              <Tile label="Poids total reçu" value={`${dash.volume} kg`} sub={dash.periodLabel} />
+              <Tile label="Livraisons reçues" value={String(dash.ok)} sub={`${dash.annulees} annulée(s)`} />
+              <Tile label="Poids moyen par livraison" value={`${dash.avg} kg`} sub="sur la période" />
+              <Tile label="Taux de livraisons réalisées" value={`${dash.taux} %`} sub="sur la période" />
+            </div>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr]">
+              <Card title="Évolution du poids reçu" note="Poids reçu par période"><EvoChart data={dash.evo} /></Card>
+              <Card title="Typologie des denrées reçues" note="Sur la période sélectionnée">
+                {dash.denrees.every((x) => x.kg === 0) ? (
+                  <p className="text-[11.5px] text-[var(--slate)]">Pas encore de donnée sur cette période.</p>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {dash.denrees.map((x) => (
+                      <div key={x.k} className="grid grid-cols-[110px_1fr_64px] items-center gap-2.5">
+                        <span className="text-xs font-semibold">{CAT_LABELS[x.k]}</span>
+                        <span className="h-[11px] overflow-hidden rounded-md bg-[var(--track)]"><span className="block h-full rounded-md" style={{ width: `${Math.round((x.pct / maxPct) * 100)}%`, background: CAT_COLORS[x.k] }} /></span>
+                        <span className="text-right text-[11.5px] font-semibold text-[var(--slate)]">{x.pct}% · {x.kg}kg</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            </div>
           </>
         )}
 
