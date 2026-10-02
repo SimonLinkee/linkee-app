@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
 import EntityActivity from "@/components/admin/EntityActivity";
+import { isSuper } from "@/lib/roles";
 import { CAT_KEYS, CAT_LABELS, CO2_SOURCE, DEFAULT_EUR_PER_KG, STAT_SELECT, SUBCAT_SELECT, buildEvo, isoOf, rse, subMap, summarize, type CatKey, type StatRow, type SubCat, type Summary } from "@/lib/stats";
 
 type Gran = "jour" | "semaine" | "mois" | "custom";
@@ -185,7 +186,7 @@ export default function DashboardPage() {
   const [work, setWork] = useState<{ secs: number; days: number }>({ secs: 0, days: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { cityId, city, isAll, cities } = useCity(); // cityId is null in the national view; the page remounts when the city changes
+  const { cityId, city, isAll, cities, role } = useCity(); // cityId is null in the national view; the page remounts when the city changes
   const [byCity, setByCity] = useState<{ id: string; name: string; color: string; volume: number; ok: number; collectes: number }[]>([]);
 
   const range = useMemo(() => periodRange(gran, anchor, dateFrom, dateTo), [gran, anchor, dateFrom, dateTo]);
@@ -521,11 +522,13 @@ export default function DashboardPage() {
               <span className="font-display text-[26px] font-black text-[var(--navy)] tabular-nums">{c.taux} %</span>
             </div>
           </div>
+          {isSuper(role) && (
           <div className="flex flex-col gap-2 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]">
             <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Temps de travail</span>
             <span className="font-display text-[30px] leading-none font-black text-[var(--navy)] tabular-nums">{activePartnerId ? "—" : fmtHours(work.secs)}</span>
             <span className="text-[12.5px] text-[var(--slate)]">{activePartnerId ? "Non applicable à un seul partenaire" : `${work.days} journée(s) clôturée(s)`}</span>
           </div>
+          )}
           <div className="flex flex-col gap-2 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]" style={{ borderTop: "4px solid #eb6834" }}>
             <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Links Bénévoles</span>
             <span className="font-display text-[30px] leading-none font-black text-[var(--navy)] tabular-nums">{linkKpi.count}</span>

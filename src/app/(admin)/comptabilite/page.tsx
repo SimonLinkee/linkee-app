@@ -152,15 +152,15 @@ export default function ComptabilitePage() {
   return (
     <div>
       <div className="mb-4">
-        <h1 className="font-display text-[32px] leading-none font-black">{canIssue ? "Suivi des Cerfa" : "Cerfa à valider"}</h1>
+        <h1 className="font-display text-[32px] leading-none font-black">{canIssue ? "Suivi des Cerfa" : "Cerfa de mon antenne"}</h1>
         <p className="mt-1 text-[13.5px] text-[var(--slate)]">
-          {canIssue ? "Reçus fiscaux demandés par les partenaires donateurs : validation, émission et archivage." : "Valide ou refuse les demandes de reçu fiscal des partenaires de ton antenne."}
+          {canIssue ? "Reçus fiscaux demandés par les partenaires donateurs : validation, émission et archivage." : "Reçus fiscaux demandés par les partenaires de ton antenne : tu valides ou refuses les demandes, la comptabilité émet les Cerfa."}
         </p>
       </div>
 
-      <div className={`mb-5 grid grid-cols-1 gap-3.5 sm:grid-cols-2 ${canIssue ? "lg:grid-cols-4" : "lg:grid-cols-2"}`}>
+      <div className={`mb-5 grid grid-cols-1 gap-3.5 sm:grid-cols-2 ${canIssue ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
         <Counter label="À valider" value={toValidate} sub="en attente du responsable d'antenne" onClick={() => setStatus("soumise")} active={status === "soumise"} />
-        {canIssue && <Counter label="À traiter" value={toProcess} sub="validées, Cerfa à émettre" onClick={() => setStatus("validee")} active={status === "validee"} />}
+        <Counter label="À traiter" value={toProcess} sub="validées, Cerfa à émettre" onClick={() => setStatus("validee")} active={status === "validee"} />
         {canIssue && <Counter label="En retard" value={late.length} sub="partenaires sans demande" onClick={() => lateBox.current?.scrollIntoView({ behavior: "smooth" })} />}
         <Counter label="Émis ce mois-ci" value={issuedThisMonth} sub="Cerfa téléversés" onClick={() => setStatus("emise")} active={status === "emise"} />
       </div>

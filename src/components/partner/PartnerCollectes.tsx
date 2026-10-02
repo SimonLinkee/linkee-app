@@ -19,7 +19,7 @@ const labelCls = "mb-1 block text-[11.5px] font-semibold text-[var(--slate)]";
 type Preset = "30" | "90" | "365" | "all" | "custom";
 
 /** Admin view of a partner's collections: upcoming planned ones, history with values, manual volume entry. */
-export default function PartnerCollectes({ partnerId, cityId, category }: { partnerId: string; cityId: string | null; category: string }) {
+export default function PartnerCollectes({ partnerId, cityId, category, readOnly = false }: { partnerId: string; cityId: string | null; category: string; readOnly?: boolean }) {
   const supabase = useMemo(() => createClient(), []);
   const fileInput = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Row[]>([]);
@@ -221,12 +221,14 @@ export default function PartnerCollectes({ partnerId, cityId, category }: { part
             <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={`${fieldCls} !w-auto`} />
           </div>
         )}
-        <button type="button" onClick={() => setOpen((v) => !v)} className="ml-auto flex items-center gap-1.5 rounded-[40px] border-[1.5px] border-[var(--client-req)] px-4 py-2 font-display text-[13px] font-bold text-[var(--client-req)]">
-          + Ajouter un volume collecté
-        </button>
+        {!readOnly && (
+          <button type="button" onClick={() => setOpen((v) => !v)} className="ml-auto flex items-center gap-1.5 rounded-[40px] border-[1.5px] border-[var(--client-req)] px-4 py-2 font-display text-[13px] font-bold text-[var(--client-req)]">
+            + Ajouter un volume collecté
+          </button>
+        )}
       </div>
 
-      {open && (
+      {open && !readOnly && (
         <div className="mb-4 rounded-2xl border-[1.5px] border-[var(--client-req)] bg-[var(--card)] p-4">
           <h4 className="mb-0.5 text-[14.5px] font-semibold text-[var(--navy)]">Saisie manuelle d&apos;un volume</h4>
           <p className="mb-3 text-[11.5px] text-[var(--slate)]">Compte dans les statistiques et la Valorisation RSE comme une collecte normale, avec le tag « saisie manuelle ». Elle n&apos;apparaît pas dans le Planning.</p>

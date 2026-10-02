@@ -16,7 +16,7 @@ const SOURCE_LABEL: Record<string, string> = { admin: "l'admin", partenaire: "le
 
 /** "Mes documents" : dossier partagé entre Linkee et le partenaire OU le bénéficiaire (listing des produits,
  * conventions, attestations…). Un fichier déposé pour une structure n'est jamais visible d'une autre. */
-export default function PartnerDocuments({ role, cerfa, ...owner }: Owner & { role: "admin" | "partenaire" | "beneficiaire"; cerfa?: CerfaSelection }) {
+export default function PartnerDocuments({ role, cerfa, readOnly = false, ...owner }: Owner & { role: "admin" | "partenaire" | "beneficiaire"; cerfa?: CerfaSelection; readOnly?: boolean }) {
   const ownerId = owner.partnerId ?? owner.beneficiaryId!;
   const ownerCol = owner.partnerId ? "partner_id" : "beneficiary_id";
   const supabase = useMemo(() => createClient(), []);
@@ -91,6 +91,7 @@ export default function PartnerDocuments({ role, cerfa, ...owner }: Owner & { ro
         Formats acceptés : PDF, Excel, CSV et images.
       </p>
 
+      {!readOnly && (
       <div className="mb-4 rounded-2xl border border-dashed border-[var(--turquoise)] bg-[var(--input-bg)] p-4">
         <div className="flex flex-wrap items-center gap-3">
           <button type="button" disabled={busy} onClick={() => input.current?.click()} className="flex items-center gap-2 rounded-[40px] bg-[var(--navy-deep)] px-4 py-2.5 font-display text-[13.5px] font-bold text-[var(--panel-fg)] disabled:opacity-60">
@@ -129,6 +130,7 @@ export default function PartnerDocuments({ role, cerfa, ...owner }: Owner & { ro
           )}
         </div>
       </div>
+      )}
 
       {msg && <div className="mb-3 rounded-xl bg-[var(--critical-bg)] px-3.5 py-2.5 text-[12.5px] font-semibold text-[var(--critical)]">{msg}</div>}
       {loading && <p className="text-[13px] text-[var(--slate)]">Chargement…</p>}
@@ -137,7 +139,7 @@ export default function PartnerDocuments({ role, cerfa, ...owner }: Owner & { ro
       <div className="flex flex-col gap-2">
         {docs.map((d) => {
           const lockedStatus = cerfa?.locked[d.id];
-          const canDelete = (role === "admin" || d.source === role) && !lockedStatus;
+          const canDelete = (role === "admin" || d.source === role) && !lockedStatus && !readOnly;
           const col = collecteLabel(d.collecte_id);
           return (
             <div key={d.id} className={`flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3.5 py-3 ${lockedStatus ? "opacity-60" : ""}`}>

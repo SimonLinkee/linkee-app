@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
+import { isSuper } from "@/lib/roles";
 import { PASSAGE_ITEMS, PassageIcon, type Passage } from "@/components/PassageIcons";
 import PartnerDocuments from "@/components/partner/PartnerDocuments";
 import PartnerValuation from "@/components/partner/PartnerValuation";
@@ -356,6 +357,9 @@ function SingleChoiceChips({ options, value, onChange }: { options: string[]; va
   );
 }
 
+// Consultation seule (Responsable d'antenne) : le contenu de chaque section est désactivé, mais les sections restent dépliables.
+const ReadOnlyCtx = createContext(false);
+
 function AccordionSection({
   title,
   sectionKey,
@@ -369,6 +373,7 @@ function AccordionSection({
   onToggle: (k: string) => void;
   children: React.ReactNode;
 }) {
+  const readOnly = useContext(ReadOnlyCtx);
   return (
     <div className="mb-2.5 overflow-hidden rounded-[14px] border border-[var(--border)]" style={{ borderTop: `4px solid ${SECTION_COLOR[sectionKey] ?? "var(--turquoise)"}` }}>
       <button
@@ -389,7 +394,11 @@ function AccordionSection({
           <path d="M6 9 L12 15 L18 9" />
         </svg>
       </button>
-      {open && <div className="border-t border-[var(--border)] p-4">{children}</div>}
+      {open && (
+        <div className="border-t border-[var(--border)] p-4">
+          <fieldset disabled={readOnly} className="m-0 min-w-0 border-0 p-0">{children}</fieldset>
+        </div>
+      )}
     </div>
   );
 }
@@ -403,7 +412,8 @@ export default function PartenairesPage() {
   const [partners, setPartners] = useState<PartnerEntity[]>([]);
   const [beneficiaires, setBeneficiaires] = useState<BeneficiaireEntity[]>([]);
   const [loading, setLoading] = useState(true);
-  const { cityId } = useCity(); // the page remounts when the city changes
+  const { cityId, role } = useCity(); // the page remounts when the city changes
+  const readOnly = !isSuper(role); // Responsable d'antenne : consultation seule, pour sa ville (voir ReadOnlyCtx)
   const saveTimers = useRef<Record<string, number>>({});
   const [tab, setTab] = useState<"partner" | "beneficiaire">("partner");
   const [ficheTab, setFicheTab] = useState<FicheTab>("fiche");
@@ -460,6 +470,7 @@ export default function PartenairesPage() {
 
   // Debounced write of one fiche to Supabase.
   function persist(e: Entity) {
+    if (readOnly) return;
     const table = e.kind === "partner" ? "partners" : "beneficiaries";
     window.clearTimeout(saveTimers.current[e.id]);
     saveTimers.current[e.id] = window.setTimeout(async () => {
@@ -474,7 +485,7 @@ export default function PartenairesPage() {
   async function uploadLogo(ev: React.ChangeEvent<HTMLInputElement>) {
     const file = ev.target.files?.[0];
     ev.target.value = "";
-    if (!file || !current || current.kind !== "partner") return;
+    if (readOnly || !file || !current || current.kind !== "partner") return;
     if (!file.type.startsWith("image/") || file.size > 2 * 1024 * 1024) return showToast("Choisis une image de 2 Mo maximum.");
     const ext = (file.name.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "");
     const path = `${current.id}/logo-${Date.now()}.${ext}`;
@@ -490,7 +501,7 @@ export default function PartenairesPage() {
   /** Suppression logique (deleted_at) : ne casse pas l'historique des collectes/distributions déjà liées, et
    * l'élément disparaît de toutes les listes et sélecteurs (qui filtrent tous deleted_at is null). */
   async function confirmDelete() {
-    if (!deleteTarget) return;
+    if (!deleteTarget || readOnly) return;
     setDeleting(true);
     const table = deleteTarget.kind === "partner" ? "partners" : "beneficiaries";
     const { error } = await supabase.from(table).update({ deleted_at: new Date().toISOString() }).eq("id", deleteTarget.id);
@@ -507,6 +518,7 @@ export default function PartenairesPage() {
   }
 
   async function createEntity() {
+    if (readOnly) return;
     if (!cityId) return showToast("Aucune ville n'est associée à ton compte.");
     const kind = tab;
     const table = kind === "partner" ? "partners" : "beneficiaries";
@@ -604,31 +616,37 @@ export default function PartenairesPage() {
           )}
           <span className={`h-2 w-2 rounded-full ${e.active ? "bg-[var(--good)]" : "bg-[var(--muted)]"}`} />
         </span>
-        <button
-          type="button"
-          title="Supprimer"
-          onClick={(ev) => {
-            ev.stopPropagation();
-            setDeleteTarget(e);
-          }}
-          className="flex h-7 w-7 flex-none items-center justify-center rounded-full text-[var(--muted)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]">
-            <path d="M4 7 H20 M9 7 V4.5 A1 1 0 0 1 10 3.5 H14 A1 1 0 0 1 15 4.5 V7 M6.5 7 L7.3 19.5 A2 2 0 0 0 9.3 21.4 H14.7 A2 2 0 0 0 16.7 19.5 L17.5 7" />
-          </svg>
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            title="Supprimer"
+            onClick={(ev) => {
+              ev.stopPropagation();
+              setDeleteTarget(e);
+            }}
+            className="flex h-7 w-7 flex-none items-center justify-center rounded-full text-[var(--muted)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]">
+              <path d="M4 7 H20 M9 7 V4.5 A1 1 0 0 1 10 3.5 H14 A1 1 0 0 1 15 4.5 V7 M6.5 7 L7.3 19.5 A2 2 0 0 0 9.3 21.4 H14.7 A2 2 0 0 0 16.7 19.5 L17.5 7" />
+            </svg>
+          </button>
+        )}
       </div>
     );
   }
 
   return (
+    <ReadOnlyCtx.Provider value={readOnly}>
     <div>
       <h1 className="font-display text-[32px] leading-none font-black">{tab === "partner" ? "Partenaires" : "Bénéficiaires"}</h1>
       <p className="mb-[18px] text-[13.5px] text-[var(--slate)]">
         {tab === "partner"
-          ? "Fiches d'identité des commerces qui donnent leurs invendus — modifiables directement ici."
+          ? readOnly ? "Fiches d'identité des commerces qui donnent leurs invendus — en consultation." : "Fiches d'identité des commerces qui donnent leurs invendus — modifiables directement ici."
           : "Fiches des associations et points de distribution qui reçoivent les denrées."}
       </p>
+      {readOnly && (
+        <p className="mb-3.5 rounded-xl bg-[var(--track)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--slate)]">Consultation seule : tu vois les fiches de ta ville. Pour une modification, contacte le Superadmin.</p>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex rounded-[40px] border border-[var(--border)] bg-[var(--card)] p-[3px] shadow-[var(--shadow)]">
@@ -679,16 +697,18 @@ export default function PartenairesPage() {
             </select>
           </>
         )}
-        <button
-          type="button"
-          onClick={createEntity}
-          className="ml-auto flex items-center gap-1.5 rounded-[40px] bg-[var(--navy-deep)] px-[17px] py-[9px] font-display text-[13.5px] font-bold text-[var(--panel-fg)]"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]">
-            <path d="M12 5 V19 M5 12 H19" />
-          </svg>
-          <span>{tab === "partner" ? "Ajouter un partenaire" : "Ajouter un bénéficiaire"}</span>
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={createEntity}
+            className="ml-auto flex items-center gap-1.5 rounded-[40px] bg-[var(--navy-deep)] px-[17px] py-[9px] font-display text-[13.5px] font-bold text-[var(--panel-fg)]"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]">
+              <path d="M12 5 V19 M5 12 H19" />
+            </svg>
+            <span>{tab === "partner" ? "Ajouter un partenaire" : "Ajouter un bénéficiaire"}</span>
+          </button>
+        )}
       </div>
 
       {tab === "beneficiaire" && !loading && (
@@ -736,10 +756,10 @@ export default function PartenairesPage() {
             <>
               <div className="mb-2 flex items-start gap-[18px]">
                 <div
-                  onClick={() => (current.kind === "partner" ? logoInput.current?.click() : showToast("Le logo est disponible pour les partenaires."))}
-                  className="group relative flex h-[66px] w-[66px] flex-none cursor-pointer items-center justify-center overflow-hidden rounded-[20px] font-display text-[22px] font-extrabold text-white"
+                  onClick={() => (readOnly ? undefined : current.kind === "partner" ? logoInput.current?.click() : showToast("Le logo est disponible pour les partenaires."))}
+                  className={`group relative flex h-[66px] w-[66px] flex-none items-center justify-center overflow-hidden rounded-[20px] font-display text-[22px] font-extrabold text-white ${readOnly ? "" : "cursor-pointer"}`}
                   style={{ background: current.logoUrl ? "var(--card)" : colorFor(current.name) }}
-                  title="Changer le logo"
+                  title={readOnly ? undefined : "Changer le logo"}
                 >
                   <input ref={logoInput} type="file" accept="image/*" hidden onChange={uploadLogo} />
                   {current.logoUrl ? (
@@ -748,7 +768,7 @@ export default function PartenairesPage() {
                   ) : (
                     initials(current.name)
                   )}
-                  <span className="absolute inset-0 flex items-center justify-center rounded-[20px] bg-[rgba(0,22,65,0.55)] opacity-0 transition-opacity group-hover:opacity-100">
+                  <span className={`absolute inset-0 items-center justify-center rounded-[20px] bg-[rgba(0,22,65,0.55)] opacity-0 transition-opacity group-hover:opacity-100 ${readOnly ? "hidden" : "flex"}`}>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px] text-white">
                       <path d="M4 8 L7 4 H17 L20 8" />
                       <rect x="3" y="8" width="18" height="12" rx="2" />
@@ -760,24 +780,28 @@ export default function PartenairesPage() {
                   <div className="flex items-center gap-2.5">
                     <input
                       value={current.name}
+                      readOnly={readOnly}
                       onChange={(e) => updateEntity((entity) => ({ ...entity, name: e.target.value }))}
                       className="min-w-0 flex-1 rounded-lg border-b-[1.5px] border-transparent bg-transparent px-1 py-0.5 font-display text-[27px] font-black text-[var(--navy)] outline-none hover:border-b-[var(--turquoise)] hover:bg-[var(--input-bg)] focus:border-b-[var(--turquoise)] focus:bg-[var(--input-bg)]"
                     />
                     {current.kind === "beneficiaire" && current.pinned && <DistribBadge />}
-                    <button
-                      type="button"
-                      title="Supprimer cette fiche"
-                      onClick={() => setDeleteTarget(current)}
-                      className="flex h-8 w-8 flex-none items-center justify-center rounded-full text-[var(--muted)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[17px] w-[17px]">
-                        <path d="M4 7 H20 M9 7 V4.5 A1 1 0 0 1 10 3.5 H14 A1 1 0 0 1 15 4.5 V7 M6.5 7 L7.3 19.5 A2 2 0 0 0 9.3 21.4 H14.7 A2 2 0 0 0 16.7 19.5 L17.5 7" />
-                      </svg>
-                    </button>
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        title="Supprimer cette fiche"
+                        onClick={() => setDeleteTarget(current)}
+                        className="flex h-8 w-8 flex-none items-center justify-center rounded-full text-[var(--muted)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[17px] w-[17px]">
+                          <path d="M4 7 H20 M9 7 V4.5 A1 1 0 0 1 10 3.5 H14 A1 1 0 0 1 15 4.5 V7 M6.5 7 L7.3 19.5 A2 2 0 0 0 9.3 21.4 H14.7 A2 2 0 0 0 16.7 19.5 L17.5 7" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                   <div className="mt-1.5 flex flex-wrap items-center gap-3">
                     <select
                       value={current.cat}
+                      disabled={readOnly}
                       onChange={(e) => updateEntity((entity) => ({ ...entity, cat: e.target.value, ...(entity.kind === "beneficiaire" ? { pinned: e.target.value === "Distribution Linkee" } : {}) }))}
                       className="cursor-pointer rounded-[40px] border border-[var(--border)] bg-[var(--input-bg)] px-3 py-[5px] text-[12.5px] font-semibold text-[var(--slate)]"
                     >
@@ -796,6 +820,7 @@ export default function PartenairesPage() {
                   </span>
                   <button
                     type="button"
+                    disabled={readOnly}
                     onClick={() => updateEntity((entity) => ({ ...entity, active: !entity.active }))}
                     className={`relative h-[21px] w-[38px] rounded-[40px] transition-colors ${current.active ? "bg-[var(--good)]" : "bg-[var(--track)]"}`}
                   >
@@ -810,6 +835,7 @@ export default function PartenairesPage() {
                 <label className="mb-4 flex items-start gap-2.5 rounded-[14px] border-[1.5px] p-3" style={{ borderColor: current.benevoleOnly ? "#eb6834" : "var(--border)", background: current.benevoleOnly ? "rgba(235,104,52,.08)" : "var(--card)" }}>
                   <input
                     type="checkbox"
+                    disabled={readOnly}
                     checked={!!current.benevoleOnly}
                     onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, benevoleOnly: e.target.checked } : entity))}
                     className="mt-0.5 h-[17px] w-[17px] accent-[#eb6834]"
@@ -830,7 +856,7 @@ export default function PartenairesPage() {
               </div>
 
               <div className="mb-4 grid grid-cols-2 gap-1.5 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-1.5 sm:grid-cols-4">
-                {(current.kind === "partner" ? FICHE_TABS : BENEFICIAIRE_FICHE_TABS).map((t) => {
+                {(current.kind === "partner" ? FICHE_TABS : BENEFICIAIRE_FICHE_TABS).filter((t) => !(readOnly && t.k === "valorisation")).map((t) => {
                   const on = ficheTab === t.k;
                   return (
                     <button
@@ -849,10 +875,10 @@ export default function PartenairesPage() {
                 })}
               </div>
               <div>
-              {current.kind === "partner" && ficheTab === "documents" && <PartnerDocuments key={current.id} partnerId={current.id} role="admin" />}
-              {current.kind === "beneficiaire" && ficheTab === "documents" && <PartnerDocuments key={current.id} beneficiaryId={current.id} role="admin" />}
-              {current.kind === "partner" && ficheTab === "valorisation" && <PartnerValuation key={current.id} partnerId={current.id} category={current.cat} />}
-              {current.kind === "partner" && ficheTab === "collectes" && <PartnerCollectes key={current.id} partnerId={current.id} cityId={cityId} category={current.cat} />}
+              {current.kind === "partner" && ficheTab === "documents" && <PartnerDocuments key={current.id} partnerId={current.id} role="admin" readOnly={readOnly} />}
+              {current.kind === "beneficiaire" && ficheTab === "documents" && <PartnerDocuments key={current.id} beneficiaryId={current.id} role="admin" readOnly={readOnly} />}
+              {current.kind === "partner" && ficheTab === "valorisation" && !readOnly && <PartnerValuation key={current.id} partnerId={current.id} category={current.cat} />}
+              {current.kind === "partner" && ficheTab === "collectes" && <PartnerCollectes key={current.id} partnerId={current.id} cityId={cityId} category={current.cat} readOnly={readOnly} />}
 
               {ficheTab === "fiche" && (
               <>
@@ -1393,5 +1419,6 @@ export default function PartenairesPage() {
         </div>
       )}
     </div>
+    </ReadOnlyCtx.Provider>
   );
 }
