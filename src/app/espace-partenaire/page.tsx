@@ -9,6 +9,7 @@ import PartnerCerfa from "@/components/partner/PartnerCerfa";
 import NotificationBell from "@/components/NotificationBell";
 import RemonteesPanel from "@/components/RemonteesPanel";
 import BetaBadge from "@/components/BetaBadge";
+import BetaNote from "@/components/BetaNote";
 import RemonteesLink, { RemonteeBadgePill } from "@/components/RemonteesLink";
 import PartnerValuation from "@/components/partner/PartnerValuation";
 import PartnerLinks from "@/components/partner/PartnerLinks";
@@ -736,6 +737,7 @@ export default function EspacePartenairePage() {
           </Card>
 
           <Card title={<>Links Bénévoles <BetaBadge label="Bêta test" /></>} icon={LINKS_ICON} note="Petit volume à faire partir vite ? En complément du logisticien, un bénévole peut le collecter — jusqu'à 80 kg.">
+            <BetaNote className="mb-3" />
             {siteKey && <PartnerLinks key={siteKey} partnerId={siteKey} />}
           </Card>
 
@@ -995,6 +997,7 @@ export default function EspacePartenairePage() {
           {tab === "links" && (
             <div>
               <PanelHead title={<>Links Bénévoles <BetaBadge label="Bêta test" /></>} sub="Un petit volume à faire partir vite ? Demande un bénévole, en complément de la tournée du logisticien." />
+              <BetaNote className="mb-4" />
               {siteKey && <PartnerLinks key={siteKey} partnerId={siteKey} />}
             </div>
           )}

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
 import BetaBadge from "@/components/BetaBadge";
+import BetaNote from "@/components/BetaNote";
 import CharSvg from "@/components/linker/CharSvg";
 import { CH, characterSVG, type CharKey } from "@/lib/linker/characters";
 import { computeOutfit, stageOf, type Mode, type StyleKey } from "@/lib/linker/gamification";
@@ -100,6 +101,8 @@ export default function LinksBenevolesAdminPage() {
           <p className="mt-1 text-[13.5px] text-[var(--slate)]">Petites collectes confiées à des bénévoles (Linkers) — {city?.name}.</p>
         </div>
       </div>
+
+      <BetaNote href="/remontees" className="mb-4" />
 
       {msg && <div className="mb-3 rounded-xl bg-[var(--critical-bg)] px-3.5 py-2.5 text-[12.5px] font-semibold text-[var(--critical)]">{msg}</div>}
 

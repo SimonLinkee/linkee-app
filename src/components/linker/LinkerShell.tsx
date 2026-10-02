@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
 import BetaBadge from "@/components/BetaBadge";
+import BetaNote from "@/components/BetaNote";
 import { useLinker } from "./LinkerContext";
 import { REMONTEE_COLOR, useRemonteeBadge } from "@/lib/remontees";
 
@@ -48,7 +49,10 @@ export default function LinkerShell({ children }: { children: ReactNode }) {
           </button>
         </div>
       </header>
-      <main className="mx-auto max-w-[560px] px-4 pt-5">{children}</main>
+      <main className="mx-auto max-w-[560px] px-4 pt-5">
+        {(pathname === "/linker/accueil" || pathname === "/linker/carte") && <BetaNote audience="linker" href="/linker/remontees" className="mb-4" />}
+        {children}
+      </main>
       <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-[var(--border)] bg-[var(--card)] px-1 pt-1.5 pb-[calc(env(safe-area-inset-bottom)+6px)] shadow-[0_-8px_24px_-16px_rgba(0,0,0,0.3)]">
         {TABS.map((t) => {
           const on = pathname === t.href || pathname.startsWith(t.href + "/") || (t.href === "/linker/carte" && pathname.startsWith("/linker/link/"));
