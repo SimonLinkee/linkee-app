@@ -31,6 +31,7 @@ export default function PolitiqueConfidentialitePage() {
             <li><b className="text-[var(--navy)]">Bénévoles (Linkers)</b> — prénom, téléphone, ville, adresse de référence (pour calculer les distances de collecte), et un historique de vos collectes effectuées.</li>
             <li><b className="text-[var(--navy)]">Contacts de partenaires et d&apos;associations</b> — nom, téléphone, e-mail des personnes que vous désignez comme contact sur la fiche de votre structure.</li>
             <li><b className="text-[var(--navy)]">Salariés et responsables d&apos;antenne</b> — nom, e-mail, téléphone professionnel, et un suivi des journées de travail (horaires de tournée).</li>
+            <li><b className="text-[var(--navy)]">Remontées (onglet « Remontées »)</b> — le titre, la description et les pièces jointes (captures d&apos;écran, documents) que vous envoyez pour signaler un bug, poser une question ou proposer une idée, ainsi que votre rôle, votre antenne, la page de l&apos;application d&apos;où part la remontée, le navigateur et l&apos;appareil utilisés.</li>
           </ul>
           <p className={`${pCls} mt-2`}>Nous ne demandons jamais de données bancaires, de numéro de sécurité sociale ni de données de santé.</p>
         </div>
@@ -57,6 +58,9 @@ export default function PolitiqueConfidentialitePage() {
           <h2 className={h2Cls}>Combien de temps nous les gardons</h2>
           <p className={pCls}>
             Le temps de votre participation active, puis une durée raisonnable pour l&apos;historique et nos obligations de suivi associatif. Vous pouvez demander la suppression de votre compte à tout moment (voir ci-dessous).
+          </p>
+          <p className={`${pCls} mt-2`}>
+            Les pièces jointes de vos remontées sont supprimées automatiquement 6 mois après que la remontée est passée au statut « Traité ». Elles sont aussi supprimées avec votre compte. Pensez à masquer les informations personnelles sur vos captures d&apos;écran.
           </p>
         </div>
 

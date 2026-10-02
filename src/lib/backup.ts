@@ -30,6 +30,42 @@ async function fetchAll(admin: SupabaseClient, table: string) {
   return rows;
 }
 
+// RGPD : une capture d'écran jointe à une remontée peut contenir des données personnelles. Les fichiers sont donc
+// supprimés 6 mois après le passage en « Traité » (treated_at ; repasser la remontée en « En cours » remet treated_at à
+// zéro, donc annule le délai). Le titre, la description et le fil de discussion sont conservés.
+export const REMONTEE_ATTACHMENTS_KEEP_MONTHS = 6;
+
+export async function purgeRemonteeAttachments(admin: SupabaseClient): Promise<{ rows: number; files: number; errors: string[] }> {
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - REMONTEE_ATTACHMENTS_KEEP_MONTHS);
+  const { data, error } = await admin
+    .from("remontees")
+    .select("id,attachments")
+    .eq("status", "traite")
+    .lt("treated_at", cutoff.toISOString())
+    .is("attachments_purged_at", null)
+    .limit(500);
+  if (error) return { rows: 0, files: 0, errors: [error.message] };
+  const out = { rows: 0, files: 0, errors: [] as string[] };
+  for (const r of (data ?? []) as { id: string; attachments: { path: string }[] | null }[]) {
+    const paths = (r.attachments ?? []).map((a) => a.path).filter(Boolean);
+    if (!paths.length) continue; // rien à supprimer : on ne marque pas la remontée comme purgée
+    const rm = await admin.storage.from("remontees").remove(paths);
+    if (rm.error) {
+      out.errors.push(`${r.id}: ${rm.error.message}`); // réessayé la nuit suivante
+      continue;
+    }
+    const up = await admin.from("remontees").update({ attachments: [], attachments_purged_at: new Date().toISOString() }).eq("id", r.id);
+    if (up.error) {
+      out.errors.push(`${r.id}: ${up.error.message}`);
+      continue;
+    }
+    out.rows += 1;
+    out.files += paths.length;
+  }
+  return out;
+}
+
 export async function runBackup(admin: SupabaseClient) {
   const tables: Record<string, unknown[]> = {};
   const counts: Record<string, number> = {};
@@ -52,5 +88,8 @@ export async function runBackup(admin: SupabaseClient) {
   await admin.from("notifications").delete().lt("created_at", new Date(Date.now() - NOTIFICATIONS_KEEP_DAYS * 86400000).toISOString());
   await admin.from("day_sessions").delete().lt("day", new Date(Date.now() - DAY_SESSIONS_KEEP_DAYS * 86400000).toISOString().slice(0, 10));
 
-  return { name, size: body.length, counts };
+  // la purge des pièces jointes ne doit jamais faire échouer la sauvegarde (déjà écrite plus haut)
+  const remonteesPurge = await purgeRemonteeAttachments(admin).catch((e) => ({ rows: 0, files: 0, errors: [(e as Error).message] }));
+
+  return { name, size: body.length, counts, remonteesPurge };
 }
