@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Barlow_Condensed, Inter_Tight, Pacifico } from "next/font/google";
 import "./globals.css";
+import RouteTracker from "@/components/RouteTracker";
 
 const barlowCondensed = Barlow_Condensed({
   variable: "--font-barlow-condensed",
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${barlowCondensed.variable} ${interTight.variable} ${pacifico.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-[var(--cream)] text-[var(--navy)] font-sans">
+        <RouteTracker />
         {children}
       </body>
     </html>

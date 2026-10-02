@@ -7,6 +7,7 @@ import { signedUrls, uploadPrivatePhoto } from "@/lib/photos";
 import { geocode } from "@/lib/geocode";
 import { SUBCAT_SELECT, UNIT_LABEL, kgFromQuantity, type SubCat } from "@/lib/stats";
 import NotificationBell from "@/components/NotificationBell";
+import RemonteesLink from "@/components/RemonteesLink";
 import { PASSAGE_ITEMS, PassageBadges, PassageIcon, type Passage } from "@/components/PassageIcons";
 import { IMPORTANCE_COLOR, ImportanceDots, deadlineInfo, type MissionStatus } from "@/components/MissionBits";
 import dynamic from "next/dynamic";
@@ -957,6 +958,7 @@ export default function JourneePage() {
           <div className="mt-[3px] text-[12.5px] text-[var(--slate)] capitalize">{today}</div>
         </div>
         <div className="flex items-center gap-2.5">
+          <RemonteesLink />
           <NotificationBell align="right" />
           <button type="button" onClick={logout} className="text-xs font-semibold text-[var(--slate)] underline">Déconnexion</button>
           <span className="flex h-[38px] w-[38px] items-center justify-center rounded-full bg-[var(--turquoise)] font-display text-[15px] font-bold text-[#04262e]">{(firstName || "?").charAt(0).toUpperCase()}</span>

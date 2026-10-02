@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import PartnerDocuments from "@/components/partner/PartnerDocuments";
 import { signedUrls } from "@/lib/photos";
+import RemonteesPanel from "@/components/RemonteesPanel";
+import { RemonteeBadgePill } from "@/components/RemonteesLink";
 import { CAT_KEYS, CAT_LABELS, buildEvo, isoOf, type CatKey } from "@/lib/stats";
 import { CRENEAUX_DAYS, type Creneaux, type Slot as CreneauSlot } from "@/lib/creneaux";
 
@@ -58,6 +60,7 @@ const CAL = <><rect x="3.5" y="4.5" width="17" height="16" rx="2" /><path d="M3.
 const STORE = <><path d="M4 8 L8 4 H16 L20 8" /><rect x="4" y="8" width="16" height="11" rx="1.5" /><path d="M4 8 H20" /></>;
 const DOC = <><path d="M7 3 H14 L19 8 V21 H7 Z" /><path d="M14 3 V8 H19" /></>;
 const CLOCK = <><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5 V12 L15 14" /></>;
+const CHAT = <><path d="M4 5.5 A2 2 0 0 1 6 3.5 H18 A2 2 0 0 1 20 5.5 V15 A2 2 0 0 1 18 17 H10 L5 21 V17 H6 A2 2 0 0 1 4 15 Z" /><path d="M8.5 8.5 H15.5 M8.5 12 H13" /></>;
 const PHONE = <><path d="M5 4.5 C5 4.5 7 4 8 6 C8.8 7.7 7.5 8.3 7.2 9 C6.8 10 9 14 11.5 15.5 C12 15.8 12.8 14.5 13.8 14.2 C15.5 13.8 16 16 16 16 C16 17 15.5 19.5 13.5 19.5 C9.5 19.5 5 15 5 11 C5 8.5 5 4.5 5 4.5 Z" /></>;
 const CheckIcon = ({ className = "h-3.5 w-3.5" }: { className?: string }) => <Icon className={className} sw={2.4}><path d="M20 6 L9 17 L4 12" /></Icon>;
 
@@ -335,7 +338,7 @@ function summarizeDropoffs(rows: CollecteRow[]) {
   };
 }
 
-type Tab = "livraisons" | "fiche" | "documents" | "contact";
+type Tab = "livraisons" | "fiche" | "documents" | "contact" | "remontees";
 
 export default function EspaceBeneficiairePage() {
   const router = useRouter();
@@ -513,6 +516,7 @@ export default function EspaceBeneficiairePage() {
     { k: "fiche", l: "Ma fiche", icon: STORE },
     { k: "documents", l: "Mes documents", icon: DOC },
     { k: "contact", l: "Nous contacter", icon: PHONE },
+    { k: "remontees", l: "Remontées", icon: CHAT },
   ];
 
   return (
@@ -545,9 +549,16 @@ export default function EspaceBeneficiairePage() {
 
       <div className="sticky top-[57px] z-[19] flex gap-1 overflow-x-auto border-b border-[var(--border)] bg-[var(--card)] px-6">
         {tabs.map((t) => (
-          <button key={t.k} type="button" onClick={() => setTab(t.k)} className={`flex items-center gap-[7px] border-b-[3px] px-3.5 pt-3.5 pb-3 text-[13px] font-bold whitespace-nowrap ${tab === t.k ? "border-[var(--turquoise)] text-[var(--navy)]" : "border-transparent text-[var(--slate)]"}`}>
+          <button
+            key={t.k}
+            type="button"
+            onClick={() => setTab(t.k)}
+            style={t.k === "remontees" ? { color: "#B23B72", borderColor: tab === t.k ? "#B23B72" : "transparent" } : undefined}
+            className={`flex items-center gap-[7px] border-b-[3px] px-3.5 pt-3.5 pb-3 text-[13px] font-bold whitespace-nowrap ${t.k === "remontees" ? "" : tab === t.k ? "border-[var(--turquoise)] text-[var(--navy)]" : "border-transparent text-[var(--slate)]"}`}
+          >
             <Icon>{t.icon}</Icon>
             {t.l}
+            {t.k === "remontees" && <RemonteeBadgePill />}
           </button>
         ))}
       </div>
@@ -739,6 +750,7 @@ export default function EspaceBeneficiairePage() {
 
         {tab === "documents" && <PartnerDocuments key={currentId} beneficiaryId={currentId} role="beneficiaire" />}
         {tab === "contact" && <ContactTab key={currentId} cityId={current.city_id} />}
+        {tab === "remontees" && <RemonteesPanel formal />}
       </div>
       {toastEl}
     </div>

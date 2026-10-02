@@ -8,6 +8,7 @@ import { AVATAR_DEFS, critterSvg, type AvatarKey } from "@/lib/avatars";
 import NotificationBell from "@/components/NotificationBell";
 import { useCity } from "@/components/admin/CityContext";
 import { countLateDistributions } from "@/lib/distributions";
+import { useRemonteeBadge } from "@/lib/remontees";
 
 /** readable text colour (white or dark navy) on top of a hex background */
 function textOn(hex: string) {
@@ -127,6 +128,17 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: "/remontees",
+    label: "Remontées",
+    accent: true,
+    icon: (
+      <>
+        <path d="M4 5.5 A2 2 0 0 1 6 3.5 H18 A2 2 0 0 1 20 5.5 V15 A2 2 0 0 1 18 17 H10 L5 21 V17 H6 A2 2 0 0 1 4 15 Z" />
+        <path d="M8.5 8.5 H15.5 M8.5 12 H13" />
+      </>
+    ),
+  },
+  {
     href: "/profil",
     label: "Profil",
     icon: (
@@ -161,8 +173,12 @@ export function Sidebar() {
   const NATIONAL_BG = "linear-gradient(120deg,#2a78d6,#7C5CD9 45%,#eb6834)";
   // only Dashboard and Fleet exist in the national view (all cities)
   // Superadmin: everything · Responsable d'antenne: Distribution, Stock, Planning · Resp. Distribution: Distribution only
-  const rolePaths: string[] | null = me.role === "admin_local" ? ["/distributions", "/stock", "/planning", "/profil", "/links-benevoles", "/comptabilite"] : me.role === "resp_distribution" ? ["/distributions", "/profil"] : null;
-  const visibleNav = (isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/flotte", "/profil", "/valeur-des-dons", "/comptabilite"].includes(n.href)) : NAV_ITEMS).filter((n) => (me.role ? !rolePaths || rolePaths.includes(n.href) : false));
+  const rolePaths: string[] | null = me.role === "admin_local" ? ["/distributions", "/stock", "/planning", "/profil", "/links-benevoles", "/comptabilite", "/remontees"] : me.role === "resp_distribution" ? ["/distributions", "/profil", "/remontees"] : null;
+  // « Remontées » : onglet utilisateur pour tous les rôles sauf le Superadmin, qui a « Remontées APP » à la place
+  const visibleNav = (isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/flotte", "/profil", "/valeur-des-dons", "/comptabilite", "/remontees"].includes(n.href)) : NAV_ITEMS)
+    .filter((n) => (me.role ? !rolePaths || rolePaths.includes(n.href) : false))
+    .filter((n) => n.href !== "/remontees" || me.role !== "admin_principal");
+  const remonteeBadge = useRemonteeBadge();
 
   useEffect(() => {
     (async () => {
@@ -309,10 +325,13 @@ export function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
+                style={"accent" in item && item.accent ? (active ? { background: "#B23B72", color: "#fff" } : { color: "#F09BBE" }) : undefined}
                 className={`flex items-center gap-[11px] rounded-xl px-3 py-2 text-sm font-semibold ${
-                  active
-                    ? "bg-[var(--turquoise)] text-[#04262e]"
-                    : "text-[var(--panel-fg-dim)] hover:bg-white/8 hover:text-[var(--panel-fg)]"
+                  "accent" in item && item.accent
+                    ? active ? "" : "hover:bg-white/8"
+                    : active
+                      ? "bg-[var(--turquoise)] text-[#04262e]"
+                      : "text-[var(--panel-fg-dim)] hover:bg-white/8 hover:text-[var(--panel-fg)]"
                 }`}
               >
                 <svg
@@ -327,6 +346,9 @@ export function Sidebar() {
                   {item.icon}
                 </svg>
                 <span className="flex-1">{item.label}</span>
+                {item.href === "/remontees" && remonteeBadge > 0 && (
+                  <span title="Nouvelles réponses" className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#B23B72] px-1.5 text-[11px] font-bold text-white ring-1 ring-white/70">{remonteeBadge}</span>
+                )}
                 {item.href === "/distributions" && lateDist > 0 && (
                   <span title="Distributions à clôturer" className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--critical)] px-1.5 text-[11px] font-bold text-white">{lateDist}</span>
                 )}

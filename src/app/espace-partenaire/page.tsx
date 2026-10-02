@@ -7,6 +7,8 @@ import { compressImage, signedUrls } from "@/lib/photos";
 import { CAT_LABELS, CO2_SOURCE, DEFAULT_EUR_PER_KG, SUBCAT_SELECT, buildEvo, isCollectKind, isoOf, rse, subMap, summarize, type CatKey, type StatRow, type SubCat } from "@/lib/stats";
 import PartnerCerfa from "@/components/partner/PartnerCerfa";
 import NotificationBell from "@/components/NotificationBell";
+import RemonteesPanel from "@/components/RemonteesPanel";
+import RemonteesLink, { RemonteeBadgePill } from "@/components/RemonteesLink";
 import PartnerValuation from "@/components/partner/PartnerValuation";
 import PartnerLinks from "@/components/partner/PartnerLinks";
 import { formatCreneaux, type Creneaux } from "@/lib/creneaux";
@@ -141,6 +143,7 @@ const GRID = <><rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.5" /><rect x
 const CLOCK = <><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5 V12 L15 14" /></>;
 const STORE = <><path d="M4 8 L8 4 H16 L20 8" /><rect x="4" y="8" width="16" height="11" rx="1.5" /><path d="M4 8 H20" /></>;
 const DOC = <><path d="M7 3 H14 L19 8 V21 H7 Z" /><path d="M14 3 V8 H19" /></>;
+const CHAT = <><path d="M4 5.5 A2 2 0 0 1 6 3.5 H18 A2 2 0 0 1 20 5.5 V15 A2 2 0 0 1 18 17 H10 L5 21 V17 H6 A2 2 0 0 1 4 15 Z" /><path d="M8.5 8.5 H15.5 M8.5 12 H13" /></>;
 const LINKS_ICON = <><circle cx="8" cy="8" r="2.6" /><circle cx="17" cy="9" r="2.2" /><path d="M3 19 C 3.4 15.5 5.4 13.6 8 13.6 C 10.6 13.6 12.6 15.5 13 19" /><path d="M14.2 14.2 C 15.2 13.5 16.1 13.4 17 13.4 C 19 13.4 20.4 15 20.8 18.5" /></>;
 
 function Wordmark({ size = "text-[22px]", color = "text-[var(--panel-fg)]" }: { size?: string; color?: string }) {
@@ -388,7 +391,7 @@ function EvoChart({ data }: { data: { l: string; v: number }[] }) {
 
 /* ---------------- page ---------------- */
 type Mode = "choice" | "desktop" | "mobile";
-type Tab = "activite" | "fiche" | "dashboard" | "documents" | "valorisation" | "links";
+type Tab = "activite" | "fiche" | "dashboard" | "documents" | "valorisation" | "links" | "remontees";
 
 export default function EspacePartenairePage() {
   const router = useRouter();
@@ -693,6 +696,7 @@ export default function EspacePartenairePage() {
           <Wordmark />
           {siteSwitch}
           <div className="flex-1" />
+          <RemonteesLink className="!min-h-[32px] !px-3 !text-[11.5px]" />
           <NotificationBell dark align="right" />
           <button type="button" onClick={logout} className="text-xs font-semibold text-[var(--panel-fg-dim)] hover:text-[var(--panel-fg)]">Déconnexion</button>
         </div>
@@ -762,6 +766,7 @@ export default function EspacePartenairePage() {
     { k: "documents", l: "Mes documents", icon: DOC },
     { k: "valorisation", l: "Valorisation RSE", icon: GRID },
     { k: "links", l: "Links Bénévoles", icon: LINKS_ICON },
+    { k: "remontees", l: "Remontées", icon: CHAT },
   ];
   const maxPct = Math.max(...dash.denrees.map((x) => x.pct), 1);
 
@@ -783,9 +788,16 @@ export default function EspacePartenairePage() {
 
         <div className="sticky top-[57px] z-[19] flex gap-1 overflow-x-auto border-b border-[var(--border)] bg-[var(--card)] px-6">
           {tabs.map((t) => (
-            <button key={t.k} type="button" onClick={() => setTab(t.k)} className={`flex items-center gap-[7px] border-b-[3px] px-3.5 pt-3.5 pb-3 text-[13px] font-bold whitespace-nowrap ${tab === t.k ? "border-[var(--turquoise)] text-[var(--navy)]" : "border-transparent text-[var(--slate)]"}`}>
+            <button
+              key={t.k}
+              type="button"
+              onClick={() => setTab(t.k)}
+              style={t.k === "remontees" ? { color: "#B23B72", borderColor: tab === t.k ? "#B23B72" : "transparent" } : undefined}
+              className={`flex items-center gap-[7px] border-b-[3px] px-3.5 pt-3.5 pb-3 text-[13px] font-bold whitespace-nowrap ${t.k === "remontees" ? "" : tab === t.k ? "border-[var(--turquoise)] text-[var(--navy)]" : "border-transparent text-[var(--slate)]"}`}
+            >
               <Icon>{t.icon}</Icon>
               {t.l}
+              {t.k === "remontees" && <RemonteeBadgePill />}
             </button>
           ))}
         </div>
@@ -982,6 +994,13 @@ export default function EspacePartenairePage() {
             <div>
               <PanelHead title="Links Bénévoles" sub="Un petit volume à faire partir vite ? Demande un bénévole, en complément de la tournée du logisticien." />
               {siteKey && <PartnerLinks key={siteKey} partnerId={siteKey} />}
+            </div>
+          )}
+
+          {tab === "remontees" && (
+            <div>
+              <PanelHead title="Remontées" sub="Un bug, une question, une idée ? Dites-le-nous et suivez la réponse ici." />
+              <RemonteesPanel formal />
             </div>
           )}
         </div>

@@ -5,12 +5,14 @@ import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useLinker } from "./LinkerContext";
+import { REMONTEE_COLOR, useRemonteeBadge } from "@/lib/remontees";
 
-const TABS: { href: string; label: string; icon: ReactNode }[] = [
+const TABS: { href: string; label: string; icon: ReactNode; accent?: boolean }[] = [
   { href: "/linker/accueil", label: "Accueil", icon: <><path d="M4 11 L12 4 L20 11" /><path d="M6 10 V20 H18 V10" /></> },
   { href: "/linker/carte", label: "Links", icon: <><path d="M12 21 C 8 16.5 5 13 5 9.5 A7 7 0 0 1 19 9.5 C 19 13 16 16.5 12 21 Z" /><circle cx="12" cy="9.5" r="2.3" /></> },
   { href: "/linker/garde-robe", label: "Garde-robe", icon: <><rect x="5" y="8" width="14" height="12" rx="2" /><path d="M9 8 V6 A3 3 0 0 1 15 6 V8" /></> },
   { href: "/linker/profil", label: "Profil", icon: <><circle cx="12" cy="8" r="3.6" /><path d="M4.5 20 C 5.5 15.5 8.3 13.3 12 13.3 C 15.7 13.3 18.5 15.5 19.5 20" /></> },
+  { href: "/linker/remontees", label: "Remontées", accent: true, icon: <><path d="M4 5.5 A2 2 0 0 1 6 3.5 H18 A2 2 0 0 1 20 5.5 V15 A2 2 0 0 1 18 17 H10 L5 21 V17 H6 A2 2 0 0 1 4 15 Z" /><path d="M8.5 8.5 H15.5 M8.5 12 H13" /></> },
 ];
 
 /** Bottom-tab shell for the authenticated Linker app: mobile-first, 100% client, no dependency on Next server features. */
@@ -18,6 +20,7 @@ export default function LinkerShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { linker } = useLinker();
+  const remonteeBadge = useRemonteeBadge();
 
   async function logout() {
     await createClient().auth.signOut();
@@ -46,11 +49,17 @@ export default function LinkerShell({ children }: { children: ReactNode }) {
         {TABS.map((t) => {
           const on = pathname === t.href || pathname.startsWith(t.href + "/") || (t.href === "/linker/carte" && pathname.startsWith("/linker/link/"));
           return (
-            <Link key={t.href} href={t.href} className={`flex flex-1 flex-col items-center gap-0.5 rounded-2xl py-1.5 text-[10.5px] font-bold ${on ? "text-[var(--navy)]" : "text-[var(--muted)]"}`}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={on ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round" className={`h-5 w-5 rounded-full ${on ? "bg-[var(--turquoise)]/25" : ""}`}>
+            <Link
+              key={t.href}
+              href={t.href}
+              style={t.accent ? { color: REMONTEE_COLOR } : undefined}
+              className={`relative flex flex-1 flex-col items-center gap-0.5 rounded-2xl py-1.5 text-[10.5px] font-bold ${t.accent ? "" : on ? "text-[var(--navy)]" : "text-[var(--muted)]"}`}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={on ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round" className={`h-5 w-5 rounded-full ${on ? (t.accent ? "bg-[#B23B72]/15" : "bg-[var(--turquoise)]/25") : ""}`}>
                 {t.icon}
               </svg>
               {t.label}
+              {t.accent && remonteeBadge > 0 && <span className="absolute top-0.5 right-[22%] flex h-4 min-w-4 items-center justify-center rounded-full bg-[#B23B72] px-1 text-[9.5px] font-bold text-white">{remonteeBadge}</span>}
             </Link>
           );
         })}
