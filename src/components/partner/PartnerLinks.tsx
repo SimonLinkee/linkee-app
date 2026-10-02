@@ -14,7 +14,8 @@ const DENREE_OPTIONS = ["Secs", "Fruits et légumes", "Produits frais", "Plats p
 const START_OPTIONS = Array.from({ length: 33 }, (_, i) => { const m = 360 + i * 30; return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; });
 
 type PartnerInfo = { city_id: string; address: string | null; allow_backpack: boolean };
-type LinkRow = { id: string; status: string; kg_estime: number; is_fresh: boolean; window_date: string; window_from: string; window_to: string; asso_confirmed: boolean; beneficiaries: { name: string } | { name: string }[] | null; linkers: { level: number; profiles: { full_name: string | null } | { full_name: string | null }[] | null } | { level: number; profiles: { full_name: string | null } | { full_name: string | null }[] | null }[] | null };
+// Lignes renvoyées par la fonction partner_links (nom de l'association de destination, niveau du Linker — jamais de contacts)
+type LinkRow = { id: string; status: string; kg_estime: number; is_fresh: boolean; window_date: string; window_from: string; window_to: string; asso_confirmed: boolean; beneficiary_name: string | null; linker_level: number | null };
 
 const STATUS_UI: Record<string, { l: string; bg: string; fg: string }> = {
   proposee: { l: "En attente d'un Linker", bg: "var(--track)", fg: "var(--slate)" },
@@ -37,6 +38,7 @@ export default function PartnerLinks({ partnerId }: { partnerId: string }) {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const [ok, setOk] = useState<string | null>(null);
   const [catKg, setCatKg] = useState<Record<string, string>>({});
   const [fresh, setFresh] = useState(false);
@@ -47,7 +49,7 @@ export default function PartnerLinks({ partnerId }: { partnerId: string }) {
   async function load() {
     const [p, l] = await Promise.all([
       supabase.from("partners").select("city_id,address,allow_backpack").eq("id", partnerId).is("deleted_at", null).maybeSingle(),
-      supabase.from("links").select("id,status,kg_estime,is_fresh,window_date,window_from,window_to,asso_confirmed,beneficiaries(name),linkers(level,profiles(full_name))").eq("partner_id", partnerId).order("created_at", { ascending: false }).limit(30),
+      supabase.rpc("partner_links", { p_partner: partnerId }),
     ]);
     setInfo((p.data as PartnerInfo) ?? null);
     setLinks((l.data ?? []) as unknown as LinkRow[]);
@@ -57,6 +59,16 @@ export default function PartnerLinks({ partnerId }: { partnerId: string }) {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [partnerId]);
+
+  // le partenaire active / coupe lui-même les collectes par bénévoles (sac à dos, 25 kg max) ; la base le vérifie
+  async function toggleBackpack(next: boolean) {
+    setSwitching(true);
+    setMsg(null);
+    const { data, error } = await supabase.from("partners").update({ allow_backpack: next }).eq("id", partnerId).select("id");
+    setSwitching(false);
+    if (error || !data?.length) return setMsg("Changement impossible : " + (error?.message ?? "la base l'a refusé") + ".");
+    setInfo((prev) => (prev ? { ...prev, allow_backpack: next } : prev));
+  }
 
   if (loading) return <p className="text-[13px] text-[var(--slate)]">Chargement…</p>;
   if (!info) return <p className="text-[13px] text-[var(--slate)]">Fiche introuvable.</p>;
@@ -109,11 +121,16 @@ export default function PartnerLinks({ partnerId }: { partnerId: string }) {
           Un petit volume à faire partir vite, sans attendre la tournée du logisticien ? Un bénévole (Linker) peut venir le chercher à pied ou à vélo — jusqu&apos;à {cap} kg.
         </p>
 
-        {!info.allow_backpack && (
-          <div className="mb-3 rounded-[14px] bg-[var(--warn-bg)] px-3.5 py-2.5 text-[12.5px] font-semibold text-[var(--navy)]">
-            Aucune collecte bénévole n&apos;est encore activée sur ta fiche. Demande à ton contact Linkee de l&apos;activer 🎒.
-          </div>
-        )}
+        <div className="mb-3 flex items-center gap-3 rounded-[14px] border border-[var(--border)] bg-[var(--input-bg)] px-3.5 py-2.5">
+          <span className="text-[22px]">🎒</span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13px] font-bold text-[var(--navy)]">Collectes par des bénévoles</span>
+            <span className="block text-[11.5px] leading-[1.35] text-[var(--slate)]">À pied ou à vélo, {cap} kg maximum par Link. Tu peux l&apos;activer ou le couper quand tu veux.</span>
+          </span>
+          <button type="button" disabled={switching} aria-pressed={info.allow_backpack} aria-label="Activer les collectes par des bénévoles" onClick={() => toggleBackpack(!info.allow_backpack)} className="relative h-7 w-[46px] flex-none rounded-[40px] disabled:opacity-60" style={{ background: info.allow_backpack ? "var(--turquoise)" : "var(--border)" }}>
+            <span className="absolute top-[3px] h-[22px] w-[22px] rounded-full bg-white transition-all" style={{ left: info.allow_backpack ? 20 : 3 }} />
+          </button>
+        </div>
 
         <label className={labelCls}>Produits à collecter — poids estimé par catégorie</label>
         <div className="mb-3 flex flex-col gap-1.5">
@@ -182,13 +199,12 @@ export default function PartnerLinks({ partnerId }: { partnerId: string }) {
         {links.length === 0 && <p className="mt-2 text-[12.5px] text-[var(--slate)]">Aucune demande pour l&apos;instant.</p>}
         <div className="mt-2 flex flex-col gap-2">
           {links.map((l) => {
-            const linker = first(l.linkers);
             const st = STATUS_UI[l.status] ?? STATUS_UI.proposee;
             return (
               <div key={l.id} className="flex items-center gap-3 rounded-[14px] border border-[var(--border)] bg-[var(--input-bg)] px-3 py-2.5">
                 <span className="min-w-0 flex-1">
                   <span className="block text-[12.5px] font-bold text-[var(--navy)]">{fmtDay(l.window_date)} · {l.window_from.slice(0, 5)}–{l.window_to.slice(0, 5)} · {l.kg_estime} kg{l.is_fresh ? " · 🧊" : ""}</span>
-                  <span className="block text-[11px] font-semibold text-[var(--slate)]">→ {first(l.beneficiaries)?.name ?? "—"}{linker ? ` · pris en charge par un Linker (niveau ${linker.level})` : ""}</span>
+                  <span className="block text-[11px] font-semibold text-[var(--slate)]">→ {l.beneficiary_name ?? "—"}{l.linker_level != null ? ` · pris en charge par un Linker (niveau ${l.linker_level})` : ""}</span>
                 </span>
                 <span className="flex-none rounded-[40px] px-2.5 py-1 text-[10.5px] font-bold" style={{ background: st.bg, color: st.fg }}>{st.l}</span>
               </div>

@@ -471,8 +471,10 @@ export default function EspaceBeneficiairePage() {
     if (ficheT.current) window.clearTimeout(ficheT.current);
     const id = currentId;
     ficheT.current = window.setTimeout(async () => {
-      const { error } = await supabase.from("beneficiaries").update({ fiche: f }).eq("id", id);
+      // .select() : si la base ne modifie aucune ligne (droit refusé), on l'affiche au lieu de faire croire que c'est enregistré
+      const { data, error } = await supabase.from("beneficiaries").update({ fiche: f }).eq("id", id).select("id");
       if (error) showToast("Enregistrement impossible : " + error.message);
+      else if (!data?.length) showToast("Enregistrement impossible : la modification n'a pas été acceptée. Réessaie, ou préviens ton contact Linkee.");
       else autosave();
     }, 700);
   }
@@ -486,8 +488,9 @@ export default function EspaceBeneficiairePage() {
     const up = await supabase.storage.from("logos").upload(path, file, { contentType: file.type, upsert: true });
     if (up.error) return showToast("Import du logo impossible : " + up.error.message + " (la migration 041 est-elle passée ?)");
     const url = supabase.storage.from("logos").getPublicUrl(path).data.publicUrl;
-    const { error } = await supabase.from("beneficiaries").update({ logo_url: url }).eq("id", currentId);
+    const { data: saved, error } = await supabase.from("beneficiaries").update({ logo_url: url }).eq("id", currentId).select("id");
     if (error) return showToast("Logo non enregistré : " + error.message);
+    if (!saved?.length) return showToast("Logo non enregistré : la modification n'a pas été acceptée.");
     setRows((prev) => prev.map((r) => (r.id === currentId ? { ...r, logo_url: url } : r)));
     autosave();
     showToast("Logo mis à jour.");

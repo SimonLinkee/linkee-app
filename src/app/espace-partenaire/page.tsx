@@ -563,8 +563,9 @@ export default function EspacePartenairePage() {
     if (ficheT.current) window.clearTimeout(ficheT.current);
     const id = siteKey;
     ficheT.current = window.setTimeout(async () => {
-      const { error } = await supabase.from("partners").update({ fiche: f }).eq("id", id);
+      const { data, error } = await supabase.from("partners").update({ fiche: f }).eq("id", id).select("id");
       if (error) showToast("Enregistrement impossible : " + error.message);
+      else if (!data?.length) showToast("Enregistrement impossible : la modification n'a pas été acceptée. Réessaie, ou préviens ton contact Linkee.");
       else autosave();
     }, 700);
   }

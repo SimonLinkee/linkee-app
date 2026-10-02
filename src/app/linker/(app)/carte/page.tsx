@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useLinker } from "@/components/linker/LinkerContext";
 import { geocode, toKm, type LatLng } from "@/lib/geocode";
 import { MAX_KG } from "@/lib/linker/gamification";
+import { fetchLinkerLinks } from "@/lib/linker/linkerLinks";
 import type { ClickPoint } from "@/components/PointsMap";
 
 const PointsMap = dynamic(() => import("@/components/PointsMap"), { ssr: false, loading: () => <div className="flex h-[380px] items-center justify-center text-[13px] text-[var(--slate)]">Chargement de la carte…</div> });
@@ -32,12 +33,18 @@ export default function LinkerCartePage() {
     if (!ready || !linker) return;
     (async () => {
       const supabase = createClient();
-      const { data } = await supabase
-        .from("links")
-        .select("id,kg_estime,is_fresh,mode_required,window_date,window_from,window_to,partners(name,address,allow_backpack,allow_car),beneficiaries(name,address)")
-        .eq("status", "proposee")
-        .order("window_date");
-      setRows((data ?? []) as unknown as LinkRow[]);
+      // adresses et contraintes seulement : les contacts n'apparaissent qu'après acceptation (fonction linker_links)
+      const all = await fetchLinkerLinks(supabase);
+      setRows(
+        all
+          .filter((l) => l.status === "proposee")
+          .map((l) => ({
+            id: l.id, kg_estime: l.kg_estime, is_fresh: l.is_fresh, mode_required: l.mode_required,
+            window_date: l.window_date, window_from: l.window_from, window_to: l.window_to,
+            partners: { name: l.partner_name ?? "", address: l.partner_address, allow_backpack: !!l.partner_allow_backpack, allow_car: !!l.partner_allow_car },
+            beneficiaries: { name: l.beneficiary_name ?? "", address: l.beneficiary_address },
+          })),
+      );
       setLoading(false);
     })();
   }, [ready, linker]);

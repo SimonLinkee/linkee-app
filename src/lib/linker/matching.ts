@@ -41,7 +41,8 @@ export async function matchNearestOpenBeneficiary(
   const [origin, cityRow, benefRows] = await Promise.all([
     geocode(fromAddress),
     supabase.from("cities").select("name").eq("id", cityId).maybeSingle(),
-    supabase.from("beneficiaries").select("id,name,address,active,fiche").eq("city_id", cityId).eq("active", true).is("deleted_at", null),
+    // fonction réduite (nom, adresse, horaires — jamais de contacts) : un partenaire ne lit pas la table des associations
+    supabase.rpc("match_beneficiaries", { p_city: cityId }),
   ]);
   if (!origin) return null;
   const rows = (benefRows.data ?? []) as { id: string; name: string; address: string | null; fiche: { horaires?: string; hours?: Record<string, DayHours> } | null }[];

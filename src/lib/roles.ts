@@ -15,7 +15,8 @@ export const canAdminCity = (role: string | null | undefined) => isSuper(role) |
 //   linker             = Linker (bénévole)       : espace 100% client sous /linker (signup, carte, missions, gamification)
 // After sign-in the last two roles land on /version: full PC version or quick mobile entry (/saisie-mobile).
 const SUPER_ONLY = ['/dashboard', '/partenaires', '/beneficiaires', '/flotte', '/todo', '/villes-comptes', '/historique', '/journee', '/espace-partenaire', '/espace-beneficiaire', '/mobile', '/links-benevoles', '/linker', '/valeur-des-dons', '/comptabilite', '/organigramme']
-const COMPTA_PATHS = SUPER_ONLY.filter((p) => p !== '/villes-comptes')
+// « Villes & comptes » et « Historique & sauvegardes » restent réservés au Superadmin.
+const COMPTA_PATHS = SUPER_ONLY.filter((p) => p !== '/villes-comptes' && p !== '/historique')
 // '/mobile/links' (visibilité des Links Bénévoles) est aussi ouvert au Responsable d'antenne et au Resp.
 // Distribution, alors que le reste de '/mobile' reste réservé au Superadmin — d'où l'ajout explicite ici.
 // '/valeur-des-dons' (valeur par défaut par type de partenaire, ex-"barèmes") est aussi gérée par le Responsable d'antenne (cf. RLS baremes_write).
