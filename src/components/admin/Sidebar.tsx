@@ -8,7 +8,7 @@ import { AVATAR_DEFS, critterSvg, type AvatarKey } from "@/lib/avatars";
 import NotificationBell from "@/components/NotificationBell";
 import { useCity } from "@/components/admin/CityContext";
 import { countLateDistributions } from "@/lib/distributions";
-import { useRemonteeBadge } from "@/lib/remontees";
+import { useRemonteeAppBadge, useRemonteeBadge } from "@/lib/remontees";
 
 /** readable text colour (white or dark navy) on top of a hex background */
 function textOn(hex: string) {
@@ -179,6 +179,7 @@ export function Sidebar() {
     .filter((n) => (me.role ? !rolePaths || rolePaths.includes(n.href) : false))
     .filter((n) => n.href !== "/remontees" || me.role !== "admin_principal");
   const remonteeBadge = useRemonteeBadge();
+  const unseenRemontees = useRemonteeAppBadge(me.role === "admin_principal");
 
   useEffect(() => {
     (async () => {
@@ -393,6 +394,18 @@ export function Sidebar() {
               <path d="M12 7.5 V12 L15 14" />
             </svg>
             <span>Historique &amp; sauvegardes</span>
+          </Link>
+          <Link
+            href="/remontees-app"
+            style={pathname === "/remontees-app" ? { background: "#B23B72", color: "#fff" } : { color: "#F09BBE" }}
+            className={`flex items-center gap-[11px] rounded-xl px-3 py-2 text-sm font-semibold ${pathname === "/remontees-app" ? "" : "hover:bg-white/8"}`}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px] flex-none">
+              <path d="M4 5.5 A2 2 0 0 1 6 3.5 H18 A2 2 0 0 1 20 5.5 V15 A2 2 0 0 1 18 17 H10 L5 21 V17 H6 A2 2 0 0 1 4 15 Z" />
+              <path d="M8.5 8.5 H15.5 M8.5 12 H13" />
+            </svg>
+            <span className="flex-1">Remontées APP</span>
+            {unseenRemontees > 0 && <span title="Remontées non ouvertes" className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#B23B72] px-1.5 text-[11px] font-bold text-white ring-1 ring-white/70">{unseenRemontees}</span>}
           </Link>
             </>
           )}

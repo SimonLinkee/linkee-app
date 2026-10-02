@@ -69,7 +69,8 @@ export function isAllowed(role: string, path: string): boolean {
   if (path === '/politique-de-confidentialite') return true
   // « Remontées » (bugs, questions, suggestions) : ouvert à tous les rôles actifs (le Linker a sa propre version sous /linker)
   if (role !== 'en_attente' && under(path, '/remontees')) return true
-  if (role === 'admin_principal') return [...SUPER_ONLY, ...ANTENNE_PATHS].some((p) => under(path, p))
+  // '/remontees-app' : réservé au vrai Superadmin (la Comptabilité n'y a pas accès, y compris côté base)
+  if (role === 'admin_principal') return [...SUPER_ONLY, ...ANTENNE_PATHS, '/remontees-app'].some((p) => under(path, p))
   if (role === 'comptabilite') return [...COMPTA_PATHS, ...ANTENNE_PATHS].some((p) => under(path, p))
   if (role === 'admin_local') return ANTENNE_PATHS.some((p) => under(path, p))
   if (role === 'resp_distribution') return DISTRIB_PATHS.some((p) => under(path, p))

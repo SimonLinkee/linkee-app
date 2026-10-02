@@ -23,6 +23,7 @@ export type RemonteeRow = {
   page_path: string | null;
   user_agent: string | null;
   attachments: RemonteeAttachment[];
+  attachments_purged_at: string | null;
   treated_at: string | null;
   super_seen_at: string | null;
   created_at: string;
@@ -81,6 +82,51 @@ export async function openRemonteeFile(supabase: SupabaseClient, path: string) {
 }
 
 export const fmtBytes = (b: number) => (b < 1024 ? `${b} o` : b < 1024 * 1024 ? `${Math.round(b / 1024)} Ko` : `${(b / 1024 / 1024).toFixed(1)} Mo`);
+
+/** « Chrome sur Windows », « Safari sur iPhone (mobile) »… à partir du user-agent enregistré avec la remontée. */
+export function describeUserAgent(ua: string | null | undefined): string {
+  if (!ua) return "Inconnu";
+  const browser = /Edg\//.test(ua) ? "Edge" : /OPR\/|Opera/.test(ua) ? "Opera" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\/|CriOS\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "Navigateur inconnu";
+  const os = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Android/.test(ua) ? "Android" : /Windows/.test(ua) ? "Windows" : /Mac OS X|Macintosh/.test(ua) ? "Mac" : /Linux/.test(ua) ? "Linux" : "système inconnu";
+  const mobile = /Mobile|iPhone|Android/.test(ua) && !/iPad/.test(ua) ? " (mobile)" : "";
+  return `${browser} sur ${os}${mobile}`;
+}
+
+/** Compteur du Superadmin : remontées jamais ouvertes ou avec une nouvelle réponse de l'utilisateur à relire. Désactivé
+ * (0 requête) pour les autres rôles. */
+export function useRemonteeAppBadge(enabled: boolean): number {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    if (!enabled) return;
+    const supabase = createClient();
+    let alive = true;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    const load = () =>
+      supabase
+        .from("remontees")
+        .select("id", { count: "exact", head: true })
+        .is("super_seen_at", null)
+        .then(({ count }) => {
+          if (alive) setN(count ?? 0);
+        });
+    load();
+    supabase.auth.getUser().then(({ data }) => {
+      if (!data.user || !alive) return;
+      // chaque nouvelle remontée / réponse crée une notification pour le Superadmin : on s'en sert comme signal
+      channel = supabase
+        .channel("remontee-app-badge-" + data.user.id)
+        .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${data.user.id}` }, () => load())
+        .subscribe();
+    });
+    const poll = window.setInterval(load, 60000);
+    return () => {
+      alive = false;
+      window.clearInterval(poll);
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, [enabled]);
+  return enabled ? n : 0;
+}
 
 /** Pastille rose de l'onglet « Remontées » : nombre de réponses / changements de statut non lus (notifications
  * de type "remontee"), rafraîchi en direct puis toutes les minutes. */
