@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import { CityProvider, useCity } from "@/components/admin/CityContext";
-import { isSuper } from "@/lib/roles";
+import { canAdminCity } from "@/lib/roles";
 
 /** Frame of the Superadmin's mobile app: slim header (home, city), one column, no side menu. */
 function Frame({ children }: { children: ReactNode }) {
@@ -15,9 +15,9 @@ function Frame({ children }: { children: ReactNode }) {
     if (ready && canSwitch && isAll && cities[0]) select(cities[0].id);
   }, [ready, canSwitch, isAll, cities, select]);
   const home = path === "/mobile";
-  // le menu à tuiles /mobile n'existe que pour le Superadmin — le Responsable d'antenne et le Resp. Distribution
-  // qui ouvrent une page sous /mobile (ex. /mobile/links) reviennent plutôt à /version, leur propre accueil mobile.
-  const homeHref = isSuper(role) ? "/mobile" : "/version";
+  // l'accueil à tuiles /mobile sert le Superadmin, la Comptabilité et le Responsable d'antenne ; le Resp. Distribution
+  // (qui n'ouvre que /mobile/links) revient plutôt à /version, son propre accueil mobile.
+  const homeHref = canAdminCity(role) ? "/mobile" : "/version";
   return (
     <div className="mx-auto min-h-screen max-w-[560px] px-4 pt-3 pb-24">
       <header className="mb-4 flex items-center justify-between gap-2">

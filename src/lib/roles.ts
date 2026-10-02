@@ -22,7 +22,7 @@ const COMPTA_PATHS = SUPER_ONLY.filter((p) => p !== '/villes-comptes')
 // Écrans du Responsable d'antenne (pour sa ville uniquement : règles d'accès de la base, voir migration 047).
 // '/comptabilite' : il y valide / refuse les demandes de Cerfa de son antenne ; l'émission du Cerfa reste réservée à la
 // Comptabilité et au Superadmin, y compris côté base.
-const ANTENNE_PATHS = ['/dashboard', '/partenaires', '/beneficiaires', '/planning', '/distributions', '/stock', '/flotte', '/todo', '/links-benevoles', '/valeur-des-dons', '/comptabilite', '/profil', '/version', '/saisie-mobile', '/mobile/links']
+const ANTENNE_PATHS = ['/dashboard', '/partenaires', '/beneficiaires', '/planning', '/distributions', '/stock', '/flotte', '/todo', '/links-benevoles', '/valeur-des-dons', '/comptabilite', '/profil', '/version', '/saisie-mobile', '/mobile']
 const DISTRIB_PATHS = ['/distributions', '/profil', '/version', '/saisie-mobile', '/mobile/links']
 const LINKER_PATHS = ['/linker']
 
@@ -74,6 +74,8 @@ export function isAllowed(role: string, path: string): boolean {
   if (path === '/politique-de-confidentialite') return true
   // « Remontées » (bugs, questions, suggestions) : ouvert à tous les rôles actifs (le Linker a sa propre version sous /linker)
   if (role !== 'en_attente' && under(path, '/remontees')) return true
+  // version mobile de « Remontées APP » : Superadmin uniquement (comme /remontees-app), même si /mobile est ouvert aux autres
+  if (under(path, '/mobile/remontees-app') && role !== 'admin_principal') return false
   // '/remontees-app' : réservé au vrai Superadmin (la Comptabilité n'y a pas accès, y compris côté base)
   if (role === 'admin_principal') return [...SUPER_ONLY, ...ANTENNE_PATHS, '/remontees-app'].some((p) => under(path, p))
   if (role === 'comptabilite') return [...COMPTA_PATHS, ...ANTENNE_PATHS].some((p) => under(path, p))

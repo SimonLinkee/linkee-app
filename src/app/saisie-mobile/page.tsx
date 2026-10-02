@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { CityProvider, useCity } from "@/components/admin/CityContext";
 import PhotoStrip from "@/components/PhotoStrip";
 import { STATUS_UI, distribStatus, isoToday } from "@/lib/distributions";
-import { isSuper } from "@/lib/roles";
+import { canAdminCity } from "@/lib/roles";
 import RemonteesLink from "@/components/RemonteesLink";
 
 /* ---------------- types & helpers ---------------- */
@@ -272,7 +272,7 @@ function Page() {
         <span className="flex items-center gap-3 text-[12px] font-semibold text-[var(--slate)]">
           {role !== "admin_principal" && <RemonteesLink className="!min-h-[30px] !px-3 !text-[11.5px]" />}
           {city && <span className="rounded-[40px] px-2.5 py-1 text-white" style={{ background: city.color }}>{city.name}</span>}
-          <Link href={isSuper(role) ? "/mobile" : "/version"} className="underline">{isSuper(role) ? "Accueil" : "Changer de version"}</Link>
+          <Link href={canAdminCity(role) ? "/mobile" : "/version"} className="underline">{canAdminCity(role) ? "Accueil" : "Changer de version"}</Link>
         </span>
       </header>
 

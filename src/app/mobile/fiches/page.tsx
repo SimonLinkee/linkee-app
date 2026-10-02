@@ -18,11 +18,15 @@ const field = "h-[52px] w-full rounded-2xl border-2 border-[var(--border)] bg-[v
 const label = "mb-1.5 block text-[13px] font-bold text-[var(--navy)]";
 const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
 
-/** Superadmin mobile: consult and edit the fiches (no creation, no deletion). */
+/** Mobile (Superadmin, Comptabilité, Responsable d'antenne pour sa ville) : consulter et modifier les fiches (pas de création ni de suppression). */
 export default function MobileFiches() {
   const supabase = useMemo(() => createClient(), []);
   const { cityId } = useCity();
   const [kind, setKind] = useState<Kind>("partner");
+  // l'accueil mobile ouvre directement la liste voulue : /mobile/fiches?tab=beneficiaire
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "beneficiaire") setKind("beneficiaire");
+  }, []);
   const [rows, setRows] = useState<Record<Kind, Row[]>>({ partner: [], beneficiaire: [] });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
