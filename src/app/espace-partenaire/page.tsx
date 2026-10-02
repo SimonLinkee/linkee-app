@@ -8,6 +8,7 @@ import { CAT_LABELS, CO2_SOURCE, DEFAULT_EUR_PER_KG, SUBCAT_SELECT, buildEvo, is
 import PartnerCerfa from "@/components/partner/PartnerCerfa";
 import NotificationBell from "@/components/NotificationBell";
 import RemonteesPanel from "@/components/RemonteesPanel";
+import BetaBadge from "@/components/BetaBadge";
 import RemonteesLink, { RemonteeBadgePill } from "@/components/RemonteesLink";
 import PartnerValuation from "@/components/partner/PartnerValuation";
 import PartnerLinks from "@/components/partner/PartnerLinks";
@@ -182,7 +183,7 @@ function Avatar({ site, size }: { site: Site; size: number }) {
   );
 }
 
-function Card({ title, icon, note, tag, locked, children }: { title?: string; icon?: ReactNode; note?: string; tag?: string; locked?: boolean; children: ReactNode }) {
+function Card({ title, icon, note, tag, locked, children }: { title?: ReactNode; icon?: ReactNode; note?: string; tag?: string; locked?: boolean; children: ReactNode }) {
   return (
     <div className={`mb-4 rounded-[18px] border px-[22px] py-5 shadow-[var(--shadow)] ${locked ? "border-[var(--turquoise)] bg-gradient-to-br from-[var(--card)] to-[var(--input-bg)]" : "border-[var(--border)] bg-[var(--card)]"}`}>
       {title && (
@@ -198,10 +199,10 @@ function Card({ title, icon, note, tag, locked, children }: { title?: string; ic
   );
 }
 
-function PanelHead({ title, sub }: { title: string; sub: string }) {
+function PanelHead({ title, sub }: { title: ReactNode; sub: string }) {
   return (
     <div className="mb-[18px]">
-      <h2 className="mb-1 font-display text-[26px] font-black">{title}</h2>
+      <h2 className="mb-1 flex items-center gap-2.5 font-display text-[26px] font-black">{title}</h2>
       <p className="text-[13px] text-[var(--slate)]">{sub}</p>
     </div>
   );
@@ -229,7 +230,7 @@ function GranToggle({ options, value, onChange }: { options: [string, string][];
   );
 }
 
-function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Tile({ label, value, sub }: { label: ReactNode; value: string; sub?: string }) {
   return (
     <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] px-[18px] py-4 shadow-[var(--shadow)]">
       <span className="mb-1.5 block text-[11px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">{label}</span>
@@ -723,7 +724,7 @@ export default function EspacePartenairePage() {
               <Tile label="Volume" value={`${fmtNum(dashM.volume)} kg`} />
               <Tile label="Collectes" value={String(dashM.collectes)} />
               <Tile label="Réussite" value={`${okRate} %`} />
-              <Tile label="Links Bénévoles" value={String(dashM.linksCount)} />
+              <Tile label={<>Links Bénévoles <BetaBadge /></>} value={String(dashM.linksCount)} />
               <Tile label="kg sauvés" value={`${fmtNum(dashM.linksKg)} kg`} />
             </div>
           </Card>
@@ -734,7 +735,7 @@ export default function EspacePartenairePage() {
             {site.benevoleOnly && <AntenneContactNote cityId={site.cityId} />}
           </Card>
 
-          <Card title="Links Bénévoles" icon={LINKS_ICON} note="Petit volume à faire partir vite ? En complément du logisticien, un bénévole peut le collecter — jusqu'à 80 kg.">
+          <Card title={<>Links Bénévoles <BetaBadge label="Bêta test" /></>} icon={LINKS_ICON} note="Petit volume à faire partir vite ? En complément du logisticien, un bénévole peut le collecter — jusqu'à 80 kg.">
             {siteKey && <PartnerLinks key={siteKey} partnerId={siteKey} />}
           </Card>
 
@@ -797,6 +798,7 @@ export default function EspacePartenairePage() {
             >
               <Icon>{t.icon}</Icon>
               {t.l}
+              {t.k === "links" && <BetaBadge />}
               {t.k === "remontees" && <RemonteeBadgePill />}
             </button>
           ))}
@@ -929,7 +931,7 @@ export default function EspacePartenairePage() {
                 <Tile label="Volume collecté" value={`${fmtNum(dash.volume)} kg`} sub={dash.periodLabel} />
                 <Tile label="Collectes" value={String(dash.collectes)} sub={`${dash.ok} réalisées · ${dash.annulees} annulées`} />
                 <Tile label="Taux de réussite" value={`${dash.collectes ? Math.round((dash.ok / dash.collectes) * 100) : 0} %`} sub="sur la période" />
-                <Tile label="Links Bénévoles" value={String(dash.linksCount)} sub="demandes envoyées" />
+                <Tile label={<>Links Bénévoles <BetaBadge /></>} value={String(dash.linksCount)} sub="demandes envoyées" />
                 <Tile label="kg sauvés (Links)" value={`${fmtNum(dash.linksKg)} kg`} sub="livrés par les Linkers" />
               </div>
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr]">
@@ -992,7 +994,7 @@ export default function EspacePartenairePage() {
 
           {tab === "links" && (
             <div>
-              <PanelHead title="Links Bénévoles" sub="Un petit volume à faire partir vite ? Demande un bénévole, en complément de la tournée du logisticien." />
+              <PanelHead title={<>Links Bénévoles <BetaBadge label="Bêta test" /></>} sub="Un petit volume à faire partir vite ? Demande un bénévole, en complément de la tournée du logisticien." />
               {siteKey && <PartnerLinks key={siteKey} partnerId={siteKey} />}
             </div>
           )}

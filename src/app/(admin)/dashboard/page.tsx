@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
 import EntityActivity from "@/components/admin/EntityActivity";
+import BetaBadge from "@/components/BetaBadge";
 import { canAdminCity } from "@/lib/roles";
 import { CAT_KEYS, CAT_LABELS, CO2_SOURCE, DEFAULT_EUR_PER_KG, STAT_SELECT, SUBCAT_SELECT, buildEvo, isoOf, rse, subMap, summarize, type CatKey, type StatRow, type SubCat, type Summary } from "@/lib/stats";
 
@@ -457,12 +458,12 @@ export default function DashboardPage() {
               <span className="text-[12.5px] text-[var(--slate)]">réalisées sur la période</span>
             </div>
             <div className="flex flex-col gap-2 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]" style={{ borderTop: "4px solid #eb6834" }}>
-              <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Links Bénévoles</span>
+              <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Links Bénévoles <BetaBadge /></span>
               <span className="font-display text-[30px] leading-none font-black text-[var(--navy)] tabular-nums">{linkKpi.count}</span>
               <span className="text-[12.5px] text-[var(--slate)]">demandes vers ce lieu</span>
             </div>
             <div className="flex flex-col gap-2 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]" style={{ borderTop: "4px solid #eb6834" }}>
-              <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">kg sauvés (Links)</span>
+              <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">kg sauvés (Links) <BetaBadge /></span>
               <span className="font-display text-[30px] leading-none font-black text-[var(--navy)] tabular-nums">{fmt(linkKpi.kg)} kg</span>
               <span className="text-[12.5px] text-[var(--slate)]">livrés par les Linkers</span>
             </div>
@@ -530,12 +531,12 @@ export default function DashboardPage() {
           </div>
           )}
           <div className="flex flex-col gap-2 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]" style={{ borderTop: "4px solid #eb6834" }}>
-            <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Links Bénévoles</span>
+            <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Links Bénévoles <BetaBadge /></span>
             <span className="font-display text-[30px] leading-none font-black text-[var(--navy)] tabular-nums">{linkKpi.count}</span>
             <span className="text-[12.5px] text-[var(--slate)]">{isAll ? "toutes villes" : city?.name ?? ""}{activePartnerId ? " · ce partenaire" : ""}</span>
           </div>
           <div className="flex flex-col gap-2 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]" style={{ borderTop: "4px solid #eb6834" }}>
-            <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">kg sauvés (Links)</span>
+            <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">kg sauvés (Links) <BetaBadge /></span>
             <span className="font-display text-[30px] leading-none font-black text-[var(--navy)] tabular-nums">{fmt(linkKpi.kg)} kg</span>
             <span className="text-[12.5px] text-[var(--slate)]">livrés par les Linkers</span>
           </div>

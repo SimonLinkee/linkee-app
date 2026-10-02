@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
+import BetaBadge from "@/components/BetaBadge";
 import { useLinker } from "./LinkerContext";
 import { REMONTEE_COLOR, useRemonteeBadge } from "@/lib/remontees";
 
@@ -31,12 +32,15 @@ export default function LinkerShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-[var(--cream)] pb-20">
       <header className="flex items-center justify-between bg-[var(--navy-deep)] px-4 py-3 text-[var(--panel-fg)]">
-        <Link href="/linker/accueil" className="flex items-end gap-0.5">
-          <span className="font-script text-[22px] leading-none">linkee</span>
-          <svg width="26" height="9" viewBox="0 0 40 14" fill="none" aria-hidden="true" className="mb-0.5">
-            <path d="M2 3 C 10 13, 30 13, 38 3" stroke="var(--turquoise)" strokeWidth={4} strokeLinecap="round" />
-          </svg>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/linker/accueil" className="flex items-end gap-0.5">
+            <span className="font-script text-[22px] leading-none">linkee</span>
+            <svg width="26" height="9" viewBox="0 0 40 14" fill="none" aria-hidden="true" className="mb-0.5">
+              <path d="M2 3 C 10 13, 30 13, 38 3" stroke="var(--turquoise)" strokeWidth={4} strokeLinecap="round" />
+            </svg>
+          </Link>
+          <BetaBadge onDark label="Bêta test" />
+        </div>
         <div className="flex items-center gap-2.5 text-[12.5px] font-bold">
           {linker && <span className="rounded-[40px] bg-white/12 px-3 py-1">🪙 {linker.points}</span>}
           <button type="button" onClick={logout} className="text-[var(--panel-fg-dim)] hover:text-[var(--panel-fg)]">

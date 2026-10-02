@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
+import BetaBadge from "@/components/BetaBadge";
 import CharSvg from "@/components/linker/CharSvg";
 import { CH, characterSVG, type CharKey } from "@/lib/linker/characters";
 import { computeOutfit, stageOf, type Mode, type StyleKey } from "@/lib/linker/gamification";
@@ -95,7 +96,7 @@ export default function LinksBenevolesAdminPage() {
     <div>
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-[32px] leading-none font-black">Links Bénévoles</h1>
+          <h1 className="flex items-center gap-2.5 font-display text-[32px] leading-none font-black">Links Bénévoles <BetaBadge label="Bêta test" /></h1>
           <p className="mt-1 text-[13.5px] text-[var(--slate)]">Petites collectes confiées à des bénévoles (Linkers) — {city?.name}.</p>
         </div>
       </div>

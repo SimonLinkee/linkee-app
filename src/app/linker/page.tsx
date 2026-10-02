@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import CharSvg from "@/components/linker/CharSvg";
+import BetaBadge from "@/components/BetaBadge";
 import { characterSVG } from "@/lib/linker/characters";
 
 /** Public landing page for the Links Bénévoles programme — reachable while signed out (see middleware.ts). */
@@ -30,6 +31,8 @@ export default function LinkerIntroPage() {
             <path d="M2 3 C 10 13, 30 13, 38 3" stroke="var(--turquoise)" strokeWidth={4} strokeLinecap="round" />
           </svg>
         </div>
+
+        <div className="mb-4 flex justify-center"><BetaBadge label="Bêta test" /></div>
 
         <h1 className="text-center font-display text-[32px] leading-[1.05] font-black text-[var(--navy)]">
           Sauve de la nourriture,

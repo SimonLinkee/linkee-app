@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import CharSvg from "@/components/linker/CharSvg";
+import BetaBadge from "@/components/BetaBadge";
 import { CH, FRUITS, LEGUMES, characterSVG, type CharKey } from "@/lib/linker/characters";
 
 type City = { id: string; name: string; color: string };
@@ -136,6 +137,7 @@ export default function LinkerInscriptionPage() {
   return (
     <div className="min-h-screen bg-[var(--cream)] px-5 py-8">
       <div className="mx-auto max-w-[440px]">
+        <div className="mb-2 flex justify-center"><BetaBadge label="Bêta test" /></div>
         <h1 className="text-center font-display text-[26px] font-black text-[var(--navy)]">Crée ton Linker</h1>
         <p className="mt-1 text-center text-[13px] font-semibold text-[var(--slate)]">{showAuthFields ? "Ton compte bénévole, en une minute." : "Encore un peu d'infos, et c'est prêt !"}</p>
 

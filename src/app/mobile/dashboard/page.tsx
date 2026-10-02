@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
+import BetaBadge from "@/components/BetaBadge";
 import EntityActivity from "@/components/admin/EntityActivity";
 import { CAT_LABELS, STAT_SELECT, buildEvo, isoOf, summarize, type StatRow, type Summary } from "@/lib/stats";
 
@@ -30,7 +31,7 @@ function rangeOf(p: Preset) {
   return { from, to, prevFrom, prevTo };
 }
 
-function Tile({ label, value, sub, subColor }: { label: string; value: string; sub?: string; subColor?: string }) {
+function Tile({ label, value, sub, subColor }: { label: ReactNode; value: string; sub?: string; subColor?: string }) {
   return (
     <div className={card}>
       <span className="block text-[11px] font-semibold text-[var(--slate)]">{label}</span>
@@ -168,14 +169,14 @@ export default function MobileDashboard() {
           <div className="mb-3 grid grid-cols-2 gap-2">
             <Tile label="Volume reçu" value={`${fmt(depot.kg)} kg`} sub="distributions clôturées" />
             <Tile label="Distributions" value={String(depot.count)} sub="réalisées" />
-            <Tile label="Links bénévoles" value={String(links.count)} sub="vers ce lieu" />
-            <Tile label="kg sauvés (Links)" value={`${fmt(links.kg)} kg`} sub="livrés par les Linkers" />
+            <Tile label={<>Links bénévoles <BetaBadge /></>} value={String(links.count)} sub="vers ce lieu" />
+            <Tile label={<>kg sauvés (Links) <BetaBadge /></>} value={`${fmt(links.kg)} kg`} sub="livrés par les Linkers" />
           </div>
         ) : (
           <div className="mb-3 grid grid-cols-2 gap-2">
             <Tile label="Volume collecté" value={`${fmt(c?.volume ?? 0)} kg`} sub={delta === null ? "Pas de période précédente" : `${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta)} % vs période préc.`} subColor={delta === null ? undefined : delta >= 0 ? "var(--good)" : "var(--critical)"} />
             <Tile label="Collectes" value={`${c?.ok ?? 0} / ${c?.collectes ?? 0}`} sub={`${c?.taux ?? 0} % réussies`} />
-            <Tile label="Links bénévoles" value={String(links.count)} sub={`${fmt(links.kg)} kg livrés`} />
+            <Tile label={<>Links bénévoles <BetaBadge /></>} value={String(links.count)} sub={`${fmt(links.kg)} kg livrés`} />
             {partnerId ? <Tile label="Annulées" value={String(c?.annulees ?? 0)} sub="sur la période" /> : <Tile label="Distributions" value={String(depot.count)} sub={`${fmt(depot.kg)} kg reçus`} />}
           </div>
         )}

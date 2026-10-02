@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { AVATAR_DEFS, critterSvg, type AvatarKey } from "@/lib/avatars";
 import NotificationBell from "@/components/NotificationBell";
+import BetaBadge from "@/components/BetaBadge";
 import { useCity } from "@/components/admin/CityContext";
 import { countLateDistributions } from "@/lib/distributions";
 import { useRemonteeAppBadge, useRemonteeBadge } from "@/lib/remontees";
@@ -366,6 +367,7 @@ export function Sidebar() {
                   {item.icon}
                 </svg>
                 <span className="flex-1">{item.label}</span>
+                {item.href === "/links-benevoles" && <BetaBadge onDark={!active} className={active ? "ring-1 ring-[#04262e]/40" : ""} />}
                 {item.href === "/remontees" && remonteeBadge > 0 && (
                   <span title="Nouvelles réponses" className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#B23B72] px-1.5 text-[11px] font-bold text-white ring-1 ring-white/70">{remonteeBadge}</span>
                 )}

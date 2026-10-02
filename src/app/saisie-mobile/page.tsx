@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { CityProvider, useCity } from "@/components/admin/CityContext";
 import PhotoStrip from "@/components/PhotoStrip";
+import BetaBadge from "@/components/BetaBadge";
 import { STATUS_UI, distribStatus, isoToday } from "@/lib/distributions";
 import { canAdminCity } from "@/lib/roles";
 import RemonteesLink from "@/components/RemonteesLink";
@@ -279,7 +280,7 @@ function Page() {
       <Link href="/mobile/links" className="mb-4 flex items-center gap-3 rounded-[18px] px-4 py-3 text-white shadow-[var(--shadow)]" style={{ background: "#eb6834" }}>
         <span className="text-[22px]">🔗</span>
         <span className="min-w-0 flex-1">
-          <span className="block font-display text-[15px] font-extrabold">Links Bénévoles</span>
+          <span className="flex items-center gap-1.5 font-display text-[15px] font-extrabold">Links Bénévoles <BetaBadge onDark label="Bêta test" /></span>
           <span className="block text-[11.5px] opacity-90">Demandés, en cours, livrés — et le téléphone du Linker</span>
         </span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 flex-none opacity-80"><path d="M9 5 L16 12 L9 19" /></svg>

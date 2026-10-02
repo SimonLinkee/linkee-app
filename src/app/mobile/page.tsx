@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
+import BetaBadge from "@/components/BetaBadge";
 import { countLateDistributions } from "@/lib/distributions";
 import { isoOf } from "@/lib/stats";
 import { useRemonteeAppBadge, useRemonteeBadge } from "@/lib/remontees";
@@ -150,7 +151,7 @@ export default function MobileHome() {
           <Link key={t.href} href={t.href} className="flex min-h-[96px] flex-col justify-between rounded-[18px] px-3.5 py-3 shadow-[var(--shadow)] active:scale-[0.98]" style={{ background: t.bg, color: t.fg }}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-7 w-7">{t.icon}</svg>
             <span>
-              <span className="block font-display text-[17px] leading-tight font-black">{t.title}</span>
+              <span className="flex items-center gap-1.5 font-display text-[17px] leading-tight font-black">{t.title}{t.href === "/mobile/links" && <BetaBadge onDark />}</span>
               <span className="mt-0.5 block text-[11.5px] leading-[1.3] opacity-90">{t.sub(counts, { remontees })}</span>
             </span>
           </Link>
