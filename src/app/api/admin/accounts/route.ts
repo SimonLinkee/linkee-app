@@ -19,6 +19,10 @@ async function requireMainAdmin() {
 // Pièces jointes des remontées (coffre privé "remontees", dossier <id du compte>/<id de la remontée>/) : effacées
 // avec le compte, ou à son anonymisation, pour qu'une capture d'écran ne survive pas à la personne.
 async function removeFeedbackFiles(admin: SupabaseClient, uid: string) {
+  // photo de profil (coffre privé "avatars", dossier <id du compte>/) : effacée avec le compte, comme les pièces jointes
+  const avatars = admin.storage.from("avatars");
+  const { data: photos } = await avatars.list(uid, { limit: 100 });
+  if (photos?.length) await avatars.remove(photos.map((f) => `${uid}/${f.name}`));
   const bucket = admin.storage.from("remontees");
   const { data: dirs } = await bucket.list(uid, { limit: 1000 });
   const paths: string[] = [];

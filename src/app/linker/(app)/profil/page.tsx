@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/client";
 import { useLinker, type AvailWindow } from "@/components/linker/LinkerContext";
 import { MAX_KG, TRANSPORT_RADIUS, typology, type Transport } from "@/lib/linker/gamification";
 import AddressSearch, { type AddressHit } from "@/components/AddressSearch";
+import PhotoCircle from "@/components/PhotoCircle";
+import { useMyPhoto } from "@/lib/profilePhoto";
 
 const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
 const fieldCls = "h-[52px] w-full rounded-[16px] border-2 border-[var(--border)] bg-[var(--input-bg)] px-4 text-[15px] font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]";
@@ -15,6 +17,7 @@ const TIME_OPTIONS = Array.from({ length: 35 }, (_, i) => { const m = 360 + i * 
 
 export default function LinkerProfilPage() {
   const { ready, linker, availability, patchLinker, phone, patchPhone } = useLinker();
+  const myPhoto = useMyPhoto();
   const [bienvenue, setBienvenue] = useState(false);
   const [avail, setAvail] = useState<AvailWindow[]>([]);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
@@ -116,6 +119,22 @@ export default function LinkerProfilPage() {
       {bienvenue && <div className="rounded-[16px] bg-[var(--good-bg)] px-3.5 py-2.5 text-[13px] font-bold text-[var(--good)]">🎉 Bienvenue chez les Linkers ! Configure ton profil pour recevoir des Links compatibles.</div>}
       <div className={`text-[12px] font-bold text-[var(--good)] transition-opacity ${saved ? "opacity-100" : "opacity-0"}`}>Enregistré ✓</div>
       {err && <div className="rounded-[14px] bg-[var(--critical-bg)] px-3.5 py-2.5 text-[12.5px] font-bold text-[var(--critical)]">{err}</div>}
+
+      <div className="flex items-center gap-3.5 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-3.5">
+        <PhotoCircle
+          url={myPhoto.url}
+          size={64}
+          busy={myPhoto.busy}
+          onPick={myPhoto.upload}
+          fallback={<span className="flex h-full w-full items-center justify-center rounded-full bg-[var(--track)] text-[24px]">🙂</span>}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="font-display text-[16px] font-extrabold text-[var(--navy)]">Ma photo</div>
+          <div className="text-[11.5px] leading-[1.4] text-[var(--slate)]">Facultative et privée : seule l&apos;équipe Linkee peut la voir. Appuie sur la photo pour la changer.</div>
+          {myPhoto.hasPhoto && <button type="button" disabled={myPhoto.busy} onClick={myPhoto.remove} className="mt-1 text-[11.5px] font-bold text-[var(--critical)]">Retirer ma photo</button>}
+          {myPhoto.error && <div className="mt-1 text-[11.5px] font-bold text-[var(--critical)]">{myPhoto.error}</div>}
+        </div>
+      </div>
 
       <div className="flex items-center gap-3 rounded-[18px] p-3.5" style={{ background: "linear-gradient(120deg,#fff3c4,#ffe0b0)" }}>
         <span className="text-[34px]">{ty.e}</span>

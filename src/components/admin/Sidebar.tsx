@@ -9,6 +9,7 @@ import NotificationBell from "@/components/NotificationBell";
 import { useCity } from "@/components/admin/CityContext";
 import { countLateDistributions } from "@/lib/distributions";
 import { useRemonteeAppBadge, useRemonteeBadge } from "@/lib/remontees";
+import { useMyPhoto } from "@/lib/profilePhoto";
 
 /** readable text colour (white or dark navy) on top of a hex background */
 function textOn(hex: string) {
@@ -181,6 +182,7 @@ export function Sidebar() {
     .filter((n) => (me.role ? !rolePaths || rolePaths.includes(n.href) : false))
     .filter((n) => n.href !== "/remontees" || me.role !== "admin_principal");
   const remonteeBadge = useRemonteeBadge();
+  const myPhoto = useMyPhoto();
   const unseenRemontees = useRemonteeAppBadge(me.role === "admin_principal");
 
   useEffect(() => {
@@ -221,7 +223,10 @@ export function Sidebar() {
 
       {/* avatar + déconnexion : toujours visibles en haut, plus jamais coupés en bas sur un écran bas */}
       <div className="mt-3.5 mb-3.5 flex flex-none items-center gap-2.5 rounded-xl px-1.5 py-1.5">
-        {me.avatar ? (
+        {myPhoto.url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={myPhoto.url} alt="" className="h-10 w-10 flex-none rounded-full object-cover" />
+        ) : me.avatar ? (
           <span className="flex h-10 w-10 flex-none overflow-hidden rounded-full" dangerouslySetInnerHTML={{ __html: critterSvg(me.avatar as AvatarKey) }} />
         ) : (
           <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-[var(--turquoise)] font-display text-[15px] font-bold text-[#04262e]">

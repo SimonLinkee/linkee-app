@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { AVATAR_DEFS, critterSvg, type AvatarKey } from "@/lib/avatars";
+import { useMyPhoto } from "@/lib/profilePhoto";
 
 export default function ProfilPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -15,6 +16,8 @@ export default function ProfilPage() {
   const [email, setEmail] = useState("");
   const [anecdote, setAnecdote] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  const photo = useMyPhoto();
+  const photoInput = useRef<HTMLInputElement>(null);
   const [autosaveVisible, setAutosaveVisible] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -78,10 +81,14 @@ export default function ProfilPage() {
           style={{ background: `radial-gradient(circle at 8% 30%, ${AVATAR_DEFS[avatar].tint}, transparent 65%)`, opacity: 0.5 }}
         />
         <div className="relative z-10 flex flex-none flex-col items-center gap-2">
-          <div
-            className="flex h-[120px] w-[120px] items-center justify-center overflow-hidden rounded-full border-4 border-[var(--card)] bg-[var(--card)] shadow-[0_10px_26px_-10px_rgba(0,22,65,0.35)]"
-            dangerouslySetInnerHTML={{ __html: critterSvg(avatar) }}
-          />
+          <div className="flex h-[120px] w-[120px] items-center justify-center overflow-hidden rounded-full border-4 border-[var(--card)] bg-[var(--card)] shadow-[0_10px_26px_-10px_rgba(0,22,65,0.35)]">
+            {photo.url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={photo.url} alt="Ma photo" className="h-full w-full object-cover" />
+            ) : (
+              <span className="flex h-full w-full items-center justify-center" dangerouslySetInnerHTML={{ __html: critterSvg(avatar) }} />
+            )}
+          </div>
           <button
             type="button"
             onClick={() => setPickerOpen((v) => !v)}
@@ -146,21 +153,28 @@ export default function ProfilPage() {
                 <span className="text-[10.5px] font-semibold text-[var(--slate)]">{AVATAR_DEFS[key].label}</span>
               </button>
             ))}
-            <button
-              type="button"
-              onClick={() => showToast("La photo personnelle arrive bientôt — pour l'instant, choisis un avatar.")}
-              className="flex flex-col items-center gap-1.5"
-            >
-              <span className="flex h-16 w-16 items-center justify-center rounded-full border-[3px] border-dashed border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)]">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[22px] w-[22px]">
-                  <path d="M4 8 L7 4 H17 L20 8" />
-                  <rect x="3" y="8" width="18" height="12" rx="2" />
-                  <circle cx="12" cy="14" r="3.2" />
-                </svg>
+            <button type="button" disabled={photo.busy} onClick={() => photoInput.current?.click()} className="flex flex-col items-center gap-1.5 disabled:opacity-60">
+              <span className={`flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border-[3px] bg-[var(--input-bg)] text-[var(--slate)] ${photo.url ? "border-[var(--turquoise)] shadow-[0_0_0_3px_rgba(79,193,214,0.25)]" : "border-dashed border-[var(--border)]"}`}>
+                {photo.url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={photo.url} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[22px] w-[22px]">
+                    <path d="M4 8 L7 4 H17 L20 8" />
+                    <rect x="3" y="8" width="18" height="12" rx="2" />
+                    <circle cx="12" cy="14" r="3.2" />
+                  </svg>
+                )}
               </span>
-              <span className="text-[10.5px] font-semibold text-[var(--slate)]">Ma photo</span>
+              <span className="text-[10.5px] font-semibold text-[var(--slate)]">{photo.busy ? "Envoi…" : photo.url ? "Changer ma photo" : "Ma photo"}</span>
             </button>
+            <input ref={photoInput} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) photo.upload(f); }} />
           </div>
+          {photo.hasPhoto && (
+            <button type="button" disabled={photo.busy} onClick={photo.remove} className="mt-3 text-[11.5px] font-bold text-[var(--critical)]">Retirer ma photo</button>
+          )}
+          {photo.error && <p className="mt-2 rounded-lg bg-[var(--critical-bg)] px-3 py-2 text-[12px] font-semibold text-[var(--critical)]">{photo.error}</p>}
+          <p className="mt-2 text-[11px] text-[var(--slate)]">Ta photo est facultative et privée : toi et l&apos;administrateur principal êtes les seuls à pouvoir la voir. Elle remplace ton avatar.</p>
         </div>
       )}
 

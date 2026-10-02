@@ -31,6 +31,7 @@ export default function PolitiqueConfidentialitePage() {
             <li><b className="text-[var(--navy)]">Bénévoles (Linkers)</b> — prénom, téléphone, ville, adresse de référence (pour calculer les distances de collecte), et un historique de vos collectes effectuées.</li>
             <li><b className="text-[var(--navy)]">Contacts de partenaires et d&apos;associations</b> — nom, téléphone, e-mail des personnes que vous désignez comme contact sur la fiche de votre structure.</li>
             <li><b className="text-[var(--navy)]">Salariés et responsables d&apos;antenne</b> — nom, e-mail, téléphone professionnel, et un suivi des journées de travail (horaires de tournée).</li>
+            <li><b className="text-[var(--navy)]">Photo de profil (facultative)</b> — une photo que vous choisissez d&apos;envoyer depuis votre profil. Elle n&apos;est visible que par vous et par l&apos;administrateur principal, et elle est supprimée avec votre compte.</li>
             <li><b className="text-[var(--navy)]">Remontées (onglet « Remontées »)</b> — le titre, la description et les pièces jointes (captures d&apos;écran, documents) que vous envoyez pour signaler un bug, poser une question ou proposer une idée, ainsi que votre rôle, votre antenne, la page de l&apos;application d&apos;où part la remontée, le navigateur et l&apos;appareil utilisés.</li>
           </ul>
           <p className={`${pCls} mt-2`}>Nous ne demandons jamais de données bancaires, de numéro de sécurité sociale ni de données de santé.</p>
