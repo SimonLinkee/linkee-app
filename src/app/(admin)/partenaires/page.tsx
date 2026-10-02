@@ -10,6 +10,7 @@ import PartnerValuation from "@/components/partner/PartnerValuation";
 import PartnerCollectes from "@/components/partner/PartnerCollectes";
 import BeneficiaryMap from "@/components/partner/BeneficiaryMap";
 import AddressSearch from "@/components/AddressSearch";
+import BetaBadge from "@/components/BetaBadge";
 import SirenField from "@/components/partner/SirenField";
 import type { SirenInfo } from "@/lib/siren";
 import { formatCreneaux, type Creneaux, type Slot as CreneauSlot } from "@/lib/creneaux";
@@ -841,7 +842,7 @@ export default function PartenairesPage() {
                     className="mt-0.5 h-[17px] w-[17px] accent-[#eb6834]"
                   />
                   <span>
-                    <span className="block text-[13px] font-bold text-[var(--navy)]">Éligible collecte bénévole</span>
+                    <span className="flex items-center gap-2 text-[13px] font-bold text-[var(--navy)]">Éligible collecte bénévole <BetaBadge label="Bêta test" /></span>
                     <span className="block text-[11.5px] leading-[1.4] text-[var(--slate)]">
                       Ce partenaire sort du planning pro classique et n&apos;a plus accès à la collecte exceptionnelle classique — il passe par les Links Bénévoles (ou une collecte « pro » planifiée, relabellisée pour lui). Pense aussi à activer 🎒 et/ou 🚗 dans Links Bénévoles.
                     </span>
