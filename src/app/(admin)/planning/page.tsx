@@ -10,7 +10,7 @@ import AdminStopModal from "@/components/planning/AdminStopModal";
 import dynamic from "next/dynamic";
 import type { MapPoint } from "@/components/RouteMap";
 import { formatCreneaux, slotsForDate, type Creneaux } from "@/lib/creneaux";
-import { isSuper } from "@/lib/roles";
+import { canAdminCity } from "@/lib/roles";
 
 const RouteMap = dynamic(() => import("@/components/RouteMap"), {
   ssr: false,
@@ -249,7 +249,7 @@ const SELECT_DAY =
 export default function PlanningPage() {
   const supabase = useMemo(() => createClient(), []);
   const { cityId, depotAddress, role } = useCity(); // the page remounts when the city changes
-  const ro = !isSuper(role); // Responsable d'antenne: the planning is read only
+  const ro = !canAdminCity(role); // le Responsable d'antenne modifie le planning de sa ville (migration 047)
   const DEPOT = { name: DEPOT_NAME, address: depotAddress };
   const DEPOT_PLACE = depotPlace(depotAddress);
   const [places, setPlaces] = useState<Place[]>([depotPlace(depotAddress)]);

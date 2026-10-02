@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
 import EntityActivity from "@/components/admin/EntityActivity";
-import { isSuper } from "@/lib/roles";
+import { canAdminCity } from "@/lib/roles";
 import { CAT_KEYS, CAT_LABELS, CO2_SOURCE, DEFAULT_EUR_PER_KG, STAT_SELECT, SUBCAT_SELECT, buildEvo, isoOf, rse, subMap, summarize, type CatKey, type StatRow, type SubCat, type Summary } from "@/lib/stats";
 
 type Gran = "jour" | "semaine" | "mois" | "custom";
@@ -522,7 +522,7 @@ export default function DashboardPage() {
               <span className="font-display text-[26px] font-black text-[var(--navy)] tabular-nums">{c.taux} %</span>
             </div>
           </div>
-          {isSuper(role) && (
+          {canAdminCity(role) && (
           <div className="flex flex-col gap-2 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]">
             <span className="text-xs font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Temps de travail</span>
             <span className="font-display text-[30px] leading-none font-black text-[var(--navy)] tabular-nums">{activePartnerId ? "—" : fmtHours(work.secs)}</span>

@@ -7,7 +7,7 @@ import CharSvg from "@/components/linker/CharSvg";
 import { CH, characterSVG, type CharKey } from "@/lib/linker/characters";
 import { computeOutfit, stageOf, type Mode, type StyleKey } from "@/lib/linker/gamification";
 import { DEFAULT_EUR_PER_KG } from "@/lib/stats";
-import { isSuper } from "@/lib/roles";
+import { canAdminCity } from "@/lib/roles";
 
 const ORANGE = "#eb6834";
 type LinkerRow = { id: string; character: CharKey; level: number; mode: Mode; transport: "pied" | "velo"; radius_km: number; cold_ok: boolean; kg_saved: number; links_done: number; chosen: Record<number, StyleKey>; equipped: Record<number, number | "none">; profiles: { full_name: string | null; email: string | null; phone: string | null } | { full_name: string | null; email: string | null; phone: string | null }[] | null };
@@ -40,7 +40,7 @@ export default function LinksBenevolesAdminPage() {
       const { data: auth } = await supabase.auth.getUser();
       if (!auth.user) return;
       const { data } = await supabase.from("profiles").select("role").eq("id", auth.user.id).maybeSingle();
-      setIsSuperadmin(isSuper(data?.role));
+      setIsSuperadmin(canAdminCity(data?.role));
     })();
   }, [supabase]);
 

@@ -3,10 +3,14 @@ export type Role = 'en_attente' | 'admin_principal' | 'comptabilite' | 'admin_lo
 /** Superadmin or Comptabilité: same data rights (see migration 043). Account management stays Superadmin-only. */
 export const isSuper = (role: string | null | undefined) => role === 'admin_principal' || role === 'comptabilite'
 
+/** Peut administrer (modifier) sa ville : Superadmin, Comptabilité et Responsable d'antenne (pour SA ville — la base le garantit). */
+export const canAdminCity = (role: string | null | undefined) => isSuper(role) || role === 'admin_local'
+
 // Screen access per role (data rules are enforced again in the database, see migrations 018 and 020):
 //   admin_principal   = Superadmin              : everything (mobile version: /mobile, reduced) — can also preview /linker
 //   comptabilite      = Comptabilité            : same screens as the Superadmin except "Villes & comptes"; lands on /comptabilite (Cerfa follow-up)
-//   admin_local       = Responsable d'antenne   : Distribution + Stock (edit), Planning (read only)
+//   admin_local       = Responsable d'antenne   : pilote SA ville comme un admin (migration 047) — tout sauf "Villes & comptes",
+//                                                 "Historique & sauvegardes" et les autres villes
 //   resp_distribution = Resp. Distribution      : Distribution only
 //   linker             = Linker (bénévole)       : espace 100% client sous /linker (signup, carte, missions, gamification)
 // After sign-in the last two roles land on /version: full PC version or quick mobile entry (/saisie-mobile).
@@ -15,11 +19,10 @@ const COMPTA_PATHS = SUPER_ONLY.filter((p) => p !== '/villes-comptes')
 // '/mobile/links' (visibilité des Links Bénévoles) est aussi ouvert au Responsable d'antenne et au Resp.
 // Distribution, alors que le reste de '/mobile' reste réservé au Superadmin — d'où l'ajout explicite ici.
 // '/valeur-des-dons' (valeur par défaut par type de partenaire, ex-"barèmes") est aussi gérée par le Responsable d'antenne (cf. RLS baremes_write).
-// '/comptabilite' : le Responsable d'antenne y voit la file "Cerfa à valider" de son antenne (valider / refuser) ; les
-// autres actions (émission du Cerfa) sont réservées à la Comptabilité et au Superadmin, y compris côté base.
-// '/dashboard' et '/partenaires' : le Responsable d'antenne les consulte en LECTURE SEULE, pour sa ville uniquement (règles
-// d'accès de la base : staff_in_city ; les écrans masquent les actions d'édition).
-const ANTENNE_PATHS = ['/distributions', '/stock', '/planning', '/profil', '/version', '/saisie-mobile', '/links-benevoles', '/mobile/links', '/valeur-des-dons', '/comptabilite', '/dashboard', '/partenaires']
+// Écrans du Responsable d'antenne (pour sa ville uniquement : règles d'accès de la base, voir migration 047).
+// '/comptabilite' : il y valide / refuse les demandes de Cerfa de son antenne ; l'émission du Cerfa reste réservée à la
+// Comptabilité et au Superadmin, y compris côté base.
+const ANTENNE_PATHS = ['/dashboard', '/partenaires', '/beneficiaires', '/planning', '/distributions', '/stock', '/flotte', '/todo', '/links-benevoles', '/valeur-des-dons', '/comptabilite', '/profil', '/version', '/saisie-mobile', '/mobile/links']
 const DISTRIB_PATHS = ['/distributions', '/profil', '/version', '/saisie-mobile', '/mobile/links']
 const LINKER_PATHS = ['/linker']
 

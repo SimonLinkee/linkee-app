@@ -173,7 +173,9 @@ export function Sidebar() {
   const NATIONAL_BG = "linear-gradient(120deg,#2a78d6,#7C5CD9 45%,#eb6834)";
   // only Dashboard and Fleet exist in the national view (all cities)
   // Superadmin: everything · Responsable d'antenne: Distribution, Stock, Planning · Resp. Distribution: Distribution only
-  const rolePaths: string[] | null = me.role === "admin_local" ? ["/dashboard", "/partenaires", "/distributions", "/stock", "/planning", "/profil", "/links-benevoles", "/comptabilite", "/remontees"] : me.role === "resp_distribution" ? ["/distributions", "/profil", "/remontees"] : null;
+  // Superadmin, Comptabilité et Responsable d'antenne (pour sa ville) voient tout le menu ; la section "Superadmin"
+  // (Villes & comptes, Historique) ne s'affiche que pour le Superadmin.
+  const rolePaths: string[] | null = me.role === "resp_distribution" ? ["/distributions", "/profil", "/remontees"] : null;
   // « Remontées » : onglet utilisateur pour tous les rôles sauf le Superadmin, qui a « Remontées APP » à la place
   const visibleNav = (isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/flotte", "/profil", "/valeur-des-dons", "/comptabilite", "/remontees"].includes(n.href)) : NAV_ITEMS)
     .filter((n) => (me.role ? !rolePaths || rolePaths.includes(n.href) : false))

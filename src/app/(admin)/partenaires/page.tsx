@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
-import { isSuper } from "@/lib/roles";
+import { canAdminCity } from "@/lib/roles";
 import { PASSAGE_ITEMS, PassageIcon, type Passage } from "@/components/PassageIcons";
 import PartnerDocuments from "@/components/partner/PartnerDocuments";
 import PartnerValuation from "@/components/partner/PartnerValuation";
@@ -413,7 +413,7 @@ export default function PartenairesPage() {
   const [beneficiaires, setBeneficiaires] = useState<BeneficiaireEntity[]>([]);
   const [loading, setLoading] = useState(true);
   const { cityId, role } = useCity(); // the page remounts when the city changes
-  const readOnly = !isSuper(role); // Responsable d'antenne : consultation seule, pour sa ville (voir ReadOnlyCtx)
+  const readOnly = !canAdminCity(role); // filet de sécurité : consultation seule pour tout rôle qui ne pilote pas sa ville (voir ReadOnlyCtx)
   const saveTimers = useRef<Record<string, number>>({});
   const [tab, setTab] = useState<"partner" | "beneficiaire">("partner");
   const [ficheTab, setFicheTab] = useState<FicheTab>("fiche");
