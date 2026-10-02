@@ -25,7 +25,7 @@ const COMPTA_PATHS = SUPER_ONLY.filter((p) => p !== '/villes-comptes')
 const ANTENNE_PATHS = ['/dashboard', '/partenaires', '/beneficiaires', '/planning', '/distributions', '/stock', '/flotte', '/todo', '/links-benevoles', '/valeur-des-dons', '/comptabilite', '/organigramme', '/profil', '/version', '/saisie-mobile', '/mobile']
 // '/organigramme' : trombinoscope de l'équipe (PC) — équipe interne seulement : le logisticien, les Linkers, partenaires et
 // associations n'y ont pas accès. Le Responsable RH (rôle national à part) n'a, pour l'instant, que l'organigramme et son profil.
-const DISTRIB_PATHS = ['/distributions', '/organigramme', '/profil', '/version', '/saisie-mobile', '/mobile/links']
+const DISTRIB_PATHS = ['/distributions', '/organigramme', '/profil', '/version', '/saisie-mobile', '/mobile/links', '/mobile/remontees']
 const RH_PATHS = ['/organigramme', '/profil']
 const LINKER_PATHS = ['/linker']
 
