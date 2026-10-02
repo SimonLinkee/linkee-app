@@ -95,7 +95,7 @@ const NAV_ITEMS = [
   },
   {
     href: "/comptabilite",
-    label: "Comptabilité",
+    label: "Cerfa",
     icon: (
       <>
         <path d="M7 3 H14 L19 8 V21 H7 Z" />
@@ -161,7 +161,7 @@ export function Sidebar() {
   const NATIONAL_BG = "linear-gradient(120deg,#2a78d6,#7C5CD9 45%,#eb6834)";
   // only Dashboard and Fleet exist in the national view (all cities)
   // Superadmin: everything · Responsable d'antenne: Distribution, Stock, Planning · Resp. Distribution: Distribution only
-  const rolePaths: string[] | null = me.role === "admin_local" ? ["/distributions", "/stock", "/planning", "/profil", "/links-benevoles"] : me.role === "resp_distribution" ? ["/distributions", "/profil"] : null;
+  const rolePaths: string[] | null = me.role === "admin_local" ? ["/distributions", "/stock", "/planning", "/profil", "/links-benevoles", "/comptabilite"] : me.role === "resp_distribution" ? ["/distributions", "/profil"] : null;
   const visibleNav = (isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/flotte", "/profil", "/valeur-des-dons", "/comptabilite"].includes(n.href)) : NAV_ITEMS).filter((n) => (me.role ? !rolePaths || rolePaths.includes(n.href) : false));
 
   useEffect(() => {

@@ -15,7 +15,9 @@ const COMPTA_PATHS = SUPER_ONLY.filter((p) => p !== '/villes-comptes')
 // '/mobile/links' (visibilité des Links Bénévoles) est aussi ouvert au Responsable d'antenne et au Resp.
 // Distribution, alors que le reste de '/mobile' reste réservé au Superadmin — d'où l'ajout explicite ici.
 // '/valeur-des-dons' (valeur par défaut par type de partenaire, ex-"barèmes") est aussi gérée par le Responsable d'antenne (cf. RLS baremes_write).
-const ANTENNE_PATHS = ['/distributions', '/stock', '/planning', '/profil', '/version', '/saisie-mobile', '/links-benevoles', '/mobile/links', '/valeur-des-dons']
+// '/comptabilite' : le Responsable d'antenne y voit la file "Cerfa à valider" de son antenne (valider / refuser) ; les
+// autres actions (émission du Cerfa) sont réservées à la Comptabilité et au Superadmin, y compris côté base.
+const ANTENNE_PATHS = ['/distributions', '/stock', '/planning', '/profil', '/version', '/saisie-mobile', '/links-benevoles', '/mobile/links', '/valeur-des-dons', '/comptabilite']
 const DISTRIB_PATHS = ['/distributions', '/profil', '/version', '/saisie-mobile', '/mobile/links']
 const LINKER_PATHS = ['/linker']
 
