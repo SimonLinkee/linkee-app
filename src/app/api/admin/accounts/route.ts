@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { createClient as createAdminClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 
 // Account creation / password reset need the Supabase *service role* key, which must never reach the browser.
@@ -14,6 +14,19 @@ async function requireMainAdmin() {
   if (!auth.user) return null;
   const { data: prof } = await supabase.from("profiles").select("role,active").eq("id", auth.user.id).maybeSingle();
   return prof?.role === "admin_principal" && prof.active !== false ? auth.user : null;
+}
+
+// Pièces jointes des remontées (coffre privé "remontees", dossier <id du compte>/<id de la remontée>/) : effacées
+// avec le compte, ou à son anonymisation, pour qu'une capture d'écran ne survive pas à la personne.
+async function removeFeedbackFiles(admin: SupabaseClient, uid: string) {
+  const bucket = admin.storage.from("remontees");
+  const { data: dirs } = await bucket.list(uid, { limit: 1000 });
+  const paths: string[] = [];
+  for (const d of dirs ?? []) {
+    const { data: files } = await bucket.list(`${uid}/${d.name}`, { limit: 1000 });
+    for (const f of files ?? []) paths.push(`${uid}/${d.name}/${f.name}`);
+  }
+  if (paths.length) await bucket.remove(paths);
 }
 
 function adminClient() {
@@ -99,6 +112,7 @@ export async function DELETE(request: Request) {
           { status: 409 },
         );
       }
+      await removeFeedbackFiles(admin, body.id);
       const anonEmail = `linker-efface-${body.id.slice(0, 8)}@anonymise.linkee.local`;
       const p1 = await admin.from("profiles").update({ full_name: "Ancien bénévole", phone: null, email: anonEmail, active: false }).eq("id", body.id);
       if (p1.error) return NextResponse.json({ error: p1.error.message }, { status: 500 });
@@ -110,6 +124,7 @@ export async function DELETE(request: Request) {
     }
   }
 
+  await removeFeedbackFiles(admin, body.id);
   const res = await admin.auth.admin.deleteUser(body.id);
   if (res.error) return NextResponse.json({ error: res.error.message }, { status: 400 });
   return NextResponse.json({ ok: true });
