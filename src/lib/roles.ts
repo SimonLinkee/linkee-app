@@ -1,12 +1,17 @@
-export type Role = 'en_attente' | 'admin_principal' | 'admin_local' | 'resp_distribution' | 'logisticien' | 'partenaire' | 'beneficiaire' | 'linker'
+export type Role = 'en_attente' | 'admin_principal' | 'comptabilite' | 'admin_local' | 'resp_distribution' | 'logisticien' | 'partenaire' | 'beneficiaire' | 'linker'
+
+/** Superadmin or Comptabilité: same data rights (see migration 043). Account management stays Superadmin-only. */
+export const isSuper = (role: string | null | undefined) => role === 'admin_principal' || role === 'comptabilite'
 
 // Screen access per role (data rules are enforced again in the database, see migrations 018 and 020):
 //   admin_principal   = Superadmin              : everything (mobile version: /mobile, reduced) — can also preview /linker
+//   comptabilite      = Comptabilité            : same screens as the Superadmin except "Villes & comptes"; lands on /comptabilite (Cerfa follow-up)
 //   admin_local       = Responsable d'antenne   : Distribution + Stock (edit), Planning (read only)
 //   resp_distribution = Resp. Distribution      : Distribution only
 //   linker             = Linker (bénévole)       : espace 100% client sous /linker (signup, carte, missions, gamification)
 // After sign-in the last two roles land on /version: full PC version or quick mobile entry (/saisie-mobile).
-const SUPER_ONLY = ['/dashboard', '/partenaires', '/beneficiaires', '/flotte', '/todo', '/villes-comptes', '/historique', '/journee', '/espace-partenaire', '/espace-beneficiaire', '/mobile', '/links-benevoles', '/linker', '/valeur-des-dons']
+const SUPER_ONLY = ['/dashboard', '/partenaires', '/beneficiaires', '/flotte', '/todo', '/villes-comptes', '/historique', '/journee', '/espace-partenaire', '/espace-beneficiaire', '/mobile', '/links-benevoles', '/linker', '/valeur-des-dons', '/comptabilite']
+const COMPTA_PATHS = SUPER_ONLY.filter((p) => p !== '/villes-comptes')
 // '/mobile/links' (visibilité des Links Bénévoles) est aussi ouvert au Responsable d'antenne et au Resp.
 // Distribution, alors que le reste de '/mobile' reste réservé au Superadmin — d'où l'ajout explicite ici.
 // '/valeur-des-dons' (valeur par défaut par type de partenaire, ex-"barèmes") est aussi gérée par le Responsable d'antenne (cf. RLS baremes_write).
@@ -16,6 +21,7 @@ const LINKER_PATHS = ['/linker']
 
 export const ROLE_LABEL: Record<string, string> = {
   admin_principal: 'Superadmin',
+  comptabilite: 'Comptabilité',
   admin_local: "Responsable d'antenne",
   resp_distribution: 'Resp. Distribution',
   logisticien: 'Logisticien',
@@ -29,6 +35,8 @@ export function homeForRole(role: string): string {
   switch (role) {
     case 'admin_principal':
       return '/version' // choice between the PC version and the mobile version
+    case 'comptabilite':
+      return '/comptabilite'
     case 'admin_local':
     case 'resp_distribution':
       return '/version' // choice between the PC version and the quick mobile entry
@@ -58,6 +66,7 @@ export function isAllowed(role: string, path: string): boolean {
   // readable by anyone, logged in or not (see middleware.ts for the logged-out case)
   if (path === '/politique-de-confidentialite') return true
   if (role === 'admin_principal') return [...SUPER_ONLY, ...ANTENNE_PATHS].some((p) => under(path, p))
+  if (role === 'comptabilite') return [...COMPTA_PATHS, ...ANTENNE_PATHS].some((p) => under(path, p))
   if (role === 'admin_local') return ANTENNE_PATHS.some((p) => under(path, p))
   if (role === 'resp_distribution') return DISTRIB_PATHS.some((p) => under(path, p))
   if (role === 'logisticien') return under(path, '/journee')

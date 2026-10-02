@@ -21,7 +21,7 @@ function DepotAddressField({ value, onSave }: { value: string; onSave: (v: strin
   );
 }
 
-type Role = "en_attente" | "admin_principal" | "admin_local" | "resp_distribution" | "logisticien" | "partenaire" | "beneficiaire" | "linker";
+type Role = "en_attente" | "admin_principal" | "comptabilite" | "admin_local" | "resp_distribution" | "logisticien" | "partenaire" | "beneficiaire" | "linker";
 type City = { id: string; name: string; color?: string | null; depot_address?: string | null };
 type PartnerLite = { id: string; name: string; city_id: string };
 type BeneficiaryLite = { id: string; name: string; city_id: string };
@@ -38,6 +38,7 @@ type ProfileRow = {
 
 const ROLE_LABELS: Record<Role, string> = {
   admin_principal: "Superadmin",
+  comptabilite: "Comptabilité",
   admin_local: "Responsable d'antenne",
   resp_distribution: "Resp. Distribution",
   logisticien: "Logisticien",
@@ -46,11 +47,12 @@ const ROLE_LABELS: Record<Role, string> = {
   linker: "Linker (bénévole)",
   en_attente: "En attente",
 };
-const ROLE_ORDER: Role[] = ["admin_principal", "admin_local", "resp_distribution", "logisticien", "partenaire", "beneficiaire", "linker", "en_attente"];
+const ROLE_ORDER: Role[] = ["admin_principal", "comptabilite", "admin_local", "resp_distribution", "logisticien", "partenaire", "beneficiaire", "linker", "en_attente"];
 
 // One colour per role, used for the badge, the filter chips and the left edge of each row.
 const ROLE_COLOR: Record<Role, { solid: string; soft: string; text: string }> = {
   admin_principal: { solid: "var(--navy-deep)", soft: "var(--navy-deep)", text: "var(--panel-fg)" },
+  comptabilite: { solid: "#7C5CD9", soft: "rgba(124,92,217,0.16)", text: "#7C5CD9" },
   admin_local: { solid: "var(--turquoise)", soft: "var(--turquoise)", text: "#04262e" },
   resp_distribution: { solid: "#2a78d6", soft: "rgba(42,120,214,0.16)", text: "#2a78d6" },
   logisticien: { solid: "var(--stock-accent)", soft: "var(--stock-accent-bg)", text: "var(--stock-accent)" },
@@ -272,7 +274,7 @@ export default function VillesComptesPage() {
   async function createAccount() {
     if (!form.email.trim()) return showToast("Renseigne l'adresse email.");
     if (form.password.length < 8) return showToast("Mot de passe : 8 caractères minimum (utilise « Générer »).");
-    if (form.role !== "admin_principal" && !form.city_id && form.role !== "partenaire" && form.role !== "beneficiaire") return showToast("Choisis une ville pour ce compte.");
+    if (form.role !== "admin_principal" && form.role !== "comptabilite" && !form.city_id && form.role !== "partenaire" && form.role !== "beneficiaire") return showToast("Choisis une ville pour ce compte.");
     setBusy(true);
     try {
       await callApi("POST", { ...form, city_id: form.city_id || null });

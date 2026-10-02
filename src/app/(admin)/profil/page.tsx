@@ -20,6 +20,7 @@ export default function ProfilPage() {
 
   const ROLE_TEXT: Record<string, string> = {
     admin_principal: "Superadmin",
+    comptabilite: "Comptabilité",
     admin_local: "Responsable d'antenne",
     resp_distribution: "Resp. Distribution",
     logisticien: "Logisticien",

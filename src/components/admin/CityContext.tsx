@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { isSuper } from "@/lib/roles";
 
 export type City = { id: string; name: string; color: string; depot_address: string };
 
@@ -65,7 +66,7 @@ export function CityProvider({ children }: { children: ReactNode }) {
       } catch {
         /* no storage */
       }
-      const main = prof?.role === "admin_principal";
+      const main = isSuper(prof?.role);
       const valid = saved === "all" || list.some((c) => c.id === saved);
       setSelection(main && saved && valid ? saved : (prof?.city_id ?? list[0]?.id ?? ""));
       setReady(true);
@@ -73,7 +74,7 @@ export function CityProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase]);
 
-  const canSwitch = role === "admin_principal";
+  const canSwitch = isSuper(role);
   const isAll = canSwitch && selection === "all";
   const city = isAll ? null : (cities.find((c) => c.id === selection) ?? cities.find((c) => c.id === own) ?? null);
 

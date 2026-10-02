@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { CityProvider, useCity } from "@/components/admin/CityContext";
 import PhotoStrip from "@/components/PhotoStrip";
 import { STATUS_UI, distribStatus, isoToday } from "@/lib/distributions";
+import { isSuper } from "@/lib/roles";
 
 /* ---------------- types & helpers ---------------- */
 type Place = { id: string; name: string };
@@ -269,7 +270,7 @@ function Page() {
         </div>
         <span className="flex items-center gap-3 text-[12px] font-semibold text-[var(--slate)]">
           {city && <span className="rounded-[40px] px-2.5 py-1 text-white" style={{ background: city.color }}>{city.name}</span>}
-          <Link href={role === "admin_principal" ? "/mobile" : "/version"} className="underline">{role === "admin_principal" ? "Accueil" : "Changer de version"}</Link>
+          <Link href={isSuper(role) ? "/mobile" : "/version"} className="underline">{isSuper(role) ? "Accueil" : "Changer de version"}</Link>
         </span>
       </header>
 
