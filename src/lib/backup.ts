@@ -6,7 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const BACKUP_TABLES = [
   "cities", "profiles", "partners", "partner_users", "beneficiaries", "vehicles", "vehicle_events",
   "collectes", "collecte_items", "exceptional_requests", "checklist_templates", "checklist_overrides",
-  "day_sessions", "stock_items", "stock_movements", "documents", "audit_log",
+  "day_sessions", "stock_items", "stock_movements", "documents", "audit_log", "cerfa_requests", "cerfa_request_documents",
 ];
 
 const KEEP_DAYS = 30;

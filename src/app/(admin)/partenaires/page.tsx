@@ -12,6 +12,7 @@ import AddressSearch from "@/components/AddressSearch";
 import SirenField from "@/components/partner/SirenField";
 import type { SirenInfo } from "@/lib/siren";
 import { formatCreneaux, type Creneaux, type Slot as CreneauSlot } from "@/lib/creneaux";
+import { CERFA_FREQUENCIES, type CerfaFrequency } from "@/lib/cerfa";
 
 type FicheTab = "fiche" | "documents" | "valorisation" | "collectes";
 
@@ -68,6 +69,7 @@ type PartnerEntity = {
   dureeCollecte?: number;
   benevoleOnly?: boolean;
   activityStatus?: string;
+  cerfaFrequency?: CerfaFrequency;
   history: HistoryEntry[];
   contacts: Contact[];
   portalEmail?: string;
@@ -888,6 +890,16 @@ export default function PartenairesPage() {
                       <select className={inputCls} value={current.activityStatus || "Non défini"} onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, activityStatus: e.target.value } : entity))}>
                         {ACTIVITY_STATUS_OPTIONS.map((o) => (
                           <option key={o}>{o}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {current.kind === "partner" && (
+                    <div>
+                      <label className={labelCls}>Fréquence d&apos;émission Cerfa <span className="font-normal text-[var(--muted)]">(sert uniquement aux alertes de retard)</span></label>
+                      <select className={inputCls} value={current.cerfaFrequency || "ponctuel"} onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, cerfaFrequency: e.target.value as CerfaFrequency } : entity))}>
+                        {CERFA_FREQUENCIES.map((f) => (
+                          <option key={f.k} value={f.k}>{f.l}</option>
                         ))}
                       </select>
                     </div>

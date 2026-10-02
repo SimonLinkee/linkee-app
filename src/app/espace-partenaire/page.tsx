@@ -9,6 +9,7 @@ import PartnerDocuments from "@/components/partner/PartnerDocuments";
 import PartnerValuation from "@/components/partner/PartnerValuation";
 import PartnerLinks from "@/components/partner/PartnerLinks";
 import { formatCreneaux, type Creneaux } from "@/lib/creneaux";
+import { CERFA_FREQUENCIES, cerfaFrequencyOf, type CerfaFrequency } from "@/lib/cerfa";
 
 /* ---------------- types ---------------- */
 type Contact = { type: string; nom: string; tel: string; mail: string };
@@ -542,10 +543,11 @@ export default function EspacePartenairePage() {
     savedT.current = window.setTimeout(() => setSaved(false), 1500);
   }
   // Partner-editable parts of the fiche are saved back into the partners.fiche jsonb column.
-  function patch(p: Partial<Site>) {
+  function patch(p: Partial<Site> & { cerfaFrequency?: CerfaFrequency }) {
     const cur = partnerRows.find((r) => r.id === siteKey);
     if (!cur) return;
     const f: Fiche = { ...(cur.fiche ?? {}) };
+    if (p.cerfaFrequency) f.cerfaFrequency = p.cerfaFrequency;
     if (p.contacts) f.contacts = p.contacts;
     if (p.access) f.access = p.access;
     if (p.accessNote !== undefined) f.accessNote = p.accessNote;
@@ -878,6 +880,13 @@ export default function EspacePartenairePage() {
                 <div className="flex flex-wrap gap-2">
                   {DENREE_OPTIONS.map((d) => <ChipToggle key={d} label={d} checked={!!site.denrees[d]} onChange={(v) => patch({ denrees: { ...site.denrees, [d]: v } })} />)}
                 </div>
+              </Card>
+
+              <Card title="Reçus fiscaux (Cerfa)" icon={DOC} note="À quelle fréquence souhaitez-vous recevoir un reçu fiscal ? Aucune demande n'est créée automatiquement : c'est vous qui la lancez depuis « Mes documents ». Ce choix sert seulement à vous rappeler quand une demande est attendue.">
+                <label className={labelCls}>Fréquence d&apos;émission</label>
+                <select className={fieldCls} value={cerfaFrequencyOf(site.fiche)} onChange={(e) => patch({ cerfaFrequency: e.target.value as CerfaFrequency })}>
+                  {CERFA_FREQUENCIES.map((f) => <option key={f.k} value={f.k}>{f.l}</option>)}
+                </select>
               </Card>
 
               <Card title="Photo du lieu de collecte" icon={<><path d="M4 8 L7 4 H17 L20 8" /><rect x="3" y="8" width="18" height="12" rx="2" /><circle cx="12" cy="14" r="3.2" /></>} note="Aide le logisticien à repérer l'endroit exact (porte arrière, quai, etc.).">
