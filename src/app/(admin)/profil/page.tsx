@@ -26,6 +26,7 @@ export default function ProfilPage() {
     comptabilite: "Comptabilité",
     admin_local: "Responsable d'antenne",
     resp_distribution: "Resp. Distribution",
+    resp_rh: "Responsable RH",
     logisticien: "Logisticien",
     partenaire: "Partenaire",
     beneficiaire: "Bénéficiaire",
@@ -174,7 +175,7 @@ export default function ProfilPage() {
             <button type="button" disabled={photo.busy} onClick={photo.remove} className="mt-3 text-[11.5px] font-bold text-[var(--critical)]">Retirer ma photo</button>
           )}
           {photo.error && <p className="mt-2 rounded-lg bg-[var(--critical-bg)] px-3 py-2 text-[12px] font-semibold text-[var(--critical)]">{photo.error}</p>}
-          <p className="mt-2 text-[11px] text-[var(--slate)]">Ta photo est facultative et privée : toi et l&apos;administrateur principal êtes les seuls à pouvoir la voir. Elle remplace ton avatar.</p>
+          <p className="mt-2 text-[11px] text-[var(--slate)]">Ta photo est facultative. Elle remplace ton avatar et apparaît dans l&apos;organigramme, visible par l&apos;équipe interne Linkee uniquement (jamais par les partenaires, associations ni bénévoles).</p>
         </div>
       )}
 

@@ -130,7 +130,7 @@ export default function LinkerProfilPage() {
         />
         <div className="min-w-0 flex-1">
           <div className="font-display text-[16px] font-extrabold text-[var(--navy)]">Ma photo</div>
-          <div className="text-[11.5px] leading-[1.4] text-[var(--slate)]">Facultative et privée : seule l&apos;équipe Linkee peut la voir. Appuie sur la photo pour la changer.</div>
+          <div className="text-[11.5px] leading-[1.4] text-[var(--slate)]">Facultative. Seul le Superadmin et ton responsable d&apos;antenne peuvent la voir (dans l&apos;organigramme, avec ton prénom). Appuie sur la photo pour la changer.</div>
           {myPhoto.hasPhoto && <button type="button" disabled={myPhoto.busy} onClick={myPhoto.remove} className="mt-1 text-[11.5px] font-bold text-[var(--critical)]">Retirer ma photo</button>}
           {myPhoto.error && <div className="mt-1 text-[11.5px] font-bold text-[var(--critical)]">{myPhoto.error}</div>}
         </div>

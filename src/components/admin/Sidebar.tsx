@@ -129,6 +129,18 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: "/organigramme",
+    label: "Organigramme",
+    icon: (
+      <>
+        <rect x="9" y="3" width="6" height="5" rx="1.2" />
+        <rect x="3" y="16" width="6" height="5" rx="1.2" />
+        <rect x="15" y="16" width="6" height="5" rx="1.2" />
+        <path d="M12 8 V12 M6 16 V12 H18 V16" />
+      </>
+    ),
+  },
+  {
     href: "/remontees",
     label: "Remontées",
     accent: true,
@@ -162,7 +174,7 @@ const SUPER_ITEM = {
   ),
 };
 
-const ROLE_SHORT: Record<string, string> = { admin_principal: "Superadmin", comptabilite: "Comptabilité", admin_local: "Responsable d'antenne", resp_distribution: "Resp. Distribution", logisticien: "Logisticien" };
+const ROLE_SHORT: Record<string, string> = { admin_principal: "Superadmin", comptabilite: "Comptabilité", admin_local: "Responsable d'antenne", resp_distribution: "Resp. Distribution", resp_rh: "Responsable RH", logisticien: "Logisticien" };
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -176,9 +188,9 @@ export function Sidebar() {
   // Superadmin: everything · Responsable d'antenne: Distribution, Stock, Planning · Resp. Distribution: Distribution only
   // Superadmin, Comptabilité et Responsable d'antenne (pour sa ville) voient tout le menu ; la section "Superadmin"
   // (Villes & comptes, Historique) ne s'affiche que pour le Superadmin.
-  const rolePaths: string[] | null = me.role === "resp_distribution" ? ["/distributions", "/profil", "/remontees"] : null;
+  const rolePaths: string[] | null = me.role === "resp_distribution" ? ["/distributions", "/organigramme", "/profil", "/remontees"] : me.role === "resp_rh" ? ["/organigramme", "/profil", "/remontees"] : null;
   // « Remontées » : onglet utilisateur pour tous les rôles sauf le Superadmin, qui a « Remontées APP » à la place
-  const visibleNav = (isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/flotte", "/profil", "/valeur-des-dons", "/comptabilite", "/remontees"].includes(n.href)) : NAV_ITEMS)
+  const visibleNav = (isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/flotte", "/profil", "/valeur-des-dons", "/comptabilite", "/organigramme", "/remontees"].includes(n.href)) : NAV_ITEMS)
     .filter((n) => (me.role ? !rolePaths || rolePaths.includes(n.href) : false))
     .filter((n) => n.href !== "/remontees" || me.role !== "admin_principal");
   const remonteeBadge = useRemonteeBadge();

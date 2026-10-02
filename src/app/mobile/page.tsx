@@ -40,6 +40,7 @@ const TILES: Tile[] = [
 ];
 
 const CHAT = <><path d="M4 5.5 A2 2 0 0 1 6 3.5 H18 A2 2 0 0 1 20 5.5 V15 A2 2 0 0 1 18 17 H10 L5 21 V17 H6 A2 2 0 0 1 4 15 Z" /><path d="M8.5 8.5 H15.5 M8.5 12 H13" /></>;
+const ORG = <><rect x="9" y="3" width="6" height="5" rx="1.2" /><rect x="3" y="16" width="6" height="5" rx="1.2" /><rect x="15" y="16" width="6" height="5" rx="1.2" /><path d="M12 8 V12 M6 16 V12 H18 V16" /></>;
 const PROFIL = <><circle cx="12" cy="8" r="3.6" /><path d="M4.5 20 C 5.5 15.5, 8.3 13.3, 12 13.3 C 15.7 13.3, 18.5 15.5, 19.5 20" /></>;
 
 /** Accueil mobile (Superadmin, Comptabilité, Responsable d'antenne — ce dernier pour sa ville) : « À faire maintenant »
@@ -118,6 +119,7 @@ export default function MobileHome() {
     isSuperadmin
       ? { href: "/mobile/remontees-app", title: "Remontées APP", sub: (_c, x) => (x.remontees ? `${x.remontees} à ouvrir` : "Bugs et idées"), bg: "#B23B72", fg: "#ffffff", icon: CHAT }
       : { href: "/mobile/remontees", title: "Remontées", sub: (_c, x) => (x.remontees ? `${x.remontees} réponse${x.remontees > 1 ? "s" : ""}` : "Bug, question, idée"), bg: "#B23B72", fg: "#ffffff", icon: CHAT },
+    { href: "/mobile/organigramme", title: "Organigramme", sub: () => "Qui fait quoi", bg: "#3a4a6b", fg: "#ffffff", icon: ORG },
     { href: "/mobile/profil", title: "Profil", sub: () => "Ton compte", bg: "#5b6785", fg: "#ffffff", icon: PROFIL },
   ];
 

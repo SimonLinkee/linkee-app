@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 // Account creation / password reset need the Supabase *service role* key, which must never reach the browser.
 // It lives only in the server environment variable SUPABASE_SERVICE_ROLE_KEY.
 
-const ROLES = ["en_attente", "admin_principal", "comptabilite", "admin_local", "resp_distribution", "logisticien", "partenaire", "beneficiaire", "linker"];
+const ROLES = ["en_attente", "admin_principal", "comptabilite", "resp_rh", "admin_local", "resp_distribution", "logisticien", "partenaire", "beneficiaire", "linker"];
 
 async function requireMainAdmin() {
   const supabase = await createClient();

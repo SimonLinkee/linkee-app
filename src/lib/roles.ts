@@ -1,4 +1,4 @@
-export type Role = 'en_attente' | 'admin_principal' | 'comptabilite' | 'admin_local' | 'resp_distribution' | 'logisticien' | 'partenaire' | 'beneficiaire' | 'linker'
+export type Role = 'en_attente' | 'admin_principal' | 'comptabilite' | 'admin_local' | 'resp_distribution' | 'resp_rh' | 'logisticien' | 'partenaire' | 'beneficiaire' | 'linker'
 
 /** Superadmin or Comptabilité: same data rights (see migration 043). Account management stays Superadmin-only. */
 export const isSuper = (role: string | null | undefined) => role === 'admin_principal' || role === 'comptabilite'
@@ -14,7 +14,7 @@ export const canAdminCity = (role: string | null | undefined) => isSuper(role) |
 //   resp_distribution = Resp. Distribution      : Distribution only
 //   linker             = Linker (bénévole)       : espace 100% client sous /linker (signup, carte, missions, gamification)
 // After sign-in the last two roles land on /version: full PC version or quick mobile entry (/saisie-mobile).
-const SUPER_ONLY = ['/dashboard', '/partenaires', '/beneficiaires', '/flotte', '/todo', '/villes-comptes', '/historique', '/journee', '/espace-partenaire', '/espace-beneficiaire', '/mobile', '/links-benevoles', '/linker', '/valeur-des-dons', '/comptabilite']
+const SUPER_ONLY = ['/dashboard', '/partenaires', '/beneficiaires', '/flotte', '/todo', '/villes-comptes', '/historique', '/journee', '/espace-partenaire', '/espace-beneficiaire', '/mobile', '/links-benevoles', '/linker', '/valeur-des-dons', '/comptabilite', '/organigramme']
 const COMPTA_PATHS = SUPER_ONLY.filter((p) => p !== '/villes-comptes')
 // '/mobile/links' (visibilité des Links Bénévoles) est aussi ouvert au Responsable d'antenne et au Resp.
 // Distribution, alors que le reste de '/mobile' reste réservé au Superadmin — d'où l'ajout explicite ici.
@@ -22,8 +22,11 @@ const COMPTA_PATHS = SUPER_ONLY.filter((p) => p !== '/villes-comptes')
 // Écrans du Responsable d'antenne (pour sa ville uniquement : règles d'accès de la base, voir migration 047).
 // '/comptabilite' : il y valide / refuse les demandes de Cerfa de son antenne ; l'émission du Cerfa reste réservée à la
 // Comptabilité et au Superadmin, y compris côté base.
-const ANTENNE_PATHS = ['/dashboard', '/partenaires', '/beneficiaires', '/planning', '/distributions', '/stock', '/flotte', '/todo', '/links-benevoles', '/valeur-des-dons', '/comptabilite', '/profil', '/version', '/saisie-mobile', '/mobile']
-const DISTRIB_PATHS = ['/distributions', '/profil', '/version', '/saisie-mobile', '/mobile/links']
+const ANTENNE_PATHS = ['/dashboard', '/partenaires', '/beneficiaires', '/planning', '/distributions', '/stock', '/flotte', '/todo', '/links-benevoles', '/valeur-des-dons', '/comptabilite', '/organigramme', '/profil', '/version', '/saisie-mobile', '/mobile']
+// '/organigramme' : trombinoscope de l'équipe (PC) — équipe interne seulement : le logisticien, les Linkers, partenaires et
+// associations n'y ont pas accès. Le Responsable RH (rôle national à part) n'a, pour l'instant, que l'organigramme et son profil.
+const DISTRIB_PATHS = ['/distributions', '/organigramme', '/profil', '/version', '/saisie-mobile', '/mobile/links']
+const RH_PATHS = ['/organigramme', '/profil']
 const LINKER_PATHS = ['/linker']
 
 export const ROLE_LABEL: Record<string, string> = {
@@ -31,6 +34,7 @@ export const ROLE_LABEL: Record<string, string> = {
   comptabilite: 'Comptabilité',
   admin_local: "Responsable d'antenne",
   resp_distribution: 'Resp. Distribution',
+  resp_rh: 'Responsable RH',
   logisticien: 'Logisticien',
   partenaire: 'Partenaire',
   beneficiaire: 'Bénéficiaire',
@@ -47,6 +51,8 @@ export function homeForRole(role: string): string {
     case 'admin_local':
     case 'resp_distribution':
       return '/version' // choice between the PC version and the quick mobile entry
+    case 'resp_rh':
+      return '/organigramme'
     case 'logisticien':
       return '/journee'
     case 'partenaire':
@@ -81,6 +87,7 @@ export function isAllowed(role: string, path: string): boolean {
   if (role === 'comptabilite') return [...COMPTA_PATHS, ...ANTENNE_PATHS].some((p) => under(path, p))
   if (role === 'admin_local') return ANTENNE_PATHS.some((p) => under(path, p))
   if (role === 'resp_distribution') return DISTRIB_PATHS.some((p) => under(path, p))
+  if (role === 'resp_rh') return RH_PATHS.some((p) => under(path, p))
   if (role === 'logisticien') return under(path, '/journee')
   if (role === 'partenaire') return under(path, '/espace-partenaire')
   if (role === 'beneficiaire') return under(path, '/espace-beneficiaire')

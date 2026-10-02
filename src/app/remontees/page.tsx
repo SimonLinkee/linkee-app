@@ -10,7 +10,7 @@ import { REMONTEE_COLOR } from "@/lib/remontees";
 
 // Rôles qui ont le menu latéral : la page s'affiche dans ce menu ; les autres (logisticien, partenaire, association,
 // mobile) ont une page simple avec un bouton de retour vers leur espace.
-const SIDEBAR_ROLES = ["admin_principal", "comptabilite", "admin_local", "resp_distribution"];
+const SIDEBAR_ROLES = ["admin_principal", "comptabilite", "admin_local", "resp_distribution", "resp_rh"];
 const FORMAL_ROLES = ["partenaire", "beneficiaire"];
 
 export default function RemonteesRoute() {
