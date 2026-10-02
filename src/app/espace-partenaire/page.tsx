@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { compressImage, signedUrls } from "@/lib/photos";
 import { CAT_LABELS, CO2_SOURCE, DEFAULT_EUR_PER_KG, SUBCAT_SELECT, buildEvo, isCollectKind, isoOf, rse, subMap, summarize, type CatKey, type StatRow, type SubCat } from "@/lib/stats";
 import PartnerCerfa from "@/components/partner/PartnerCerfa";
+import NotificationBell from "@/components/NotificationBell";
 import PartnerValuation from "@/components/partner/PartnerValuation";
 import PartnerLinks from "@/components/partner/PartnerLinks";
 import { formatCreneaux, type Creneaux } from "@/lib/creneaux";
@@ -692,6 +693,7 @@ export default function EspacePartenairePage() {
           <Wordmark />
           {siteSwitch}
           <div className="flex-1" />
+          <NotificationBell dark align="right" />
           <button type="button" onClick={logout} className="text-xs font-semibold text-[var(--panel-fg-dim)] hover:text-[var(--panel-fg)]">Déconnexion</button>
         </div>
         <div className="mx-auto max-w-[520px] px-4 pt-[18px] pb-12">
@@ -771,6 +773,7 @@ export default function EspacePartenairePage() {
           {siteSwitch}
           <div className="flex-1" />
           <div className="flex items-center gap-2.5 text-[12.5px]">
+            <NotificationBell dark align="right" />
             <button type="button" onClick={() => setMode("mobile")} className="text-xs font-semibold text-[var(--panel-fg-dim)] hover:text-[var(--panel-fg)]">Vue simplifiée</button>
             <Avatar site={site} size={30} />
             <span>{site.name}</span>

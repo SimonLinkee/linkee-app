@@ -25,6 +25,8 @@ type Row = {
 };
 const SELECT = "id,partner_id,city_id,total_value,status,refusal_comment,created_at,issued_at,cerfa_path,cerfa_name,partners(name),cities(name),cerfa_request_documents(document_id,documents(name,storage_path))";
 
+type Late = { partner_id: string; partner_name: string; city_id: string; frequency: string; period_start: string; period_end: string; due_date: string; doc_count: number };
+
 const first = <T,>(v: Rel<T>): T | null => (Array.isArray(v) ? (v[0] ?? null) : v);
 const fmtDay = (iso: string) => new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -69,8 +71,11 @@ export default function ComptabilitePage() {
   const [partnerId, setPartnerId] = useState("");
   const [refusing, setRefusing] = useState<{ id: string; comment: string } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [late, setLate] = useState<Late[]>([]);
+  const [cityNames, setCityNames] = useState<Record<string, string>>({});
   const uploadFor = useRef<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const lateBox = useRef<HTMLDivElement>(null);
 
   const fetchRows = () => supabase.from("cerfa_requests").select(SELECT).order("created_at", { ascending: false }).limit(2000);
   function apply({ data, error }: Awaited<ReturnType<typeof fetchRows>>) {
@@ -80,6 +85,8 @@ export default function ComptabilitePage() {
   }
   useEffect(() => {
     fetchRows().then(apply);
+    supabase.rpc("cerfa_late_partners").then(({ data }) => setLate((data ?? []) as Late[]));
+    supabase.from("cities").select("id,name").then(({ data }) => setCityNames(Object.fromEntries((data ?? []).map((c) => [c.id as string, c.name as string]))));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -151,11 +158,29 @@ export default function ComptabilitePage() {
         </p>
       </div>
 
-      <div className={`mb-5 grid grid-cols-1 gap-3.5 sm:grid-cols-2 ${canIssue ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>
+      <div className={`mb-5 grid grid-cols-1 gap-3.5 sm:grid-cols-2 ${canIssue ? "lg:grid-cols-4" : "lg:grid-cols-2"}`}>
         <Counter label="À valider" value={toValidate} sub="en attente du responsable d'antenne" onClick={() => setStatus("soumise")} active={status === "soumise"} />
         {canIssue && <Counter label="À traiter" value={toProcess} sub="validées, Cerfa à émettre" onClick={() => setStatus("validee")} active={status === "validee"} />}
+        {canIssue && <Counter label="En retard" value={late.length} sub="partenaires sans demande" onClick={() => lateBox.current?.scrollIntoView({ behavior: "smooth" })} />}
         <Counter label="Émis ce mois-ci" value={issuedThisMonth} sub="Cerfa téléversés" onClick={() => setStatus("emise")} active={status === "emise"} />
       </div>
+
+      {canIssue && late.length > 0 && (
+        <div ref={lateBox} className="mb-5 rounded-2xl border border-[var(--warn)] bg-[var(--warn-bg)] p-4">
+          <h2 className="font-display text-[16px] font-black text-[var(--navy)]">Alertes de retard ({late.length})</h2>
+          <p className="mb-2.5 text-[11.5px] text-[var(--slate)]">Partenaires dont la période est terminée depuis plus de 15 jours, sans demande de Cerfa alors qu&apos;ils ont des documents non rattachés à un Cerfa.</p>
+          <div className="flex flex-col gap-1.5">
+            {late.map((l) => (
+              <div key={l.partner_id} className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-[var(--card)] px-3.5 py-2.5 text-[12.5px]">
+                <span className="min-w-[150px] flex-1 font-bold text-[var(--navy)]">{l.partner_name}</span>
+                <span className="text-[var(--slate)]">{cityNames[l.city_id] ?? ""}</span>
+                <span className="text-[var(--slate)]">{l.frequency} · du {new Date(l.period_start).toLocaleDateString("fr-FR")} au {new Date(l.period_end).toLocaleDateString("fr-FR")}</span>
+                <span className="font-semibold text-[var(--warn)]">{l.doc_count} document{l.doc_count > 1 ? "s" : ""} sans Cerfa</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
         <div className="flex flex-wrap gap-1.5">

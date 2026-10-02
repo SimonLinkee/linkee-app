@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 
 type Notif = { id: string; type: string; title: string; body: string | null; link: string | null; created_at: string; read_at: string | null };
 
-const TYPE_DOT: Record<string, string> = { request: "var(--client-req)", planning: "var(--turquoise)", cancel: "var(--critical)", day_closed: "var(--good)", mission: "var(--cat-2)" };
+const TYPE_DOT: Record<string, string> = { request: "var(--client-req)", planning: "var(--turquoise)", cancel: "var(--critical)", day_closed: "var(--good)", mission: "var(--cat-2)", cerfa: "#7C5CD9", link: "#eb6834" };
 
 function ago(iso: string) {
   const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
