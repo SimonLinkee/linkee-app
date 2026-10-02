@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
 import { compressImage } from "@/lib/photos";
@@ -222,6 +222,55 @@ function CitySection({ city, team, vehicles, linkers, urls, mobile }: { city: Ci
   );
 }
 
+/** PC : toutes les antennes sur une même ligne, qui défile à l'horizontale avec des flèches quand elles sont trop nombreuses
+ * pour tenir à l'écran (Bordeaux, Lille, Nantes…). Tant qu'elles tiennent, elles se partagent la largeur et les flèches
+ * disparaissent. */
+function CityScroller({ count, children }: { count: number; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [edge, setEdge] = useState({ left: false, right: false });
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setEdge({ left: el.scrollLeft > 4, right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4 });
+    el.addEventListener("scroll", update, { passive: true });
+    const ro = new ResizeObserver(update); // se déclenche aussi une première fois à l'observation
+    ro.observe(el);
+    Array.from(el.children).forEach((c) => ro.observe(c));
+    return () => {
+      el.removeEventListener("scroll", update);
+      ro.disconnect();
+    };
+  }, [count]);
+
+  function go(dir: 1 | -1) {
+    const el = ref.current;
+    if (!el) return;
+    const step = (el.firstElementChild as HTMLElement | null)?.offsetWidth ?? 320;
+    el.scrollBy({ left: dir * (step + 14), behavior: "smooth" });
+  }
+  const arrow = "absolute z-10 flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--card)] text-[var(--navy)] shadow-[var(--shadow)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]";
+  return (
+    <div className="relative">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-[11.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">Antennes ({count})</p>
+        {(edge.left || edge.right) && <p className="text-[11.5px] text-[var(--muted)]">Fais défiler pour voir les autres antennes</p>}
+      </div>
+      {edge.left && (
+        <button type="button" onClick={() => go(-1)} aria-label="Antennes précédentes" className={`${arrow} -left-4 top-[calc(50%-20px)]`}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]"><path d="M15 5 L8 12 L15 19" /></svg>
+        </button>
+      )}
+      {edge.right && (
+        <button type="button" onClick={() => go(1)} aria-label="Antennes suivantes" className={`${arrow} -right-4 top-[calc(50%-20px)]`}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]"><path d="M9 5 L16 12 L9 19" /></svg>
+        </button>
+      )}
+      <div ref={ref} className="flex snap-x snap-mandatory items-start gap-3.5 overflow-x-auto pb-3 [scrollbar-width:thin]">{children}</div>
+    </div>
+  );
+}
+
 /** Organigramme : comité d'administration, équipe nationale, puis une section par antenne (équipe, véhicules en service,
  * Linkers). PC : toutes les antennes côte à côte. Mobile : un sélecteur de ville. */
 export default function OrganigrammeView({ mobile = false }: { mobile?: boolean }) {
@@ -268,11 +317,21 @@ export default function OrganigrammeView({ mobile = false }: { mobile?: boolean 
         </select>
       )}
 
-      <div className={mobile ? "flex flex-col gap-3.5" : "grid grid-cols-[repeat(auto-fit,minmax(290px,1fr))] items-start gap-3.5"}>
-        {shown.map((c) => (
-          <CitySection key={c.id} city={c} team={data.team} vehicles={data.vehicles} linkers={data.linkers} urls={urls} mobile={mobile} />
-        ))}
-      </div>
+      {mobile ? (
+        <div className="flex flex-col gap-3.5">
+          {shown.map((c) => (
+            <CitySection key={c.id} city={c} team={data.team} vehicles={data.vehicles} linkers={data.linkers} urls={urls} mobile />
+          ))}
+        </div>
+      ) : (
+        <CityScroller count={cities.length}>
+          {shown.map((c) => (
+            <div key={c.id} className="flex-[1_0_300px] snap-start">
+              <CitySection city={c} team={data.team} vehicles={data.vehicles} linkers={data.linkers} urls={urls} mobile={false} />
+            </div>
+          ))}
+        </CityScroller>
+      )}
     </div>
   );
 }
