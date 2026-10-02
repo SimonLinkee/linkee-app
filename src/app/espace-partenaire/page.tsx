@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { compressImage, signedUrls } from "@/lib/photos";
 import { CAT_LABELS, CO2_SOURCE, DEFAULT_EUR_PER_KG, SUBCAT_SELECT, buildEvo, isCollectKind, isoOf, rse, subMap, summarize, type CatKey, type StatRow, type SubCat } from "@/lib/stats";
-import PartnerDocuments from "@/components/partner/PartnerDocuments";
+import PartnerCerfa from "@/components/partner/PartnerCerfa";
 import PartnerValuation from "@/components/partner/PartnerValuation";
 import PartnerLinks from "@/components/partner/PartnerLinks";
 import { formatCreneaux, type Creneaux } from "@/lib/creneaux";
@@ -964,7 +964,7 @@ export default function EspacePartenairePage() {
           {tab === "documents" && (
             <div>
               <PanelHead title="Mes documents" sub="Un porte-documents partagé avec Linkee : listing détaillé de vos produits, fiches techniques, conventions…" />
-              {siteKey && <PartnerDocuments key={siteKey} partnerId={siteKey} role="partenaire" />}
+              {siteKey && <PartnerCerfa key={siteKey} partnerId={siteKey} />}
             </div>
           )}
 

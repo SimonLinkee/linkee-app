@@ -3,16 +3,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { DOC_ACCEPT, DOC_SELECT, fmtSize, openDocument, uploadDocument, type DocRow } from "@/lib/documents";
+import type { CerfaStatus } from "@/lib/cerfa";
 
 type CollecteLite = { id: string; scheduled_date: string; source: string; status: string };
 type Owner = { partnerId: string; beneficiaryId?: undefined } | { partnerId?: undefined; beneficiaryId: string };
+/** Sélection de documents pour une demande de Cerfa (espace partenaire) : un document déjà pris dans une demande
+ * active est grisé ("En demande" / "Cerfa émis") et ne peut ni être re-sélectionné ni supprimé. */
+export type CerfaSelection = { selected: string[]; locked: Record<string, CerfaStatus>; onToggle: (docId: string) => void };
 
 const fmtDay = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
 const SOURCE_LABEL: Record<string, string> = { admin: "l'admin", partenaire: "le partenaire", beneficiaire: "l'association" };
 
 /** "Mes documents" : dossier partagé entre Linkee et le partenaire OU le bénéficiaire (listing des produits,
  * conventions, attestations…). Un fichier déposé pour une structure n'est jamais visible d'une autre. */
-export default function PartnerDocuments({ role, ...owner }: Owner & { role: "admin" | "partenaire" | "beneficiaire" }) {
+export default function PartnerDocuments({ role, cerfa, ...owner }: Owner & { role: "admin" | "partenaire" | "beneficiaire"; cerfa?: CerfaSelection }) {
   const ownerId = owner.partnerId ?? owner.beneficiaryId!;
   const ownerCol = owner.partnerId ? "partner_id" : "beneficiary_id";
   const supabase = useMemo(() => createClient(), []);
@@ -132,10 +136,21 @@ export default function PartnerDocuments({ role, ...owner }: Owner & { role: "ad
 
       <div className="flex flex-col gap-2">
         {docs.map((d) => {
-          const canDelete = role === "admin" || d.source === role;
+          const lockedStatus = cerfa?.locked[d.id];
+          const canDelete = (role === "admin" || d.source === role) && !lockedStatus;
           const col = collecteLabel(d.collecte_id);
           return (
-            <div key={d.id} className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3.5 py-3">
+            <div key={d.id} className={`flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3.5 py-3 ${lockedStatus ? "opacity-60" : ""}`}>
+              {cerfa && (
+                <input
+                  type="checkbox"
+                  aria-label={`Sélectionner ${d.name} pour un Cerfa`}
+                  disabled={!!lockedStatus}
+                  checked={!lockedStatus && cerfa.selected.includes(d.id)}
+                  onChange={() => cerfa.onToggle(d.id)}
+                  className="h-[17px] w-[17px] flex-none accent-[var(--navy-deep)] disabled:cursor-not-allowed"
+                />
+              )}
               <span className="flex h-9 w-9 flex-none items-center justify-center rounded-[10px] bg-[var(--track)] text-[var(--slate)]">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]">
                   <path d="M7 3 H14 L19 8 V21 H7 Z" />
@@ -151,6 +166,11 @@ export default function PartnerDocuments({ role, ...owner }: Owner & { role: "ad
                     Déposé par {SOURCE_LABEL[d.source] ?? d.source}
                   </span>
                   {col && <span className="rounded-[40px] bg-[var(--good-bg)] px-2 py-px text-[10.5px] font-bold text-[var(--good)]">{col}</span>}
+                  {lockedStatus && (
+                    <span className="rounded-[40px] px-2 py-px text-[10.5px] font-bold" style={lockedStatus === "emise" ? { background: "var(--good-bg)", color: "var(--good)" } : { background: "rgba(42,120,214,.16)", color: "#2a78d6" }}>
+                      {lockedStatus === "emise" ? "Cerfa émis" : "En demande"}
+                    </span>
+                  )}
                 </div>
               </button>
               <button type="button" onClick={() => openDocument(supabase, d.storage_path).catch((e) => setMsg((e as Error).message))} className="flex-none rounded-[40px] border-[1.5px] border-[var(--border)] px-3 py-1.5 text-[12px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]">
