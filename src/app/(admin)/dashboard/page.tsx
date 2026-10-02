@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
+import EntityActivity from "@/components/admin/EntityActivity";
 import { CAT_KEYS, CAT_LABELS, CO2_SOURCE, DEFAULT_EUR_PER_KG, STAT_SELECT, SUBCAT_SELECT, buildEvo, isoOf, rse, subMap, summarize, type CatKey, type StatRow, type SubCat, type Summary } from "@/lib/stats";
 
 type Gran = "jour" | "semaine" | "mois" | "custom";
@@ -438,6 +439,8 @@ export default function DashboardPage() {
           </button>
         </div>
       )}
+
+      {(activePartnerId || activeBeneficiaryId) && <EntityActivity key={activePartnerId || activeBeneficiaryId} kind={activePartnerId ? "partner" : "beneficiary"} id={activePartnerId || activeBeneficiaryId} />}
 
       {activeBeneficiaryId ? (
         <div className={loading ? "opacity-60 transition-opacity" : "transition-opacity"}>
