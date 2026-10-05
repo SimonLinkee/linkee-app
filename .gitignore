@@ -46,3 +46,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# sauvegardes et simulation de démo (données de personnes : ne jamais versionner)
+/demo/
+/audit/

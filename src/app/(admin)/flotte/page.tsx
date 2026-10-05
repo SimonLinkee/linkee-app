@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
 import { signedUrls } from "@/lib/photos";
+import FleetLiveCard from "@/components/FleetLiveCard";
 
 type CheckItem = { key: string; label: string; intervalDays: number; lastDate: string };
 type Invoice = { date: string; fournisseur: string; montant: number; statut: "Payé" | "À payer"; motif: string };
@@ -260,6 +261,9 @@ export default function FlottePage() {
     <div>
       <h1 className="font-display text-[32px] leading-none font-black">Flotte logistique</h1>
       <p className="mb-[18px] text-[13.5px] text-[var(--slate)]">Véhicules, contrôles d&apos;entretien et suivi devis/factures — remonté automatiquement depuis l&apos;app du logisticien.</p>
+
+      {/* expérimentation : position du camion de Lyon (tracker Invoxia) */}
+      {(isAll || cityId === cities.find((c) => c.name === "Lyon")?.id) && <FleetLiveCard />}
 
       <div
         className={`mb-5 flex items-center gap-3 rounded-2xl px-[18px] py-3.5 text-[13.5px] font-semibold ${
