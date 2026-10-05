@@ -158,7 +158,7 @@ export default function DistributionsPage() {
   const [drops, setDrops] = useState<PlanDrop[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "encours" | "avenir" | "retard" | "cloture">("all");
+  const [filter, setFilter] = useState<"semaine" | "all" | "encours" | "avenir" | "retard" | "cloture">("semaine"); // par défaut : la semaine en cours
   const [selKey, setSelKey] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
@@ -229,7 +229,11 @@ export default function DistributionsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries, loading]);
   const stOf = (e: { date: string; status: string }) => distribStatus(e.date, e.status === "distribuee");
-  const shown = entries.filter((e) => filter === "all" || stOf(e) === filter);
+  // semaine en cours, du lundi au dimanche
+  const weekFrom = (() => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return isoOf(d); })();
+  const weekTo = (() => { const d = new Date(weekFrom + "T12:00:00"); d.setDate(d.getDate() + 6); return isoOf(d); })();
+  const inWeek = (e: { date: string }) => e.date >= weekFrom && e.date <= weekTo;
+  const shown = entries.filter((e) => filter === "all" || (filter === "semaine" ? inWeek(e) : stOf(e) === filter));
   const count = (k: "encours" | "avenir" | "retard" | "cloture") => entries.filter((e) => stOf(e) === k).length;
   const nLate = count("retard");
 
@@ -478,12 +482,13 @@ export default function DistributionsPage() {
             <span className="text-[12px] font-semibold text-[var(--slate)]">Statut</span>
             {(
               [
+                ["semaine", `Cette semaine${entries.filter(inWeek).length ? ` ${entries.filter(inWeek).length}` : ""}`],
                 ["all", "Toutes"],
                 ["encours", `En cours${count("encours") ? ` ${count("encours")}` : ""}`],
                 ["avenir", "À venir"],
                 ["retard", `En retard${nLate ? ` ${nLate}` : ""}`],
                 ["cloture", "Clôturées"],
-              ] as ["all" | "encours" | "avenir" | "retard" | "cloture", string][]
+              ] as ["semaine" | "all" | "encours" | "avenir" | "retard" | "cloture", string][]
             ).map(([k, l]) => (
               <button key={k} type="button" onClick={() => setFilter(k)} className={`rounded-[40px] border px-3 py-1 text-[11.5px] font-semibold whitespace-nowrap ${filter === k ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : k === "retard" && nLate ? "border-[var(--critical)] text-[var(--critical)]" : "border-[var(--border)] text-[var(--slate)] hover:border-[#2a78d6]"}`}>
                 {l}

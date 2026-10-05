@@ -177,6 +177,17 @@ export default function FlottePage() {
     setVehicles((prev) => [...prev, v]);
     setCurrentId(v.id);
   }
+  // Retire un véhicule de la flotte (sa fiche, ses contrôles, devis & factures et l'historique de ses photos)
+  async function deleteVehicle(v: Vehicle) {
+    if (!window.confirm(`Supprimer « ${v.name}${v.plate ? ` (${v.plate})` : ""} » de la flotte ?\n\nSa fiche, ses contrôles, révisions, devis & factures et l'historique de ses photos seront supprimés. Cette action est définitive.`)) return;
+    if (saveTimer.current) window.clearTimeout(saveTimer.current); // pas d'enregistrement en attente sur un véhicule supprimé
+    const { data, error } = await supabase.from("vehicles").delete().eq("id", v.id).select("id");
+    if (error || !data?.length) return showToast("Suppression impossible : " + (error?.message ?? "la base l'a refusée (droits insuffisants ?)"));
+    const rest = vehicles.filter((x) => x.id !== v.id);
+    setVehicles(rest);
+    setCurrentId(rest[0]?.id ?? "");
+    showToast(`« ${v.name} » a été retiré de la flotte.`);
+  }
   function toggleSection(key: string) {
     setOpenSections((prev) => {
       const next = new Set(prev);
@@ -386,6 +397,16 @@ export default function FlottePage() {
                 </span>
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => deleteVehicle(current)}
+              title="Supprimer ce véhicule de la flotte"
+              className="flex h-9 w-9 flex-none items-center justify-center rounded-full text-[var(--muted)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]">
+                <path d="M4 7 H20 M9 7 V4.5 A1 1 0 0 1 10 3.5 H14 A1 1 0 0 1 15 4.5 V7 M6.5 7 L7.3 19.5 A2 2 0 0 0 9.3 21.4 H14.7 A2 2 0 0 0 16.7 19.5 L17.5 7" />
+              </svg>
+            </button>
             <label className="flex flex-none cursor-pointer items-center gap-2 text-[12.5px] font-semibold text-[var(--navy)]" title="Un véhicule loué n'a pas de suivi d'entretien : seules les photos du lundi matin restent actives.">
               <input type="checkbox" checked={!!current.rented} onChange={(e) => updateCurrent((v) => ({ ...v, rented: e.target.checked }))} className="h-4 w-4 accent-[var(--turquoise)]" />
               Véhicule loué
