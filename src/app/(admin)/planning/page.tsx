@@ -41,7 +41,9 @@ type Stop = {
 type StopC = Stop & { coords: Coords };
 type EnrichedStop = StopC & { scheduledTime: string | null; travelFromPrev: number; travelKmFromPrev: number; arrivalMin?: number; waitMin?: number };
 type ChecklistItem = { id: string; label: string };
-type Place = { key: string; kind: "partner" | "dropoff" | "stock" | "dechetterie"; name: string; cat: string; address: string; partnerId: string | null; beneficiaryId: string | null; passage?: Passage; creneaux?: Creneaux };
+type Place = { key: string; kind: "partner" | "dropoff" | "stock" | "dechetterie"; name: string; cat: string; address: string; partnerId: string | null; beneficiaryId: string | null; passage?: Passage; creneaux?: Creneaux; regulier?: boolean };
+// Partenaire régulier passant par un Link bénévole sur chacun de ses créneaux (case « Link bénévole systématique » de la fiche)
+type LinkReminder = { partnerId: string; name: string; creneaux: Creneaux; linked: boolean };
 type DbRel = { name: string; category: string | null; address: string | null; passage?: Passage | null; creneaux?: Creneaux | null };
 type DbCollecte = {
   id: string;
@@ -281,6 +283,8 @@ export default function PlanningPage() {
   const [checklistNewItem, setChecklistNewItem] = useState("");
 
   const [pendingReqs, setPendingReqs] = useState<PartnerReq[]>([]);
+  const [linkPartners, setLinkPartners] = useState<Omit<LinkReminder, "linked">[]>([]);
+  const [linkedToday, setLinkedToday] = useState<Set<string>>(new Set());
   const [resultStop, setResultStop] = useState<Stop | null>(null);
   const [resultMode, setResultMode] = useState<"status" | "data">("status");
   const [gallery, setGallery] = useState<{ name: string; urls: string[] } | null>(null);
@@ -381,15 +385,18 @@ export default function PlanningPage() {
   /* ---------- initial load: city, places, checklist templates ---------- */
   useEffect(() => {
     (async () => {
-      const [ps, bs, tpl] = await Promise.all([
+      const [ps, bs, tpl, lp] = await Promise.all([
         // les partenaires "Éligible collecte bénévole" sortent du planning pro classique — ils passent par les Links Bénévoles
-        supabase.from("partners").select("id,name,category,address,passage:fiche->passage,creneaux:fiche->creneaux").eq("city_id", cityId ?? "").eq("active", true).eq("benevole_only", false).is("deleted_at", null).order("name"),
+        supabase.from("partners").select("id,name,category,address,passage:fiche->passage,creneaux:fiche->creneaux,rythme:fiche->>rythme").eq("city_id", cityId ?? "").eq("active", true).eq("benevole_only", false).is("deleted_at", null).order("name"),
         supabase.from("beneficiaries").select("id,name,category,address,creneaux:fiche->creneaux").eq("city_id", cityId ?? "").eq("active", true).is("deleted_at", null).order("name"),
         supabase.from("checklist_templates").select("weekday,items").eq("city_id", cityId ?? ""),
+        supabase.from("partners").select("id,name,creneaux:fiche->creneaux").eq("city_id", cityId ?? "").eq("active", true).eq("fiche->>rythme", "regulier").eq("fiche->linkSystematique", true).is("deleted_at", null).order("name"),
       ]);
+      setLinkPartners(((lp.data ?? []) as unknown as { id: string; name: string; creneaux: Creneaux | null }[]).map((p) => ({ partnerId: p.id, name: p.name, creneaux: p.creneaux ?? {} })));
       const list: Place[] = [
-        ...((ps.data ?? []) as unknown as { id: string; name: string; category: string | null; address: string | null; passage: Passage | null; creneaux: Creneaux | null }[]).map((p) => ({
+        ...((ps.data ?? []) as unknown as { id: string; name: string; category: string | null; address: string | null; passage: Passage | null; creneaux: Creneaux | null; rythme: string | null }[]).map((p) => ({
           key: "p:" + p.id, kind: "partner" as const, name: p.name, cat: p.category ?? "", address: p.address ?? "", partnerId: p.id, beneficiaryId: null, passage: p.passage ?? undefined, creneaux: p.creneaux ?? undefined,
+          regulier: p.rythme === "regulier",
         })),
         ...((bs.data ?? []) as unknown as { id: string; name: string; category: string | null; address: string | null; creneaux: Creneaux | null }[]).map((b) => ({
           key: "b:" + b.id, kind: "dropoff" as const, name: b.name, cat: b.category ?? "", address: b.address ?? "", partnerId: null, beneficiaryId: b.id, creneaux: b.creneaux ?? undefined,
@@ -448,6 +455,21 @@ export default function PlanningPage() {
     setPendingReqs((prev) => prev.filter((x) => x.id !== r.id));
     showToast("Demande refusée.");
   }
+  // Links déjà créés ce jour-là pour les partenaires « Link bénévole systématique » (hors Links annulés)
+  async function loadLinkedToday() {
+    const ids = linkPartners.map((p) => p.partnerId);
+    if (!ids.length) return; // pas de rappel à afficher : rien à vérifier
+    const { data } = await supabase.from("links").select("partner_id").in("partner_id", ids).eq("window_date", iso).neq("status", "annulee");
+    setLinkedToday(new Set(((data ?? []) as { partner_id: string }[]).map((r) => r.partner_id)));
+  }
+  useEffect(() => {
+    loadLinkedToday();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkPartners, iso]);
+  const linkReminders: LinkReminder[] = linkPartners
+    .filter((p) => slotsForDate(p.creneaux, iso).length > 0)
+    .map((p) => ({ ...p, linked: linkedToday.has(p.partnerId) }));
+
   async function loadDayStart() {
     const { data } = await supabase.from("day_settings").select("start_min").eq("city_id", cityId ?? "").eq("day", iso).maybeSingle();
     setDayStart(data?.start_min ?? DEFAULT_DAY_START);
@@ -497,7 +519,8 @@ export default function PlanningPage() {
   }, [cityId, iso]);
 
   // Arrêts fixes hebdomadaires : toute association dont la fiche a un "Créneau de livraison fixe" renseigné
-  // (Adresse & accès), et le passage déchetterie (créneau constant, mardi + mercredi), sont ajoutés
+  // (Adresse & accès), tout partenaire au rythme « Régulier » ayant des créneaux de collecte,
+  // et le passage déchetterie (créneau constant, mardi + mercredi), sont ajoutés
   // automatiquement au planning pour le jour affiché, s'ils n'y sont pas déjà — plus besoin de les recréer
   // chaque semaine à la main. Ne remonte jamais dans le passé (on ne réécrit pas l'historique d'un jour
   // jamais consulté).
@@ -512,9 +535,10 @@ export default function PlanningPage() {
       if (!p.creneaux || slotsForDate(p.creneaux, iso).length === 0) return false;
       if (p.kind === "dropoff") return !stops.some((s) => s.kind === "dropoff" && s.beneficiaryId === p.beneficiaryId);
       if (p.kind === "dechetterie") return !stops.some((s) => s.kind === "dechetterie");
+      if (p.kind === "partner") return !!p.regulier && !stops.some((s) => s.partnerId === p.partnerId);
       return false;
     });
-    toAdd.forEach((p) => insertStop(p, p.kind === "dechetterie" ? "dechetterie" : "dropoff", {}));
+    toAdd.forEach((p) => insertStop(p, p.kind, {}));
   }, [ro, loadingDay, cityId, iso, places, stops]);
 
   /* ---------- write back order / times after user edits ---------- */
@@ -807,6 +831,28 @@ export default function PlanningPage() {
             <div className="mb-3 flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--input-bg)] px-4 py-2.5 text-[12.5px] font-semibold text-[var(--slate)]">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 flex-none"><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10 V7 A4 4 0 0 1 16 7 V10" /></svg>
               Planning en lecture seule — seul le Superadmin peut le modifier.
+            </div>
+          )}
+          {!ro && iso >= isoDate(new Date()) && linkReminders.length > 0 && (
+            <div className="mb-3 rounded-2xl border-[1.5px] border-[#eb6834] bg-[rgba(235,104,52,.08)] p-4">
+              <h4 className="mb-2.5 font-display text-[15px] font-extrabold text-[#eb6834]">Links bénévoles à prévoir ({linkReminders.filter((r) => !r.linked).length})</h4>
+              <div className="flex flex-col gap-2">
+                {linkReminders.map((r) => (
+                  <div key={r.partnerId} className="flex flex-wrap items-center gap-3 rounded-xl bg-[var(--card)] px-3.5 py-2.5">
+                    <span className="min-w-0 flex-1">
+                      <div className="truncate text-[13.5px] font-bold text-[var(--navy)]">{r.name}</div>
+                      <div className="text-[11.5px] text-[var(--slate)]">
+                        Créneau régulier · {slotsForDate(r.creneaux, iso).map((sl) => `${sl.open}–${sl.close}`).join(", ")}
+                      </div>
+                    </span>
+                    {r.linked ? (
+                      <span className="rounded-[40px] bg-[var(--good-bg)] px-3 py-1 text-[12px] font-bold text-[var(--good)]">✓ Link créé</span>
+                    ) : (
+                      <span className="rounded-[40px] bg-[var(--warn-bg)] px-3 py-1 text-[12px] font-bold text-[var(--warn)]">Link à créer</span>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           {!ro && pendingReqs.length > 0 && (

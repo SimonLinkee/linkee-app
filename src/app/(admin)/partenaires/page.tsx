@@ -72,6 +72,8 @@ type PartnerEntity = {
   dureeCollecte?: number;
   benevoleOnly?: boolean;
   activityStatus?: string;
+  rythme?: Rythme;
+  linkSystematique?: boolean;
   cerfaFrequency?: CerfaFrequency;
   history: HistoryEntry[];
   contacts: Contact[];
@@ -150,6 +152,14 @@ const BLANK_PARTNER: Omit<PartnerEntity, "id"> = {
   denrees: NO_DENREES, conditionnement: "Carton", access: NO_ACCESS, accessNote: "", history: [], contacts: [], benevoleOnly: false, activityStatus: "Non défini",
 };
 const ACTIVITY_STATUS_OPTIONS = ["Non défini", "Dons réguliers", "Ponctuel", "Link citoyen"];
+// Rythme d'un partenaire actif : les réguliers sont prévus au planning sur leurs créneaux (ajoutés automatiquement),
+// les ponctuels font leurs demandes eux-mêmes depuis leur espace partenaire.
+type Rythme = "" | "regulier" | "ponctuel";
+const RYTHME_OPTIONS: { k: Exclude<Rythme, "">; l: string; hint: string; color: string }[] = [
+  { k: "regulier", l: "Régulier", hint: "Prévu au planning sur ses créneaux de la semaine", color: "var(--cat-3)" },
+  { k: "ponctuel", l: "Ponctuel", hint: "Fait ses demandes lui-même depuis son espace", color: "var(--cat-2)" },
+];
+const rythmeLabel = (r?: Rythme) => RYTHME_OPTIONS.find((o) => o.k === r)?.l ?? "";
 const STRUCTURE_TYPE_OPTIONS = [
   "Association de taille standard", "Association de petite taille / locale", "Epicerie Solidaire",
   "Distribution de repas", "CHU (centre d’hébergement d’urgence)", "Résidence Sociale", "Association organisant des maraudes",
@@ -424,6 +434,7 @@ export default function PartenairesPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [activeFilter, setActiveFilter] = useState<"" | "actif" | "inactif">("actif"); // par défaut : seulement les actifs (les inactifs se retrouvent via le filtre)
   const [catFilter, setCatFilter] = useState(""); // bénéficiaires : typologie
+  const [rythmeFilter, setRythmeFilter] = useState<"" | Rythme | "none">(""); // partenaires : régulier / ponctuel
   const [sortBy, setSortBy] = useState<"nom" | "statut" | "typologie">("nom");
   const [deleteTarget, setDeleteTarget] = useState<Entity | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -591,6 +602,7 @@ export default function PartenairesPage() {
     .filter((e) => e.id === currentId || !activeFilter || (activeFilter === "actif" ? e.active : !e.active))
     .filter((e) => !statusFilter || (e.kind === "partner" && (e.activityStatus || "Non défini") === statusFilter))
     .filter((e) => !catFilter || (e.kind === "beneficiaire" && e.cat === catFilter))
+    .filter((e) => !rythmeFilter || (e.kind === "partner" && (rythmeFilter === "none" ? !e.rythme : e.rythme === rythmeFilter)))
     .sort((a, b) => sortKey(a).localeCompare(sortKey(b)) || a.name.localeCompare(b.name));
   const pinned = filteredList.filter((e) => e.kind === "beneficiaire" && e.pinned);
   const rest = filteredList.filter((e) => !(e.kind === "beneficiaire" && e.pinned));
@@ -625,6 +637,11 @@ export default function PartenairesPage() {
         <span className="flex flex-none flex-col items-end gap-1">
           {e.kind === "beneficiaire" && e.pinned && (
             <span className="rounded-[40px] bg-[#2a78d6] px-1.5 py-0.5 text-[9px] font-bold text-white uppercase">Linkee</span>
+          )}
+          {e.kind === "partner" && e.active && e.rythme && (
+            <span className="rounded-[40px] px-1.5 py-0.5 text-[9px] font-bold text-white uppercase" style={{ background: RYTHME_OPTIONS.find((o) => o.k === e.rythme)?.color }}>
+              {rythmeLabel(e.rythme)}
+            </span>
           )}
           <span className={`h-2 w-2 rounded-full ${e.active ? "bg-[var(--good)]" : "bg-[var(--muted)]"}`} />
         </span>
@@ -695,12 +712,20 @@ export default function PartenairesPage() {
           <option value="inactif">Inactifs seulement</option>
           <option value="">Actifs et inactifs</option>
         </select>
-        {tab === "partner" ? (
+        {tab === "partner" && (
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-[40px] border border-[var(--border)] bg-[var(--card)] px-3 py-[9px] text-[12.5px] font-semibold text-[var(--slate)]">
             <option value="">Tous statuts</option>
             {ACTIVITY_STATUS_OPTIONS.map((o) => (
               <option key={o} value={o}>{o}</option>
             ))}
+          </select>
+        )}
+        {tab === "partner" ? (
+          <select value={rythmeFilter} onChange={(e) => setRythmeFilter(e.target.value as typeof rythmeFilter)} className="rounded-[40px] border border-[var(--border)] bg-[var(--card)] px-3 py-[9px] text-[12.5px] font-semibold text-[var(--slate)]">
+            <option value="">Réguliers et ponctuels</option>
+            <option value="regulier">Réguliers</option>
+            <option value="ponctuel">Ponctuels</option>
+            <option value="none">Rythme non défini</option>
           </select>
         ) : (
           <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)} className="rounded-[40px] border border-[var(--border)] bg-[var(--card)] px-3 py-[9px] text-[12.5px] font-semibold text-[var(--slate)]">
@@ -860,6 +885,55 @@ export default function PartenairesPage() {
                   </button>
                 </div>
               </div>
+              {current.kind === "partner" && current.active && (
+                <div className="mb-3 rounded-[14px] border-[1.5px] border-[var(--border)] bg-[var(--card)] p-3">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <span className="text-[13px] font-bold text-[var(--navy)]">Rythme</span>
+                    <div className="flex rounded-[40px] border border-[var(--border)] bg-[var(--input-bg)] p-[3px]">
+                      {RYTHME_OPTIONS.map((o) => {
+                        const on = current.rythme === o.k;
+                        return (
+                          <button
+                            key={o.k}
+                            type="button"
+                            disabled={readOnly}
+                            title={o.hint}
+                            onClick={() => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, rythme: on ? "" : o.k } : entity))}
+                            className={`rounded-[40px] px-3.5 py-1 font-display text-[12.5px] font-bold ${on ? "text-white" : "text-[var(--slate)]"}`}
+                            style={on ? { background: o.color } : undefined}
+                          >
+                            {o.l}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <span className="text-[11.5px] text-[var(--slate)]">
+                      {current.rythme === "regulier"
+                        ? formatCreneaux(current.creneaux)
+                          ? `Ajouté automatiquement au planning : ${formatCreneaux(current.creneaux)}`
+                          : "Renseigne ses créneaux ci-dessous pour qu'il apparaisse au planning."
+                        : current.rythme === "ponctuel"
+                          ? "Fait ses demandes lui-même depuis son espace partenaire."
+                          : "Non défini — choisis Régulier ou Ponctuel."}
+                    </span>
+                  </div>
+                  {current.rythme === "regulier" && (
+                    <label className="mt-2.5 flex items-start gap-2.5">
+                      <input
+                        type="checkbox"
+                        disabled={readOnly}
+                        checked={!!current.linkSystematique}
+                        onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, linkSystematique: e.target.checked } : entity))}
+                        className="mt-0.5 h-[16px] w-[16px] accent-[#eb6834]"
+                      />
+                      <span>
+                        <span className="block text-[12.5px] font-bold text-[var(--navy)]">Link bénévole systématique sur chaque créneau</span>
+                        <span className="block text-[11.5px] leading-[1.4] text-[var(--slate)]">Un rappel « Link bénévole à prévoir » s&apos;affiche dans le Planning les jours de ses créneaux, tant qu&apos;aucun Link n&apos;est créé pour ce jour-là.</span>
+                      </span>
+                    </label>
+                  )}
+                </div>
+              )}
               {current.kind === "partner" && (
                 <label className="mb-4 flex items-start gap-2.5 rounded-[14px] border-[1.5px] p-3" style={{ borderColor: current.benevoleOnly ? "#eb6834" : "var(--border)", background: current.benevoleOnly ? "rgba(235,104,52,.08)" : "var(--card)" }}>
                   <input
