@@ -78,7 +78,7 @@ export default function MobileStock() {
       const kgAdd = r2((n * inExisting.upc * inExisting.grammage) / 1000);
       const up = await supabase.from("stock_items").update({ colis: inExisting.colis + n, kg: r2(inExisting.kg + kgAdd), updated_at: new Date().toISOString() }).eq("id", inExisting.id);
       if (up.error) return setMsg("Entrée impossible : " + up.error.message);
-      const mv = await supabase.from("stock_movements").insert({ city_id: cityId, type: "entree", day: todayIso(), created_by: userId, items: [{ produit: inExisting.name, colis: n, unites: n * inExisting.upc, kg: kgAdd }] });
+      const mv = await supabase.from("stock_movements").insert({ city_id: cityId, type: "entree", day: todayIso(), created_by: userId, items: [{ id: inExisting.id, produit: inExisting.name, colis: n, unites: n * inExisting.upc, kg: kgAdd }] });
       if (mv.error) setMsg("Stock mis à jour, mais historique non enregistré : " + mv.error.message);
       setOk(`${n} colis de « ${inExisting.name} » ajoutés.`);
     } else {
@@ -86,9 +86,9 @@ export default function MobileStock() {
       const upc = parseInt(inUpc, 10) || 1;
       const gram = parseFloat(inGram) || 0;
       const kg = r2((n * upc * gram) / 1000);
-      const ins = await supabase.from("stock_items").insert({ city_id: cityId, name: inName.trim(), category: inCat, provenance: "Saisie manuelle", grammage: gram, colis: n, upc, kg });
+      const ins = await supabase.from("stock_items").insert({ city_id: cityId, name: inName.trim(), category: inCat, provenance: "Saisie manuelle", grammage: gram, colis: n, upc, kg }).select("id").single();
       if (ins.error) return setMsg("Ajout impossible : " + ins.error.message);
-      const mv = await supabase.from("stock_movements").insert({ city_id: cityId, type: "entree", day: todayIso(), created_by: userId, items: [{ produit: inName.trim(), colis: n, unites: n * upc, kg }] });
+      const mv = await supabase.from("stock_movements").insert({ city_id: cityId, type: "entree", day: todayIso(), created_by: userId, items: [{ id: ins.data.id, produit: inName.trim(), colis: n, unites: n * upc, kg }] });
       if (mv.error) setMsg("Produit ajouté, mais historique non enregistré : " + mv.error.message);
       setOk(`« ${inName.trim()} » ajouté au stock (${n} colis).`);
     }

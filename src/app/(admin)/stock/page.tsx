@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
+import { canAdminCity } from "@/lib/roles";
 
 type StockItem = {
   id: string;
@@ -16,7 +17,7 @@ type StockItem = {
   ddm: string;
   dlc: string;
 };
-type MoveItem = { produit: string; colis: number; unites: number; kg: number };
+type MoveItem = { id?: string; produit: string; colis: number; unites: number; kg: number };
 type HistoryEntry = { id: string; type: "sortie" | "entree"; date: string; time: string; destination: string; items: MoveItem[] };
 type OutLine = { uid: string; productId: string | null; colisCount: number };
 type DbStock = { id: string; name: string; category: string | null; provenance: string | null; grammage: number | string; colis: number; upc: number; kg: number | string; ddm: string | null; dlc: string | null };
@@ -55,7 +56,8 @@ export default function StockPage() {
   const supabase = useMemo(() => createClient(), []);
   const [stock, setStock] = useState<StockItem[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const { cityId, city, depotAddress } = useCity(); // the page remounts when the city changes
+  const { cityId, city, depotAddress, role } = useCity(); // the page remounts when the city changes
+  const [undoingId, setUndoingId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [destinations, setDestinations] = useState<Dest[]>([{ id: null, name: "Autre bénéficiaire / à préciser" }]);
@@ -279,7 +281,7 @@ export default function StockPage() {
     if (ins.error) return showToast("Ajout impossible : " + ins.error.message);
     const mv = await supabase.from("stock_movements").insert({
       city_id: cityId, type: "entree", day: inDate || todayIso(), created_by: userId,
-      items: [{ produit: newItem.name, colis: newItem.colis, unites: newItem.colis * newItem.upc, kg: newItem.kg }],
+      items: [{ id: ins.data.id, produit: newItem.name, colis: newItem.colis, unites: newItem.colis * newItem.upc, kg: newItem.kg }],
     });
     if (mv.error) showToast("Produit ajouté, mais historique non enregistré : " + mv.error.message);
     await reload();
@@ -292,6 +294,20 @@ export default function StockPage() {
     setInPoidsTouched(false);
     setInDdm("");
     setInDlc("");
+  }
+
+  // Annule un mouvement : la base remet le stock comme avant (sortie → colis rendus, entrée → colis retirés) puis l'efface de l'historique
+  async function undoMove(h: HistoryEntry) {
+    const what = h.items.map((it) => `${it.produit} (${it.colis} colis)`).join(", ");
+    const effect = h.type === "sortie" ? "Les colis reviendront dans le stock" : "Les colis seront retirés du stock (le produit disparaît s'il retombe à 0 colis)";
+    if (!window.confirm(`Annuler cette ${h.type === "sortie" ? "sortie" : "entrée"} du ${fmtDate(h.date)} ?\n\n${what}\n\n${effect}, et le mouvement sera retiré de l'historique.`)) return;
+    setUndoingId(h.id);
+    const { error } = await supabase.rpc("undo_stock_movement", { p_id: h.id });
+    setUndoingId(null);
+    if (error) return showToast("Annulation impossible : " + error.message + (error.message.includes("undo_stock_movement") ? " (la migration 054 est-elle passée ?)" : ""));
+    showToast(h.type === "sortie" ? "Sortie annulée — les colis sont revenus dans le stock." : "Entrée annulée — les colis ont été retirés du stock.");
+    await reload();
+    await loadPlanned();
   }
 
   const historyByDate = history.reduce<Record<string, HistoryEntry[]>>((acc, h) => {
@@ -589,7 +605,7 @@ export default function StockPage() {
       {tab === "history" && (
         <div className="mb-[22px] rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]">
           <h3 className="mb-0.5 font-display text-base font-extrabold">Historique des mouvements</h3>
-          <p className="mb-4 text-xs text-[var(--slate)]">Sorties et entrées de stock, regroupées par date, avec leur contenu détaillé.</p>
+          <p className="mb-4 text-xs text-[var(--slate)]">Sorties et entrées de stock, regroupées par date, avec leur contenu détaillé. « Annuler » remet le stock comme avant le mouvement.</p>
           {sortedDates.length === 0 ? (
             <p className="text-[12.5px] text-[var(--slate)]">Aucun mouvement enregistré pour l&apos;instant.</p>
           ) : (
@@ -615,6 +631,20 @@ export default function StockPage() {
                         </div>
                         <div className="mt-0.5 text-[11.5px] text-[var(--muted)]">{h.items.map((it) => `${it.produit} (${it.colis} colis)`).join(", ")}</div>
                       </div>
+                      {canAdminCity(role) && (
+                        <button
+                          type="button"
+                          disabled={undoingId === h.id}
+                          onClick={() => undoMove(h)}
+                          title="Remettre le stock comme avant ce mouvement"
+                          className="flex flex-none items-center gap-1.5 rounded-[40px] border-[1.5px] border-[var(--border)] px-3 py-1 text-[12px] font-bold text-[var(--slate)] hover:border-[var(--critical)] hover:text-[var(--critical)] disabled:opacity-50"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-[13px] w-[13px]">
+                            <path d="M9 14 L4 9 L9 4 M4 9 H15 A5 5 0 0 1 15 19 H11" />
+                          </svg>
+                          {undoingId === h.id ? "Annulation…" : "Annuler"}
+                        </button>
+                      )}
                     </div>
                   );
                 })}
