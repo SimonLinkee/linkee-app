@@ -1286,7 +1286,7 @@ export default function JourneePage() {
 
       {view === "camion" && (
         <div>
-          <p className="mb-3 text-[12.5px] leading-[1.5] text-[var(--slate)]">{vehicle?.rented ? "Véhicule loué : l'entretien est assuré par le loueur. Il ne reste que le tour complet en photo, tous les lundis matin, comme un état des lieux de location." : "Suivi de l'entretien du camion. Tour complet en photo tous les lundis, comme un état des lieux de location, plus un contrôle d'usage courant."}</p>
+          <p className="mb-3 text-[12.5px] leading-[1.5] text-[var(--slate)]">{vehicle?.rented ? "Véhicule loué : l'entretien est assuré par le loueur. Il reste le tour complet en photo, tous les lundis matin, comme un état des lieux de location, et les tickets de frais." : "Suivi de l'entretien du camion. Tour complet en photo tous les lundis, comme un état des lieux de location, plus un contrôle d'usage courant."}</p>
           <div className="mb-4 flex items-center gap-2.5 rounded-[14px] bg-[var(--navy-deep)] px-3.5 py-[11px] text-[12.5px] text-[var(--panel-fg)]">
             <Icon className="h-5 w-5 flex-none" sw={1.7}><path d="M2 16 V8.5 L5 5 H12 V16" /><path d="M12 9 H16 L19.5 12.5 V16" /><path d="M1 16 H21" /><circle cx="6.5" cy="16" r="2.2" /><circle cx="16.5" cy="16" r="2.2" /></Icon>
             <span>{vehicle ? <><strong>{vehicle.name}</strong>{vehicle.plate ? ` — ${vehicle.plate}` : ""} · véhicule de la flotte</> : "Aucun véhicule enregistré pour l'instant (ajoutez-en un dans Flotte)."}</span>
@@ -1345,7 +1345,7 @@ export default function JourneePage() {
             )}
           </div>
 
-          {vehicle?.rented && <p className="mb-3.5 rounded-[14px] bg-[var(--track)] px-3.5 py-3 text-[12.5px] font-semibold text-[var(--slate)]">Véhicule loué : l&apos;entretien et les tickets sont gérés par le loueur. Seules les photos du lundi matin sont à faire.</p>}
+          {vehicle?.rented && <p className="mb-3.5 rounded-[14px] bg-[var(--track)] px-3.5 py-3 text-[12.5px] font-semibold text-[var(--slate)]">Véhicule loué : l&apos;entretien est géré par le loueur. Restent à faire : les photos du lundi matin et les tickets de frais (carburant, lavage…).</p>}
           <div className={vehicle?.rented ? "pointer-events-none opacity-40 grayscale select-none" : ""} aria-disabled={vehicle?.rented || undefined} inert={vehicle?.rented || undefined}>
           <div className="mb-3.5 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-[18px] shadow-[var(--shadow)]">
             <span className="mb-2 inline-block rounded-[40px] bg-[var(--todo-bg)] px-2.5 py-1 text-[10.5px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">Contrôle d&apos;usage</span>
@@ -1363,6 +1363,7 @@ export default function JourneePage() {
             <div className="flex flex-col gap-2">
               {TRUCK_REVISIONS.map((r) => <CheckRow key={r.key} label={r.label} checked={!!doneChecks[r.key]} onChange={() => toggleCheck(r.key)} />)}
             </div>
+          </div>
           </div>
 
           <div className="mb-3.5 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-[18px] shadow-[var(--shadow)]">
@@ -1405,7 +1406,6 @@ export default function JourneePage() {
                 }}
               />
             </label>
-          </div>
           </div>
         </div>
       )}
