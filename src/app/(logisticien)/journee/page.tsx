@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { signedUrls, uploadPrivatePhoto } from "@/lib/photos";
 import { geocode } from "@/lib/geocode";
-import { SUBCAT_SELECT, UNIT_LABEL, kgFromQuantity, type SubCat } from "@/lib/stats";
+import { BAREME_SELECT, SUBCAT_SELECT, UNIT_LABEL, isBaremSub, itemValue, kgFromQuantity, mergeBareme, subMap, type Bareme, type SubCat } from "@/lib/stats";
 import NotificationBell from "@/components/NotificationBell";
 import RemonteesLink from "@/components/RemonteesLink";
 import PhotoCircle from "@/components/PhotoCircle";
@@ -21,7 +21,7 @@ const RouteMap = dynamic(() => import("@/components/RouteMap"), {
 });
 
 type Kind = "partner" | "dropoff" | "stock" | "exceptionnel" | "pause" | "dechetterie";
-type ResultItem = { denree?: string; name?: string; kg: number; from?: string; sourceId?: string; stockId?: string; colis?: number; subcategoryId?: string; quantity?: number; unit?: string };
+type ResultItem = { denree?: string; name?: string; kg: number; from?: string; sourceId?: string; stockId?: string; colis?: number; subcategoryId?: string; quantity?: number; unit?: string; valueSnapshot?: number };
 type StopResult = { items?: ResultItem[]; totalKg?: number; photos?: number; photoPaths?: string[]; motif?: string };
 type ChecklistItem = { id: string; label: string };
 type Rel = { name: string; category: string | null; address: string | null; fiche: Record<string, unknown> | null; photo_url?: string | null };
@@ -295,7 +295,11 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
       if (missingUnitWeight) return setErrCollecte("Le poids d'une unité n'est pas défini pour cette sous-catégorie : demandez à l'admin de le renseigner, ou choisissez « Sans sous-catégorie ».");
       const items: ResultItem[] = rows.filter((r) => r.denree && r.kg).map((r) => {
         const sc = subOf(r);
-        return { denree: r.denree, kg: rowKg(r), ...(sc ? { subcategoryId: sc.id, quantity: parseFloat(r.kg) || 0, unit: sc.unit } : {}) };
+        if (!sc) return { denree: r.denree, kg: rowKg(r) };
+        const quantity = parseFloat(r.kg) || 0;
+        // une sous-catégorie du barème n'a pas d'id enregistrable : on fige sa valeur à la place
+        if (isBaremSub(sc.id)) return { denree: r.denree, kg: rowKg(r), quantity, unit: sc.unit, valueSnapshot: Math.round(itemValue({ kg: rowKg(r), subcategory_id: sc.id, quantity }, subMap(subs)).value * 100) / 100 };
+        return { denree: r.denree, kg: rowKg(r), subcategoryId: sc.id, quantity, unit: sc.unit };
       });
       if (rows.some((r) => (r.denree && !r.kg) || (!r.denree && r.kg))) return setErrCollecte("Pour chaque denrée, choisissez le type ET indiquez le poids.");
       if (items.length < 1) return setErrCollecte("Choisissez au moins un type de denrée et son poids (étape 1).");
@@ -565,6 +569,7 @@ export default function JourneePage() {
   const [stops, setStops] = useState<Stop[]>([]);
   const [sitePhotoUrls, setSitePhotoUrls] = useState<Record<string, string>>({});
   const [subList, setSubList] = useState<SubCat[]>([]); // partners' sub-categories (valuation), optional when weighing
+  const [baremes, setBaremes] = useState<Bareme[]>([]); // default sub-categories per partner category (e.g. Boulangerie)
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [cityId, setCityId] = useState<string | null>(null);
@@ -711,6 +716,7 @@ export default function JourneePage() {
       monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
       const sunday = new Date(monday);
       sunday.setDate(monday.getDate() + 6);
+      supabase.from("category_baremes").select(BAREME_SELECT).then(({ data }) => setBaremes(((data ?? []) as unknown as Bareme[]).map((b) => ({ ...b, unit_price: Number(b.unit_price), unit_weight_kg: b.unit_weight_kg == null ? null : Number(b.unit_weight_kg) }))));
       supabase.from("partner_subcategories").select(SUBCAT_SELECT).limit(2000).then(({ data }) => setSubList(((data ?? []) as unknown as SubCat[]).map((x) => ({ ...x, unit_price: x.unit_price == null ? null : Number(x.unit_price), unit_weight_kg: x.unit_weight_kg == null ? null : Number(x.unit_weight_kg) }))));
       const [prof, col, tpl, ovr, stock, veh, ses, wk] = await Promise.all([
         supabase.from("profiles").select("city_id,full_name,email").eq("id", uid).maybeSingle(),
@@ -904,7 +910,7 @@ export default function JourneePage() {
     if (error) return showToast("Enregistrement impossible : " + error.message);
     if (status === "collecte" && result.items?.length) {
       const { error: e2 } = await supabase.from("collecte_items").insert(
-        result.items.map((it) => ({ collecte_id: s.id, denree: it.denree ?? null, name: it.name ?? null, kg: it.kg, source_collecte_id: it.sourceId ?? null, subcategory_id: it.subcategoryId ?? null, quantity: it.quantity ?? null, unit: it.unit ?? null })),
+        result.items.map((it) => ({ collecte_id: s.id, denree: it.denree ?? null, name: it.name ?? null, kg: it.kg, source_collecte_id: it.sourceId ?? null, subcategory_id: it.subcategoryId ?? null, quantity: it.quantity ?? null, unit: it.unit ?? null, value_snapshot: it.valueSnapshot ?? null })),
       );
       if (e2) return showToast("Poids non enregistrés : " + e2.message);
     }
@@ -1231,7 +1237,7 @@ export default function JourneePage() {
                     {s.status === "collecte" && <div className="mt-2 border-t border-[var(--border)] pt-2 text-xs text-[var(--slate)]">{summary(s)}</div>}
                     {s.status === "annule" && <div className="mt-2 border-t border-[var(--border)] pt-2 text-xs text-[var(--slate)]">Motif : <strong className="text-[var(--navy)]">{s.result?.motif || "annulé depuis le planning"}</strong></div>}
 
-                    {!done && dayState === "running" && openIdx === i && <StopPanel stops={stops} index={i} subs={subList.filter((x) => x.partner_id === s.partnerId)} onDone={(r, st) => finishStop(i, r, st)} onUpload={uploadStopPhoto} />}
+                    {!done && dayState === "running" && openIdx === i && <StopPanel stops={stops} index={i} subs={mergeBareme(s.cat, baremes, subList.filter((x) => x.partner_id === s.partnerId))} onDone={(r, st) => finishStop(i, r, st)} onUpload={uploadStopPhoto} />}
                   </div>
                 </div>
               );

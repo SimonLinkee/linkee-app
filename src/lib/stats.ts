@@ -23,6 +23,9 @@ export const subMap = (list: SubCat[]) => new Map(list.map((s) => [s.id, s]));
 // ---- Barèmes par défaut : un jeu de sous-catégories par TYPE de partenaire (ex. "Boulangerie"), géré côté admin ----
 export type Bareme = { id: string; partner_category: string; category: string; name: string; unit_price: number; unit: Unit; unit_weight_kg: number | null };
 export const BAREME_SELECT = "id,partner_category,category,name,unit_price,unit,unit_weight_kg";
+/** Sous-catégorie héritée du barème et non personnalisée (id "barem:…") : elle n'existe pas dans partner_subcategories,
+ * donc on n'enregistre pas son id sur la ligne de poids — on fige plutôt sa valeur (value_snapshot). */
+export const isBaremSub = (id: string | null | undefined) => !!id && id.startsWith("barem:");
 
 /** Sous-catégorie "effective" affichée pour un partenaire : celles de son barème par défaut (surchargées ou non),
  * plus celles qu'il a ajoutées lui-même. `isDefault` distingue une valeur héritée du barème d'une valeur

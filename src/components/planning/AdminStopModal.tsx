@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { uploadPrivatePhoto } from "@/lib/photos";
-import { CAT_KEYS, CAT_LABELS, SUBCAT_SELECT, UNIT_LABEL, itemValue, kgFromQuantity, subMap, type SubCat } from "@/lib/stats";
+import { BAREME_SELECT, CAT_KEYS, CAT_LABELS, SUBCAT_SELECT, UNIT_LABEL, isBaremSub, itemValue, kgFromQuantity, mergeBareme, subMap, type Bareme, type SubCat } from "@/lib/stats";
 
 export type AdminStop = { id: string; name: string; kind: string; partnerId: string | null; cat: string };
 export type AdminStopSaved = { status: "collecte" | "annule" | "todo"; photoPaths: string[] };
@@ -46,8 +46,13 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
         setRows(existing.map((it) => ({ denree: it.denree ?? "", sub: it.subcategory_id ?? "", qty: it.subcategory_id && it.quantity != null ? String(it.quantity) : String(Number(it.kg)) })));
       }
       if (isPickup && stop.partnerId) {
-        const { data } = await supabase.from("partner_subcategories").select(SUBCAT_SELECT).eq("partner_id", stop.partnerId).order("name");
-        setSubs(((data ?? []) as unknown as SubCat[]).map((s) => ({ ...s, unit_price: s.unit_price == null ? null : Number(s.unit_price), unit_weight_kg: s.unit_weight_kg == null ? null : Number(s.unit_weight_kg) })));
+        // sous-catégories propres au partenaire + celles du barème de sa catégorie (ex. Boulangerie → Baguettes, Viennoiseries…)
+        const [own, bar] = await Promise.all([
+          supabase.from("partner_subcategories").select(SUBCAT_SELECT).eq("partner_id", stop.partnerId).order("name"),
+          supabase.from("category_baremes").select(BAREME_SELECT).eq("partner_category", stop.cat),
+        ]);
+        const num = <T extends { unit_price: number | null; unit_weight_kg: number | null }>(s: T): T => ({ ...s, unit_price: s.unit_price == null ? null : Number(s.unit_price), unit_weight_kg: s.unit_weight_kg == null ? null : Number(s.unit_weight_kg) });
+        setSubs(mergeBareme(stop.cat, ((bar.data ?? []) as unknown as Bareme[]).map(num), ((own.data ?? []) as unknown as SubCat[]).map(num)));
       }
       if (stop.kind === "stock") {
         const [st, planned] = await Promise.all([
@@ -116,7 +121,7 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
         onSaved({ status: "annule", photoPaths: existingPhotos });
         return;
       }
-      let items: { denree: string | null; name: string | null; kg: number; subcategory_id?: string | null; quantity?: number | null; unit?: string | null; source_collecte_id?: string | null }[] = [];
+      let items: { denree: string | null; name: string | null; kg: number; subcategory_id?: string | null; quantity?: number | null; unit?: string | null; source_collecte_id?: string | null; value_snapshot?: number }[] = [];
       if (stop.kind === "dechetterie") {
         items = [];
       } else if (stop.kind === "stock") {
@@ -137,7 +142,12 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
         }
         items = filled.map((r) => {
           const s = subFor(r);
-          return { denree: r.denree, name: null, kg: rowKg(r)!, subcategory_id: s?.id ?? null, quantity: parseFloat(r.qty.replace(",", ".")), unit: s?.unit ?? "kg" };
+          const quantity = parseFloat(r.qty.replace(",", "."));
+          const barem = isBaremSub(s?.id);
+          return {
+            denree: r.denree, name: null, kg: rowKg(r)!, subcategory_id: barem ? null : (s?.id ?? null), quantity, unit: s?.unit ?? "kg",
+            ...(barem ? { value_snapshot: Math.round(itemValue({ kg: rowKg(r)!, subcategory_id: s!.id, quantity }, subMap(subs)).value * 100) / 100 } : {}),
+          };
         });
       }
       const photoPaths: string[] = [...existingPhotos];
