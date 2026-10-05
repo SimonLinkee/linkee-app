@@ -1,6 +1,7 @@
 {
   "crons": [
     { "path": "/api/cron/backup", "schedule": "0 3 * * *" },
-    { "path": "/api/cron/cerfa-alerts", "schedule": "0 6 * * *" }
+    { "path": "/api/cron/cerfa-alerts", "schedule": "0 6 * * *" },
+    { "path": "/api/cron/planning", "schedule": "0 5 20 * *" }
   ]
 }

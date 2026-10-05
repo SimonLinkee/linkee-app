@@ -529,33 +529,35 @@ export default function PlanningPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cityId, iso]);
 
-  // Arrêts fixes hebdomadaires : toute association dont la fiche a un "Créneau de livraison fixe" renseigné
-  // (Adresse & accès), tout partenaire au rythme « Régulier » ayant des créneaux de collecte,
-  // et le passage déchetterie (créneau constant, mardi + mercredi), sont ajoutés
-  // automatiquement au planning pour le jour affiché, s'ils n'y sont pas déjà — plus besoin de les recréer
-  // chaque semaine à la main. Ne remonte jamais dans le passé (on ne réécrit pas l'historique d'un jour
-  // jamais consulté).
-  const autoDropoffChecked = useRef<Set<string>>(new Set());
+  // Les arrêts réguliers (partenaires « Régulier », associations à créneau fixe, déchetterie de Lyon) ne sont plus
+  // ajoutés à l'ouverture d'un jour : ils sont créés une fois par mois, d'un bloc, par generate_planning_month
+  // (migration 056 — bouton « Générer le planning du mois » ci-dessous, ou tâche automatique le 20 pour le mois suivant).
+  const monthIso = iso.slice(0, 7) + "-01";
+  const [monthGen, setMonthGen] = useState<{ generated_at: string; stops_created: number } | null | undefined>(undefined);
+  const [generating, setGenerating] = useState(false);
+  async function loadMonthGen() {
+    const { data } = await supabase.from("planning_generations").select("generated_at,stops_created").eq("city_id", cityId ?? "").eq("month", monthIso).maybeSingle();
+    setMonthGen((data as { generated_at: string; stops_created: number } | null) ?? null);
+  }
   useEffect(() => {
-    if (ro || loadingDay || !cityId || !places.length || stopsIso !== iso) return;
-    if (iso < isoDate(new Date())) return;
-    const key = `${cityId}|${iso}`;
-    if (autoDropoffChecked.current.has(key)) return;
-    autoDropoffChecked.current.add(key);
-    const toAdd = places.filter((p) => {
-      if (!p.creneaux || slotsForDate(p.creneaux, iso).length === 0) return false;
-      if (p.kind === "dropoff") return !stops.some((s) => s.kind === "dropoff" && s.beneficiaryId === p.beneficiaryId);
-      if (p.kind === "dechetterie") return !stops.some((s) => s.kind === "dechetterie");
-      if (p.kind === "partner") return !!p.regulier && !stops.some((s) => s.partnerId === p.partnerId);
-      return false;
-    });
-    // dans l'ordre des créneaux du jour (PLO 9h30 avant Grand Fruit 10h…), un par un pour que l'ordre d'arrivée soit garanti
-    const firstOpen = (p: Place) => Math.min(...slotsForDate(p.creneaux, iso).map((sl) => toMin(sl.open)));
-    toAdd.sort((a, b) => firstOpen(a) - firstOpen(b));
-    (async () => {
-      for (const p of toAdd) await insertStop(p, p.kind, {});
-    })();
-  }, [ro, loadingDay, cityId, iso, places, stops, stopsIso]);
+    if (!cityId) return;
+    supabase.from("planning_generations").select("generated_at,stops_created").eq("city_id", cityId).eq("month", monthIso).maybeSingle()
+      .then(({ data }) => setMonthGen((data as { generated_at: string; stops_created: number } | null) ?? null));
+  }, [supabase, cityId, monthIso]);
+  async function generateMonth() {
+    if (!cityId) return;
+    const label = `${MONTH_NAMES[Number(monthIso.slice(5, 7)) - 1]} ${monthIso.slice(0, 4)}`;
+    if (!window.confirm(`Générer toutes les collectes régulières de ${label} à partir des fiches (partenaires « Régulier », associations à créneau fixe${city?.name === "Lyon" ? ", déchetterie" : ""}) ?\n\nLes arrêts déjà présents ne sont pas recréés. Tu pourras ensuite revoir et réarranger chaque journée.`)) return;
+    setGenerating(true);
+    const { data, error } = await supabase.rpc("generate_planning_month", { p_city: cityId, p_month: monthIso });
+    setGenerating(false);
+    if (error) return fail("Génération impossible", error.message + (error.message.includes("generate_planning_month") ? " (la migration 056 est-elle passée ?)" : ""));
+    const r = data as { already?: boolean; stops_created?: number };
+    await loadMonthGen();
+    await loadDay();
+    loadWeek();
+    showToast(r.already ? `Le planning de ${label} avait déjà été généré.` : r.stops_created ? `${r.stops_created} arrêts créés pour ${label} — ouvre chaque journée pour vérifier l'ordre et les heures.` : `Aucun arrêt à créer pour ${label} (fiches sans créneau, ou arrêts déjà présents).`);
+  }
 
   /* ---------- write back order / times after user edits ---------- */
   useEffect(() => {
@@ -850,6 +852,23 @@ export default function PlanningPage() {
             <div className="mb-3 flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--input-bg)] px-4 py-2.5 text-[12.5px] font-semibold text-[var(--slate)]">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 flex-none"><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10 V7 A4 4 0 0 1 16 7 V10" /></svg>
               Planning en lecture seule — seul le Superadmin peut le modifier.
+            </div>
+          )}
+          {!ro && monthGen !== undefined && iso.slice(0, 7) >= isoDate(new Date()).slice(0, 7) && (
+            <div className="mb-3 flex flex-wrap items-center gap-3 rounded-2xl border-[1.5px] border-[var(--border)] bg-[var(--card)] px-4 py-3">
+              <span className="min-w-0 flex-1">
+                <div className="text-[13.5px] font-bold text-[var(--navy)]">Planning de {MONTH_NAMES[Number(monthIso.slice(5, 7)) - 1]} {monthIso.slice(0, 4)}</div>
+                <div className="text-[11.5px] text-[var(--slate)]">
+                  {monthGen
+                    ? `Généré le ${new Date(monthGen.generated_at).toLocaleDateString("fr-FR")} — ${monthGen.stops_created} arrêts réguliers créés d'après les fiches. Revois et réarrange chaque journée si besoin.`
+                    : "Pas encore généré : les collectes régulières (partenaires « Régulier », associations à créneau fixe) seront créées d'un coup, sans doublon. Généré automatiquement le 20 du mois précédent."}
+                </div>
+              </span>
+              {!monthGen && (
+                <button type="button" disabled={generating} onClick={generateMonth} className="rounded-[40px] bg-[var(--navy-deep)] px-4 py-2 font-display text-[13px] font-bold text-[var(--panel-fg)] disabled:opacity-50">
+                  {generating ? "Génération…" : "Générer le planning du mois"}
+                </button>
+              )}
             </div>
           )}
           {!ro && iso >= isoDate(new Date()) && linkReminders.length > 0 && (
