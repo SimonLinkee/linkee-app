@@ -538,7 +538,12 @@ export default function PlanningPage() {
       if (p.kind === "partner") return !!p.regulier && !stops.some((s) => s.partnerId === p.partnerId);
       return false;
     });
-    toAdd.forEach((p) => insertStop(p, p.kind, {}));
+    // dans l'ordre des créneaux du jour (PLO 9h30 avant Grand Fruit 10h…), un par un pour que l'ordre d'arrivée soit garanti
+    const firstOpen = (p: Place) => Math.min(...slotsForDate(p.creneaux, iso).map((sl) => toMin(sl.open)));
+    toAdd.sort((a, b) => firstOpen(a) - firstOpen(b));
+    (async () => {
+      for (const p of toAdd) await insertStop(p, p.kind, {});
+    })();
   }, [ro, loadingDay, cityId, iso, places, stops]);
 
   /* ---------- write back order / times after user edits ---------- */
