@@ -288,7 +288,13 @@ export default function DistributionsPage() {
   /* ---------- saving (debounced; the first save turns a planning entry into a real distribution) ---------- */
   function edit(fn: (d: Draft) => Draft) {
     dirty.current = true;
-    setDraft((d) => (d ? fn(d) : d));
+    // la ref est mise à jour tout de suite : un flush() juste après (annulation, clôture) enregistre bien la nouvelle version,
+    // même si React n'a pas encore re-rendu (cas d'un appel après un await, hors du clic)
+    const cur = draftRef.current;
+    if (!cur) return;
+    const next = fn(cur);
+    draftRef.current = next;
+    setDraft(next);
     setSaveState("idle");
     if (timer.current) window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => void save(), 900);
