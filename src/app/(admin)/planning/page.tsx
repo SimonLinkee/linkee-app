@@ -41,7 +41,7 @@ type Stop = {
 type StopC = Stop & { coords: Coords };
 type EnrichedStop = StopC & { scheduledTime: string | null; travelFromPrev: number; travelKmFromPrev: number; arrivalMin?: number; waitMin?: number };
 type ChecklistItem = { id: string; label: string };
-type Place = { key: string; kind: "partner" | "dropoff" | "stock" | "dechetterie"; name: string; cat: string; address: string; partnerId: string | null; beneficiaryId: string | null; passage?: Passage; creneaux?: Creneaux; regulier?: boolean };
+type Place = { key: string; kind: "partner" | "dropoff" | "stock" | "dechetterie"; name: string; cat: string; address: string; partnerId: string | null; beneficiaryId: string | null; passage?: Passage; creneaux?: Creneaux; regulier?: boolean; duration?: number };
 // Partenaire régulier passant par un Link bénévole sur chacun de ses créneaux (case « Link bénévole systématique » de la fiche)
 type LinkReminder = { partnerId: string; name: string; creneaux: Creneaux; linked: boolean };
 type DbRel = { name: string; category: string | null; address: string | null; passage?: Passage | null; creneaux?: Creneaux | null };
@@ -387,16 +387,17 @@ export default function PlanningPage() {
     (async () => {
       const [ps, bs, tpl, lp] = await Promise.all([
         // les partenaires "Éligible collecte bénévole" sortent du planning pro classique — ils passent par les Links Bénévoles
-        supabase.from("partners").select("id,name,category,address,passage:fiche->passage,creneaux:fiche->creneaux,rythme:fiche->>rythme").eq("city_id", cityId ?? "").eq("active", true).eq("benevole_only", false).is("deleted_at", null).order("name"),
+        supabase.from("partners").select("id,name,category,address,passage:fiche->passage,creneaux:fiche->creneaux,rythme:fiche->>rythme,duree:fiche->dureeCollecte").eq("city_id", cityId ?? "").eq("active", true).eq("benevole_only", false).is("deleted_at", null).order("name"),
         supabase.from("beneficiaries").select("id,name,category,address,creneaux:fiche->creneaux").eq("city_id", cityId ?? "").eq("active", true).is("deleted_at", null).order("name"),
         supabase.from("checklist_templates").select("weekday,items").eq("city_id", cityId ?? ""),
         supabase.from("partners").select("id,name,creneaux:fiche->creneaux").eq("city_id", cityId ?? "").eq("active", true).eq("fiche->>rythme", "regulier").eq("fiche->linkSystematique", true).is("deleted_at", null).order("name"),
       ]);
       setLinkPartners(((lp.data ?? []) as unknown as { id: string; name: string; creneaux: Creneaux | null }[]).map((p) => ({ partnerId: p.id, name: p.name, creneaux: p.creneaux ?? {} })));
       const list: Place[] = [
-        ...((ps.data ?? []) as unknown as { id: string; name: string; category: string | null; address: string | null; passage: Passage | null; creneaux: Creneaux | null; rythme: string | null }[]).map((p) => ({
+        ...((ps.data ?? []) as unknown as { id: string; name: string; category: string | null; address: string | null; passage: Passage | null; creneaux: Creneaux | null; rythme: string | null; duree: number | null }[]).map((p) => ({
           key: "p:" + p.id, kind: "partner" as const, name: p.name, cat: p.category ?? "", address: p.address ?? "", partnerId: p.id, beneficiaryId: null, passage: p.passage ?? undefined, creneaux: p.creneaux ?? undefined,
           regulier: p.rythme === "regulier",
+          duration: Number(p.duree) > 0 ? Number(p.duree) : undefined, // « Durée de collecte » de la fiche
         })),
         ...((bs.data ?? []) as unknown as { id: string; name: string; category: string | null; address: string | null; creneaux: Creneaux | null }[]).map((b) => ({
           key: "b:" + b.id, kind: "dropoff" as const, name: b.name, cat: b.category ?? "", address: b.address ?? "", partnerId: null, beneficiaryId: b.id, creneaux: b.creneaux ?? undefined,
@@ -610,6 +611,7 @@ export default function PlanningPage() {
   /* ---------- stops ---------- */
   async function insertStop(place: Place, kind: Kind, extra: { comment?: string; denree?: string; volume?: number | null }, insertAt?: number) {
     if (!cityId) return showToast("Aucune ville n'est associée à ton compte.");
+    const stopDuration = kind === "dechetterie" ? 60 : (place.duration ?? 10);
     const { data, error } = await supabase
       .from("collectes")
       .insert({
@@ -622,7 +624,7 @@ export default function PlanningPage() {
         sort_order: stops.length,
         status: "todo",
         comment: extra.comment || null,
-        duration_min: kind === "dechetterie" ? 60 : 10,
+        duration_min: stopDuration,
         denree: extra.denree ?? null,
         volume_kg: extra.volume ?? null,
       })
@@ -630,7 +632,7 @@ export default function PlanningPage() {
       .single();
     if (error || !data) return fail("Ajout impossible", error?.message ?? "erreur inconnue");
     const stop: Stop = {
-      id: data.id as string, name: place.name, cat: place.cat, kind, duration: kind === "dechetterie" ? 60 : 10, status: "planifie", dbStatus: "todo",
+      id: data.id as string, name: place.name, cat: place.cat, kind, duration: stopDuration, status: "planifie", dbStatus: "todo",
       comment: extra.comment || undefined, address: place.address, partnerId: place.partnerId, beneficiaryId: place.beneficiaryId,
       label: !place.partnerId && !place.beneficiaryId ? place.name : null,
       photoPaths: [],
