@@ -250,7 +250,7 @@ const SELECT_DAY =
 
 export default function PlanningPage() {
   const supabase = useMemo(() => createClient(), []);
-  const { cityId, depotAddress, role } = useCity(); // the page remounts when the city changes
+  const { cityId, city, depotAddress, role } = useCity(); // the page remounts when the city changes
   const ro = !canAdminCity(role); // le Responsable d'antenne modifie le planning de sa ville (migration 047)
   const DEPOT = { name: DEPOT_NAME, address: depotAddress };
   const DEPOT_PLACE = depotPlace(depotAddress);
@@ -403,7 +403,8 @@ export default function PlanningPage() {
           key: "b:" + b.id, kind: "dropoff" as const, name: b.name, cat: b.category ?? "", address: b.address ?? "", partnerId: null, beneficiaryId: b.id, creneaux: b.creneaux ?? undefined,
         })),
         DEPOT_PLACE,
-        DECHETTERIE_PLACE,
+        // la déchetterie (Meyzieu) est celle de Lyon : les autres villes n'ont pas ce passage hebdomadaire
+        ...(city?.name === "Lyon" ? [DECHETTERIE_PLACE] : []),
       ];
       setPlaces(list);
       const firstPartner = list.find((p) => p.kind === "partner");
