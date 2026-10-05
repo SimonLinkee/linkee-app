@@ -27,12 +27,11 @@ delete from public.distributions where city_id = 'c9287602-c247-48e8-b62e-ccab7a
 delete from public.missions;
 
 -- 5. Cerfa de Lyon : récapitulatifs joints, puis demandes (liens supprimés en cascade)
-create temporary table _cerfa_docs on commit drop as
-  select distinct d.document_id from public.cerfa_request_documents d
-    join public.cerfa_requests r on r.id = d.request_id
-   where r.city_id = 'c9287602-c247-48e8-b62e-ccab7a9df042';
+delete from public.documents
+ where id in (select d.document_id from public.cerfa_request_documents d
+                join public.cerfa_requests r on r.id = d.request_id
+               where r.city_id = 'c9287602-c247-48e8-b62e-ccab7a9df042');
 delete from public.cerfa_requests where city_id = 'c9287602-c247-48e8-b62e-ccab7a9df042';
-delete from public.documents where id in (select document_id from _cerfa_docs);
 
 -- 6. Links bénévoles + statistiques des Linkers
 delete from public.links;
