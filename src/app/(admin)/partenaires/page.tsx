@@ -9,6 +9,7 @@ import PartnerDocuments from "@/components/partner/PartnerDocuments";
 import PartnerValuation from "@/components/partner/PartnerValuation";
 import PartnerCollectes from "@/components/partner/PartnerCollectes";
 import BeneficiaryMap from "@/components/partner/BeneficiaryMap";
+import PartnerMap from "@/components/partner/PartnerMap";
 import AddressSearch from "@/components/AddressSearch";
 import BetaBadge from "@/components/BetaBadge";
 import SirenField from "@/components/partner/SirenField";
@@ -726,6 +727,18 @@ export default function PartenairesPage() {
           </button>
         )}
       </div>
+
+      {tab === "partner" && !loading && (
+        <PartnerMap
+          key={cityId ?? "none"}
+          items={partners.map((p) => ({ id: p.id, name: p.name, cat: p.cat, address: p.address, active: p.active, activityStatus: p.activityStatus, denrees: p.denrees, creneaux: p.creneaux }))}
+          selectedId={currentId}
+          onSelect={(id) => {
+            setCurrentId(id);
+            window.setTimeout(() => ficheRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+          }}
+        />
+      )}
 
       {tab === "beneficiaire" && !loading && (
         <BeneficiaryMap
