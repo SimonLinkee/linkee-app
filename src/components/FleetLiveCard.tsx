@@ -21,8 +21,8 @@ const ago = (iso: string | null, now: number) => {
 const fmtDate = (iso: string) => new Date(iso).toLocaleString("fr-FR", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
 const fmtStop = (min: number) => (min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, "0")}`);
 
-/** EXPÉRIMENTATION — position du camion de Lyon (tracker Invoxia), actualisée toutes les 30 s. Réservée à l'équipe (voir /api/flotte/position). */
-export default function FleetLiveCard() {
+/** EXPÉRIMENTATION — position du camion d'une ville (tracker Invoxia), actualisée toutes les 30 s. Réservée à l'équipe (voir /api/flotte/position). */
+export default function FleetLiveCard({ city = "Lyon" }: { city?: "Lyon" | "Montpellier" }) {
   const [pos, setPos] = useState<Position | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -32,7 +32,7 @@ export default function FleetLiveCard() {
     let alive = true;
     async function load() {
       try {
-        const r = await fetch("/api/flotte/position", { cache: "no-store" });
+        const r = await fetch(`/api/flotte/position?city=${city}`, { cache: "no-store" });
         const j = await r.json().catch(() => ({}));
         if (!alive) return;
         if (r.ok && j.ok) { setPos(j as Position); setErr(null); }
@@ -45,19 +45,19 @@ export default function FleetLiveCard() {
     load();
     const t = setInterval(() => { if (document.visibilityState === "visible") load(); }, REFRESH_MS);
     return () => { alive = false; clearInterval(t); };
-  }, []);
+  }, [city]);
 
   const ageMin = pos?.lastUplinkDate ? (now - new Date(pos.lastUplinkDate).getTime()) / 60000 : Infinity;
   const offline = !!pos && (pos.state === "offline" || ageMin > OFFLINE_AFTER_MIN);
   const points = useMemo(
-    () => (pos ? [{ id: "camion", lat: pos.lat, lng: pos.lng, label: "Camion Lyon", sub: offline ? "dernière position connue" : pos.stationaryMinutes ? `à l'arrêt depuis ${fmtStop(pos.stationaryMinutes)}` : "en route", color: offline ? "#9aa3b8" : "#1baf7a" }] : []),
-    [pos, offline],
+    () => (pos ? [{ id: "camion", lat: pos.lat, lng: pos.lng, label: `Camion ${city}`, sub: offline ? "dernière position connue" : pos.stationaryMinutes ? `à l'arrêt depuis ${fmtStop(pos.stationaryMinutes)}` : "en route", color: offline ? "#9aa3b8" : "#1baf7a" }] : []),
+    [pos, offline, city],
   );
 
   return (
-    <section className="mb-5 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow)]" aria-label="Position du camion de Lyon">
+    <section className="mb-5 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow)]" aria-label={`Position du camion de ${city}`}>
       <div className="mb-3 flex flex-wrap items-center gap-2.5">
-        <h2 className="font-display text-[18px] leading-none font-black text-[var(--navy)]">Position du camion · Lyon</h2>
+        <h2 className="font-display text-[18px] leading-none font-black text-[var(--navy)]">Position du camion · {city}</h2>
         <span className="rounded-full bg-[var(--warn-bg)] px-2 py-[1px] text-[9px] leading-[1.5] font-extrabold tracking-[0.06em] text-[var(--warn)] uppercase">Expérimentation</span>
         {pos && (
           <span className={`ml-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-bold ${offline ? "bg-[var(--track)] text-[var(--slate)]" : "bg-[var(--good-bg)] text-[var(--good)]"}`}>
@@ -68,8 +68,8 @@ export default function FleetLiveCard() {
       </div>
 
       {loading && <p className="py-8 text-center text-[13px] text-[var(--slate)]">Recherche du camion…</p>}
-      {!loading && err === "not_configured" && <p className="rounded-[14px] bg-[var(--warn-bg)] px-3.5 py-3 text-[13px] font-semibold text-[var(--navy)]">Le suivi GPS n&apos;est pas encore branché : la variable <code>INVOXIA_TRACKER_LYON</code> manque sur le serveur.</p>}
-      {!loading && err === "forbidden" && <p className="rounded-[14px] bg-[var(--track)] px-3.5 py-3 text-[13px] font-semibold text-[var(--slate)]">La position du camion est réservée à l&apos;équipe de Lyon et aux administrateurs.</p>}
+      {!loading && err === "not_configured" && <p className="rounded-[14px] bg-[var(--warn-bg)] px-3.5 py-3 text-[13px] font-semibold text-[var(--navy)]">Le suivi GPS n&apos;est pas encore branché : la variable <code>{`INVOXIA_TRACKER_${city.toUpperCase()}`}</code> manque sur le serveur : il faut le lien du tracker de ce camion.</p>}
+      {!loading && err === "forbidden" && <p className="rounded-[14px] bg-[var(--track)] px-3.5 py-3 text-[13px] font-semibold text-[var(--slate)]">La position du camion est réservée à l&apos;équipe de la ville et aux administrateurs.</p>}
       {!loading && err === "unavailable" && !pos && <p className="rounded-[14px] bg-[var(--critical-bg)] px-3.5 py-3 text-[13px] font-semibold text-[var(--critical)]">Position indisponible pour le moment. Nouvel essai dans quelques secondes.</p>}
 
       {pos && (

@@ -263,7 +263,7 @@ export default function FlottePage() {
       <p className="mb-[18px] text-[13.5px] text-[var(--slate)]">Véhicules, contrôles d&apos;entretien et suivi devis/factures — remonté automatiquement depuis l&apos;app du logisticien.</p>
 
       {/* expérimentation : position du camion de Lyon (tracker Invoxia) */}
-      {(isAll || cityId === cities.find((c) => c.name === "Lyon")?.id) && <FleetLiveCard />}
+      {(["Lyon", "Montpellier"] as const).map((n) => (isAll || cityId === cities.find((c) => c.name === n)?.id) && <FleetLiveCard key={n} city={n} />)}
 
       <div
         className={`mb-5 flex items-center gap-3 rounded-2xl px-[18px] py-3.5 text-[13.5px] font-semibold ${
