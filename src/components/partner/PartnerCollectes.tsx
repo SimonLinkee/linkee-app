@@ -41,6 +41,7 @@ export default function PartnerCollectes({ partnerId, cityId, category, readOnly
   const [fCat, setFCat] = useState(CAT_LABELS.secs);
   const [fSub, setFSub] = useState("");
   const [fQty, setFQty] = useState("");
+  const [fValue, setFValue] = useState(""); // valeur du don saisie à la main ("" = calcul automatique)
   const [fUnit, setFUnit] = useState<Unit>("kg");
   const [fFile, setFFile] = useState<File | null>(null);
   const [mAmount, setMAmount] = useState(""); // mode "montant global" : valeur totale du don
@@ -127,6 +128,11 @@ export default function PartnerCollectes({ partnerId, cityId, category, readOnly
       if (kgResult == null || kgResult <= 0) return setMsg(needWeight ? "Renseigne d'abord le poids moyen d'une unité dans l'onglet Valorisation RSE." : "Indique une quantité.");
       kg = kgResult;
       value = detailValue ?? 0;
+      if (fValue.trim() !== "") {
+        const manual = parseFloat(fValue.replace(",", "."));
+        if (!Number.isFinite(manual) || manual < 0) return setMsg("La valeur du don saisie n'est pas un montant valide.");
+        value = manual;
+      }
     } else {
       if (!Number.isFinite(mAmountNum) || mAmountNum <= 0) return setMsg("Indique le montant total du don.");
       if (!Number.isFinite(mKgNum) || mKgNum <= 0) return setMsg("Indique le poids total (obligatoire pour une valorisation au montant global).");
@@ -155,6 +161,7 @@ export default function PartnerCollectes({ partnerId, cityId, category, readOnly
       if (fFile) await uploadDocument(supabase, { partnerId, file: fFile, source: "admin", userId, collecteId: col.data.id as string });
       setOpen(false);
       setFQty("");
+      setFValue("");
       setFFile(null);
       setFSub("");
       setMAmount("");
@@ -292,10 +299,32 @@ export default function PartnerCollectes({ partnerId, cityId, category, readOnly
                 <div>
                   <div className="text-[12px] font-semibold text-[var(--navy)]">Valeur totale du don</div>
                   <div className="text-[11px] text-[var(--slate)]">
-                    {kgResult != null ? (itemValue({ kg: kgResult, subcategory_id: sub?.id ?? null, quantity: qtyNum }, subsById).custom ? `Au prix de « ${sub?.name} »` : `Calcul par défaut : ${DEFAULT_EUR_PER_KG} € / kg`) : "Renseigne la quantité"}
+                    {fValue.trim() !== "" ? (
+                      <>
+                        Saisie à la main{detailValue != null ? ` · calcul auto : ${fmtEur(detailValue)}` : ""} ·{" "}
+                        <button type="button" onClick={() => setFValue("")} className="font-bold text-[var(--turquoise)] underline">revenir au calcul</button>
+                      </>
+                    ) : kgResult != null ? (
+                      `${itemValue({ kg: kgResult, subcategory_id: sub?.id ?? null, quantity: qtyNum }, subsById).custom ? `Au prix de « ${sub?.name} »` : `Calcul par défaut : ${DEFAULT_EUR_PER_KG} € / kg`} — modifiable`
+                    ) : (
+                      "Renseigne la quantité"
+                    )}
                   </div>
                 </div>
-                <div className="font-display text-[24px] font-black text-[var(--navy)] tabular-nums">{detailValue != null ? fmtEur(detailValue) : "—"}</div>
+                <div className="relative w-[150px] flex-none">
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    inputMode="decimal"
+                    aria-label="Valeur totale du don en euros"
+                    placeholder="—"
+                    value={fValue.trim() !== "" ? fValue : detailValue != null ? (Math.round(detailValue * 100) / 100).toString() : ""}
+                    onChange={(e) => setFValue(e.target.value)}
+                    className="w-full rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--card)] py-1.5 pr-7 pl-2.5 text-right font-display text-[22px] font-black text-[var(--navy)] tabular-nums outline-none focus:border-[var(--turquoise)]"
+                  />
+                  <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-[14px] font-bold text-[var(--slate)]">€</span>
+                </div>
               </div>
             </>
           ) : (

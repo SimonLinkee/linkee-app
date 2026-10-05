@@ -24,6 +24,7 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
   const alreadyDone = current === "collecte";
   const [rows, setRows] = useState<Row[]>([{ denree: "", sub: "", qty: "" }]);
   const [subs, setSubs] = useState<SubCat[]>([]);
+  const [valueOverride, setValueOverride] = useState(""); // valeur du don saisie à la main ("" = calcul automatique)
   const [stock, setStock] = useState<StockItem[]>([]);
   const [stockCounts, setStockCounts] = useState<Record<string, number>>({});
   const [drops, setDrops] = useState<DropItem[]>([]);
@@ -37,8 +38,8 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
   useEffect(() => {
     (async () => {
       // what is already recorded on this stop (when it is edited after the fact)
-      const cur = await supabase.from("collectes").select("motif,photo_paths,collecte_items!collecte_id(denree,name,kg,subcategory_id,quantity,unit,source_collecte_id)").eq("id", stop.id).maybeSingle();
-      const rec = cur.data as unknown as { motif: string | null; photo_paths: string[] | null; collecte_items: { denree: string | null; name: string | null; kg: number | string; subcategory_id: string | null; quantity: number | string | null; unit: string | null; source_collecte_id: string | null }[] | null } | null;
+      const cur = await supabase.from("collectes").select("motif,photo_paths,collecte_items!collecte_id(denree,name,kg,subcategory_id,quantity,unit,source_collecte_id,value_snapshot)").eq("id", stop.id).maybeSingle();
+      const rec = cur.data as unknown as { motif: string | null; photo_paths: string[] | null; collecte_items: { denree: string | null; name: string | null; kg: number | string; subcategory_id: string | null; quantity: number | string | null; unit: string | null; source_collecte_id: string | null; value_snapshot: number | string | null }[] | null } | null;
       const existing = rec?.collecte_items ?? [];
       setExistingPhotos(rec?.photo_paths ?? []);
       if (current === "annule" && rec?.motif) setMotif(rec.motif);
@@ -52,7 +53,14 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
           supabase.from("category_baremes").select(BAREME_SELECT).eq("partner_category", stop.cat),
         ]);
         const num = <T extends { unit_price: number | null; unit_weight_kg: number | null }>(s: T): T => ({ ...s, unit_price: s.unit_price == null ? null : Number(s.unit_price), unit_weight_kg: s.unit_weight_kg == null ? null : Number(s.unit_weight_kg) });
-        setSubs(mergeBareme(stop.cat, ((bar.data ?? []) as unknown as Bareme[]).map(num), ((own.data ?? []) as unknown as SubCat[]).map(num)));
+        const merged = mergeBareme(stop.cat, ((bar.data ?? []) as unknown as Bareme[]).map(num), ((own.data ?? []) as unknown as SubCat[]).map(num));
+        setSubs(merged);
+        // une valeur déjà enregistrée qui diffère du calcul automatique a été saisie à la main : on la réaffiche telle quelle
+        if (current === "collecte" && existing.length && existing.every((it) => it.value_snapshot != null)) {
+          const saved = existing.reduce((s, it) => s + Number(it.value_snapshot), 0);
+          const auto = existing.reduce((s, it) => s + itemValue({ kg: it.kg, subcategory_id: it.subcategory_id, quantity: it.quantity }, subMap(merged)).value, 0);
+          if (Math.abs(saved - auto) > 0.01) setValueOverride(String(Math.round(saved * 100) / 100));
+        }
       }
       if (stop.kind === "stock") {
         const [st, planned] = await Promise.all([
@@ -149,6 +157,20 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
             ...(barem ? { value_snapshot: Math.round(itemValue({ kg: rowKg(r)!, subcategory_id: s!.id, quantity }, subMap(subs)).value * 100) / 100 } : {}),
           };
         });
+        // valeur saisie à la main : répartie sur les lignes au prorata de leur valeur calculée (ou de leur poids)
+        if (valueOverride.trim() !== "") {
+          const manual = parseFloat(valueOverride.replace(",", "."));
+          if (!Number.isFinite(manual) || manual < 0) throw new Error("La valeur du don saisie n'est pas un montant valide.");
+          const weights = filled.map((r) => itemValue({ kg: rowKg(r)!, subcategory_id: r.sub || null, quantity: parseFloat(r.qty.replace(",", ".")) }, subMap(subs)).value);
+          const base = weights.reduce((s, w) => s + w, 0) > 0 ? weights : items.map((it) => it.kg);
+          const sum = base.reduce((s, w) => s + w, 0) || 1;
+          let left = Math.round(manual * 100);
+          items = items.map((it, k) => {
+            const cents = k === items.length - 1 ? left : Math.round((manual * 100 * base[k]) / sum);
+            left -= cents;
+            return { ...it, value_snapshot: cents / 100 };
+          });
+        }
       }
       const photoPaths: string[] = [...existingPhotos];
       for (const f of files) photoPaths.push(await uploadPrivatePhoto(supabase, `${cityId}/${stop.id}`, f));
@@ -170,6 +192,7 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
     const kg = rowKg(r);
     return kg == null ? s : s + itemValue({ kg, subcategory_id: r.sub || null, quantity: parseFloat(r.qty.replace(",", ".")) }, subsById).value;
   }, 0);
+  const fmtEur = (n: number) => n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
   const okLabel = stop.kind === "stock" ? "Pris" : stop.kind === "dropoff" ? "Déposé" : stop.kind === "dechetterie" ? "Passage confirmé" : "Collecté";
 
   return (
@@ -273,9 +296,33 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
               <span className="text-[12px] font-bold text-[var(--slate)]">Total</span>
               <span className="font-display text-[18px] font-black text-[var(--navy)]">{Math.round(total * 10) / 10} kg</span>
             </div>
-            <div className="mt-2 flex items-center justify-between rounded-xl border-[1.5px] border-[var(--good)] bg-[var(--good-bg)] px-4 py-2.5">
-              <span className="text-[12px] font-semibold text-[var(--navy)]">Valeur totale du don</span>
-              <span className="font-display text-[20px] font-black text-[var(--navy)] tabular-nums">{donValue.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</span>
+            <div className="mt-2 flex items-center justify-between gap-3 rounded-xl border-[1.5px] border-[var(--good)] bg-[var(--good-bg)] px-4 py-2.5">
+              <div className="min-w-0">
+                <div className="text-[12px] font-semibold text-[var(--navy)]">Valeur totale du don</div>
+                <div className="text-[11px] text-[var(--slate)]">
+                  {valueOverride.trim() !== "" ? (
+                    <>
+                      Saisie à la main · calcul auto : {fmtEur(donValue)} ·{" "}
+                      <button type="button" onClick={() => setValueOverride("")} className="font-bold text-[var(--turquoise)] underline">revenir au calcul</button>
+                    </>
+                  ) : (
+                    "Calcul automatique — modifiable"
+                  )}
+                </div>
+              </div>
+              <div className="relative w-[130px] flex-none">
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  inputMode="decimal"
+                  aria-label="Valeur totale du don en euros"
+                  value={valueOverride.trim() !== "" ? valueOverride : (Math.round(donValue * 100) / 100).toString()}
+                  onChange={(e) => setValueOverride(e.target.value)}
+                  className="w-full rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--card)] py-1.5 pr-7 pl-2.5 text-right font-display text-[18px] font-black text-[var(--navy)] tabular-nums outline-none focus:border-[var(--turquoise)]"
+                />
+                <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-[13px] font-bold text-[var(--slate)]">€</span>
+              </div>
             </div>
           </div>
         )}
