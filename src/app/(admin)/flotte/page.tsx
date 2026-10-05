@@ -19,6 +19,7 @@ type Vehicle = {
   checks: CheckItem[];
   revisions: CheckItem[];
   invoices: Invoice[];
+  rented?: boolean; // véhicule loué : l'entretien est assuré par le loueur, seules les photos du lundi matin restent à faire
 };
 
 type Report = { tourDate: string | null; tourUrls: string[]; receipts: { id: string; date: string; amount: number | null; url: string }[] };
@@ -50,6 +51,7 @@ const rowToVehicle = (r: VehicleRow): Vehicle => ({
   checks: r.fiche?.checks ?? defaultChecks(),
   revisions: r.fiche?.revisions ?? defaultRevisions(),
   invoices: r.fiche?.invoices ?? [],
+  rented: !!r.fiche?.rented,
 });
 
 function status(item: CheckItem) {
@@ -68,6 +70,7 @@ function fmtEur(n: number) {
   return n.toFixed(2).replace(".", ",") + " €";
 }
 function overdueCount(v: Vehicle) {
+  if (v.rented) return 0; // véhicule loué : pas de suivi d'entretien
   return [...v.checks, ...v.revisions].filter((it) => status(it).level === "overdue").length;
 }
 
@@ -158,7 +161,7 @@ export default function FlottePage() {
     saveTimer.current = window.setTimeout(async () => {
       const { error } = await supabase
         .from("vehicles")
-        .update({ name: v.name, plate: v.plate, assigned_to: v.assignedTo || null, fiche: { type: v.type, statut: v.statut, checks: v.checks, revisions: v.revisions, invoices: v.invoices } })
+        .update({ name: v.name, plate: v.plate, assigned_to: v.assignedTo || null, fiche: { type: v.type, statut: v.statut, checks: v.checks, revisions: v.revisions, invoices: v.invoices, ...(v.rented ? { rented: true } : {}) } })
         .eq("id", v.id);
       if (error) showToast("Enregistrement impossible : " + error.message);
       else flashAutosave();
@@ -263,7 +266,7 @@ export default function FlottePage() {
       <p className="mb-[18px] text-[13.5px] text-[var(--slate)]">Véhicules, contrôles d&apos;entretien et suivi devis/factures — remonté automatiquement depuis l&apos;app du logisticien.</p>
 
       {/* expérimentation : position du camion de Lyon (tracker Invoxia) */}
-      {(["Lyon", "Montpellier"] as const).map((n) => (isAll || cityId === cities.find((c) => c.name === n)?.id) && <FleetLiveCard key={n} city={n} />)}
+      {(["Lyon"] as const).map((n) => (isAll || cityId === cities.find((c) => c.name === n)?.id) && <FleetLiveCard key={n} city={n} />)}
 
       <div
         className={`mb-5 flex items-center gap-3 rounded-2xl px-[18px] py-3.5 text-[13.5px] font-semibold ${
@@ -362,6 +365,10 @@ export default function FlottePage() {
                 </span>
               </div>
             </div>
+            <label className="flex flex-none cursor-pointer items-center gap-2 text-[12.5px] font-semibold text-[var(--navy)]" title="Un véhicule loué n'a pas de suivi d'entretien : seules les photos du lundi matin restent actives.">
+              <input type="checkbox" checked={!!current.rented} onChange={(e) => updateCurrent((v) => ({ ...v, rented: e.target.checked }))} className="h-4 w-4 accent-[var(--turquoise)]" />
+              Véhicule loué
+            </label>
             <div className="flex flex-none items-center gap-2.5">
               <label className="text-[11.5px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">Attribué à</label>
               <select
@@ -387,10 +394,18 @@ export default function FlottePage() {
 
           {(() => {
             const rep = reports[current.id];
-            if (!rep || (!rep.tourDate && rep.receipts.length === 0)) return null;
+            if (current.rented && (!rep || !rep.tourDate)) {
+              return (
+                <div className="mb-3 rounded-[14px] border border-dashed border-[var(--turquoise)] bg-[var(--input-bg)] p-4">
+                  <h4 className="mb-1 font-display text-[14px] font-extrabold text-[var(--navy)]">Photos du lundi matin</h4>
+                  <p className="text-[12.5px] text-[var(--slate)]">Pas encore de photos : le logisticien les ajoute chaque lundi matin depuis l&apos;onglet Camion de son app.</p>
+                </div>
+              );
+            }
+            if (!rep || (!rep.tourDate && (current.rented || rep.receipts.length === 0))) return null;
             return (
               <div className="mb-3 rounded-[14px] border border-dashed border-[var(--turquoise)] bg-[var(--input-bg)] p-4">
-                <h4 className="mb-2 font-display text-[14px] font-extrabold text-[var(--navy)]">Remonté par le logisticien</h4>
+                <h4 className="mb-2 font-display text-[14px] font-extrabold text-[var(--navy)]">{current.rented ? "Photos du lundi matin" : "Remonté par le logisticien"}</h4>
                 {rep.tourDate && (
                   <div className="mb-3">
                     <div className="mb-1.5 text-[11.5px] font-semibold text-[var(--slate)]">
@@ -406,7 +421,7 @@ export default function FlottePage() {
                     </div>
                   </div>
                 )}
-                {rep.receipts.length > 0 && (
+                {!current.rented && rep.receipts.length > 0 && (
                   <div>
                     <div className="mb-1.5 text-[11.5px] font-semibold text-[var(--slate)]">Tickets et factures photographiés</div>
                     <div className="flex flex-wrap gap-2.5">
@@ -425,6 +440,12 @@ export default function FlottePage() {
             );
           })()}
 
+          {current.rented && (
+            <p className="mb-2.5 rounded-[14px] bg-[var(--track)] px-4 py-3 text-[12.5px] font-semibold text-[var(--slate)]">
+              Véhicule loué : l&apos;entretien est assuré par le loueur, il n&apos;y a rien à suivre ici. Seules les photos du lundi matin restent actives.
+            </p>
+          )}
+          <div className={current.rented ? "pointer-events-none opacity-45 grayscale select-none" : ""} aria-disabled={current.rented || undefined} inert={current.rented || undefined}>
           {(
             [
               ["checks", "Contrôles & niveaux"],
@@ -562,6 +583,7 @@ export default function FlottePage() {
                 </button>
               </div>
             )}
+          </div>
           </div>
         </div>
       </div>

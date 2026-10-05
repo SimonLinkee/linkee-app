@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-// EXPÉRIMENTATION — position du camion d'une ville (Lyon, Montpellier), lue sur le lien public du tracker Invoxia.
+// EXPÉRIMENTATION — position du camion d'une ville équipée d'un tracker (Lyon), lue sur le lien public du tracker Invoxia.
 // Le jeton du lien donne la position en direct du camion : il vit UNIQUEMENT dans une variable d'environnement
-// (INVOXIA_TRACKER_LYON, INVOXIA_TRACKER_MONTPELLIER ; Vercel + .env.local), jamais dans le code (le dépôt est public)
+// (INVOXIA_TRACKER_LYON ; Vercel + .env.local), jamais dans le code (le dépôt est public)
 // ni dans le navigateur. La route vérifie que l'appelant est de l'équipe autorisée, puis relaie quelques champs seulement.
 
 export const dynamic = "force-dynamic";
 
-const TRACKER_ENV: Record<string, string> = { Lyon: "INVOXIA_TRACKER_LYON", Montpellier: "INVOXIA_TRACKER_MONTPELLIER" };
+const TRACKER_ENV: Record<string, string> = { Lyon: "INVOXIA_TRACKER_LYON" }; // une ligne par ville équipée d'un tracker (Montpellier : camion loué, pas de tracker)
 const cache = new Map<string, { at: number; body: Record<string, unknown> }>(); // évite de solliciter Invoxia à chaque écran ouvert
 
 export async function GET(request: Request) {

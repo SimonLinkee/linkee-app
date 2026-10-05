@@ -597,7 +597,7 @@ export default function JourneePage() {
     setMissions((prev) => prev.map((m) => (m.id === id ? { ...m, status } : m)));
     if (status === "fait") showToast("Mission terminée, bravo !");
   }
-  const [vehicle, setVehicle] = useState<{ id: string; name: string; plate: string | null } | null>(null);
+  const [vehicle, setVehicle] = useState<{ id: string; name: string; plate: string | null; rented: boolean } | null>(null);
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   const [depChecked, setDepChecked] = useState<Set<string>>(new Set());
   const [mapOpen, setMapOpen] = useState(false);
@@ -723,7 +723,7 @@ export default function JourneePage() {
         supabase.from("checklist_templates").select("items").eq("weekday", dbWeekday(now)).maybeSingle(),
         supabase.from("checklist_overrides").select("items").eq("day", iso).maybeSingle(),
         supabase.from("stock_items").select("id,name,category,colis,upc,grammage").gt("colis", 0).order("name"),
-        supabase.from("vehicles").select("id,name,plate").limit(1).maybeSingle(),
+        supabase.from("vehicles").select("id,name,plate,fiche").limit(1).maybeSingle(),
         supabase.from("day_sessions").select("started_at,closed_at").eq("logisticien_id", uid).eq("day", iso).maybeSingle(),
         supabase
           .from("collectes")
@@ -751,7 +751,8 @@ export default function JourneePage() {
         signedUrls(supabase, sitePhotoPaths).then((urls) => setSitePhotoUrls(Object.fromEntries(sitePhotoPaths.map((p, i) => [p, urls[i]]).filter(([, u]) => u))));
       }
       setChecklist((ovr.data?.items ?? tpl.data?.items ?? []) as ChecklistItem[]);
-      setVehicle((veh.data as { id: string; name: string; plate: string | null } | null) ?? null);
+      const vd = veh.data as { id: string; name: string; plate: string | null; fiche: { rented?: boolean } | null } | null;
+      setVehicle(vd ? { id: vd.id, name: vd.name, plate: vd.plate, rented: !!vd.fiche?.rented } : null);
       setWeekRows((wk.data ?? []) as unknown as WeekRow[]);
       const s = ses.data as { started_at: string | null; closed_at: string | null } | null;
       if (s?.closed_at) {
@@ -1285,7 +1286,7 @@ export default function JourneePage() {
 
       {view === "camion" && (
         <div>
-          <p className="mb-3 text-[12.5px] leading-[1.5] text-[var(--slate)]">Suivi de l&apos;entretien du camion. Tour complet en photo tous les lundis, comme un état des lieux de location, plus un contrôle d&apos;usage courant.</p>
+          <p className="mb-3 text-[12.5px] leading-[1.5] text-[var(--slate)]">{vehicle?.rented ? "Véhicule loué : l'entretien est assuré par le loueur. Il ne reste que le tour complet en photo, tous les lundis matin, comme un état des lieux de location." : "Suivi de l'entretien du camion. Tour complet en photo tous les lundis, comme un état des lieux de location, plus un contrôle d'usage courant."}</p>
           <div className="mb-4 flex items-center gap-2.5 rounded-[14px] bg-[var(--navy-deep)] px-3.5 py-[11px] text-[12.5px] text-[var(--panel-fg)]">
             <Icon className="h-5 w-5 flex-none" sw={1.7}><path d="M2 16 V8.5 L5 5 H12 V16" /><path d="M12 9 H16 L19.5 12.5 V16" /><path d="M1 16 H21" /><circle cx="6.5" cy="16" r="2.2" /><circle cx="16.5" cy="16" r="2.2" /></Icon>
             <span>{vehicle ? <><strong>{vehicle.name}</strong>{vehicle.plate ? ` — ${vehicle.plate}` : ""} · véhicule de la flotte</> : "Aucun véhicule enregistré pour l'instant (ajoutez-en un dans Flotte)."}</span>
@@ -1344,6 +1345,8 @@ export default function JourneePage() {
             )}
           </div>
 
+          {vehicle?.rented && <p className="mb-3.5 rounded-[14px] bg-[var(--track)] px-3.5 py-3 text-[12.5px] font-semibold text-[var(--slate)]">Véhicule loué : l&apos;entretien et les tickets sont gérés par le loueur. Seules les photos du lundi matin sont à faire.</p>}
+          <div className={vehicle?.rented ? "pointer-events-none opacity-40 grayscale select-none" : ""} aria-disabled={vehicle?.rented || undefined} inert={vehicle?.rented || undefined}>
           <div className="mb-3.5 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-[18px] shadow-[var(--shadow)]">
             <span className="mb-2 inline-block rounded-[40px] bg-[var(--todo-bg)] px-2.5 py-1 text-[10.5px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">Contrôle d&apos;usage</span>
             <h3 className="mb-1 font-display text-[17px] font-extrabold">Entretien courant</h3>
@@ -1402,6 +1405,7 @@ export default function JourneePage() {
                 }}
               />
             </label>
+          </div>
           </div>
         </div>
       )}
