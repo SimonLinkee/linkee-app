@@ -1056,18 +1056,37 @@ export default function PlanningPage() {
                 <div className="text-[11.5px] text-[var(--panel-fg-dim)]">{DEPOT.address}</div>
               </span>
               <label className="flex flex-none flex-col items-end gap-0.5">
-                <span className="text-[9.5px] font-bold tracking-[0.05em] text-[var(--panel-fg-dim)] uppercase">Heure de départ</span>
+                <span className="text-[9.5px] font-bold tracking-[0.05em] text-[var(--panel-fg-dim)] uppercase">Départ ce jour-là ✎</span>
                 <input
                   type="time"
                   disabled={ro}
+                  title="Modifie l'heure de départ de cette journée uniquement"
                   value={fmtTime(dayStart)}
                   onChange={(e) => {
                     if (!e.target.value) return;
                     const [h, m] = e.target.value.split(":").map(Number);
                     changeDayStart(h * 60 + m);
                   }}
-                  className="rounded-lg border-[1.5px] border-white/25 bg-white/10 px-2 py-1 font-display text-[16px] font-extrabold text-[var(--turquoise)] outline-none focus:border-[var(--turquoise)]"
+                  className="cursor-pointer rounded-lg border-[1.5px] border-[var(--turquoise)] bg-white/10 px-2 py-1 font-display text-[16px] font-extrabold text-[var(--turquoise)] outline-none hover:bg-white/20"
                 />
+                {/* l'heure ne vaut que pour la date affichée : les autres jours gardent 9h00 */}
+                <span className="text-[10.5px] text-[var(--panel-fg-dim)]">
+                  {dayStart === DEFAULT_DAY_START ? (
+                    `Habituellement ${fmtTime(DEFAULT_DAY_START)}`
+                  ) : (
+                    <>
+                      Modifiée pour ce jour
+                      {!ro && (
+                        <>
+                          {" · "}
+                          <button type="button" onClick={(e) => { e.preventDefault(); changeDayStart(DEFAULT_DAY_START); }} className="font-bold text-[var(--turquoise)] underline">
+                            revenir à {fmtTime(DEFAULT_DAY_START)}
+                          </button>
+                        </>
+                      )}
+                    </>
+                  )}
+                </span>
               </label>
             </div>
 
