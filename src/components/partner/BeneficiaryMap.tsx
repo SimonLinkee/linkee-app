@@ -79,7 +79,7 @@ const chip = (on: boolean) =>
 
 /** "La carte des associations partenaires": all beneficiaries on OpenStreetMap, filterable; a click on a point opens its fiche. */
 export default function BeneficiaryMap({ items, selectedId, onSelect }: { items: MapBeneficiary[]; selectedId: string | null; onSelect: (id: string) => void }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false); // repliée par défaut : on la déplie à la demande
   const [coords, setCoords] = useState<Record<string, LatLng | null>>({});
   const [days, setDays] = useState<Set<number>>(new Set());
   const [denrees, setDenrees] = useState<Set<string>>(new Set());

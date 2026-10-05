@@ -61,13 +61,13 @@ const selectCls = "rounded-[11px] border-[1.5px] border-[var(--border)] bg-[var(
  * comme des tickets — compteurs, file filtrable, validation / refus avec commentaire, téléversement du Cerfa. */
 export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
   const supabase = useMemo(() => createClient(), []);
-  const { ready, role } = useCity();
+  const { ready, role, isAll, cityId: headerCity } = useCity();
   const canIssue = isSuper(role);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [status, setStatus] = useState<StatusFilter>("actives");
-  const [cityId, setCityId] = useState("");
+  const [pickedCity, setPickedCity] = useState(""); // filtre de ville de la page, utile seulement en vue « toutes les villes »
   const [partnerId, setPartnerId] = useState("");
   const [refusing, setRefusing] = useState<{ id: string; comment: string } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -90,18 +90,23 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // La ville choisie en haut de l'écran commande tout : Montpellier ne voit que ses Cerfa, Lyon les siens.
+  // Seule la vue « toutes les villes » (Superadmin / Comptabilité) les mélange, avec un filtre de ville en plus.
+  const cityId = isAll ? pickedCity : (headerCity ?? "");
+  const inScope = useMemo(() => (isAll ? rows : rows.filter((r) => r.city_id === headerCity)), [rows, isAll, headerCity]);
+  const lateScoped = isAll ? late : late.filter((l) => l.city_id === headerCity);
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
-  const toValidate = rows.filter((r) => r.status === "soumise").length;
-  const toProcess = rows.filter((r) => r.status === "validee").length;
-  const issuedThisMonth = rows.filter((r) => r.status === "emise" && (r.issued_at ?? "") >= monthStart).length;
+  const toValidate = inScope.filter((r) => r.status === "soumise").length;
+  const toProcess = inScope.filter((r) => r.status === "validee").length;
+  const issuedThisMonth = inScope.filter((r) => r.status === "emise" && (r.issued_at ?? "") >= monthStart).length;
 
-  const cities = useMemo(() => Array.from(new Map(rows.map((r) => [r.city_id, first(r.cities)?.name ?? "Ville"])).entries()).sort((a, b) => a[1].localeCompare(b[1])), [rows]);
+  const cities = useMemo(() => Array.from(new Map(inScope.map((r) => [r.city_id, first(r.cities)?.name ?? "Ville"])).entries()).sort((a, b) => a[1].localeCompare(b[1])), [inScope]);
   const partners = useMemo(
-    () => Array.from(new Map(rows.filter((r) => !cityId || r.city_id === cityId).map((r) => [r.partner_id, first(r.partners)?.name ?? "Partenaire"])).entries()).sort((a, b) => norm(a[1]).localeCompare(norm(b[1]))),
-    [rows, cityId],
+    () => Array.from(new Map(inScope.filter((r) => !cityId || r.city_id === cityId).map((r) => [r.partner_id, first(r.partners)?.name ?? "Partenaire"])).entries()).sort((a, b) => norm(a[1]).localeCompare(norm(b[1]))),
+    [inScope, cityId],
   );
 
-  const visible = rows
+  const visible = inScope
     .filter((r) => (status === "all" ? true : status === "actives" ? r.status === "soumise" || r.status === "validee" : r.status === status))
     .filter((r) => !cityId || r.city_id === cityId)
     .filter((r) => !partnerId || r.partner_id === partnerId)
@@ -111,7 +116,7 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
       if (aa !== bb) return aa ? -1 : 1; // en cours d'abord, la plus ancienne en premier ; le reste du plus récent au plus ancien
       return aa ? a.created_at.localeCompare(b.created_at) : b.created_at.localeCompare(a.created_at);
     });
-  const lastIssued = rows.filter((r) => r.status === "emise").sort((a, b) => (b.issued_at ?? "").localeCompare(a.issued_at ?? "")).slice(0, 10);
+  const lastIssued = inScope.filter((r) => r.status === "emise").sort((a, b) => (b.issued_at ?? "").localeCompare(a.issued_at ?? "")).slice(0, 10);
 
   async function review(id: string, decision: "validee" | "refusee", comment?: string) {
     setBusyId(id);
@@ -164,16 +169,16 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
       <div className={compact ? "mb-4 grid grid-cols-3 gap-2" : `mb-5 grid grid-cols-1 gap-3.5 sm:grid-cols-2 ${canIssue ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
         <Counter label="À valider" value={toValidate} sub={compact ? "" : "en attente du responsable d'antenne"} onClick={() => setStatus("soumise")} active={status === "soumise"} />
         <Counter label="À traiter" value={toProcess} sub={compact ? "" : "validées, Cerfa à émettre"} onClick={() => setStatus("validee")} active={status === "validee"} />
-        {canIssue && !compact && <Counter label="En retard" value={late.length} sub="partenaires sans demande" onClick={() => lateBox.current?.scrollIntoView({ behavior: "smooth" })} />}
+        {canIssue && !compact && <Counter label="En retard" value={lateScoped.length} sub="partenaires sans demande" onClick={() => lateBox.current?.scrollIntoView({ behavior: "smooth" })} />}
         <Counter label={compact ? "Émis (mois)" : "Émis ce mois-ci"} value={issuedThisMonth} sub={compact ? "" : "Cerfa téléversés"} onClick={() => setStatus("emise")} active={status === "emise"} />
       </div>
 
-      {canIssue && !compact && late.length > 0 && (
+      {canIssue && !compact && lateScoped.length > 0 && (
         <div ref={lateBox} className="mb-5 rounded-2xl border border-[var(--warn)] bg-[var(--warn-bg)] p-4">
-          <h2 className="font-display text-[16px] font-black text-[var(--navy)]">Alertes de retard ({late.length})</h2>
+          <h2 className="font-display text-[16px] font-black text-[var(--navy)]">Alertes de retard ({lateScoped.length})</h2>
           <p className="mb-2.5 text-[11.5px] text-[var(--slate)]">Partenaires dont la période est terminée depuis plus de 15 jours, sans demande de Cerfa alors qu&apos;ils ont des documents non rattachés à un Cerfa.</p>
           <div className="flex flex-col gap-1.5">
-            {late.map((l) => (
+            {lateScoped.map((l) => (
               <div key={l.partner_id} className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-[var(--card)] px-3.5 py-2.5 text-[12.5px]">
                 <span className="min-w-[150px] flex-1 font-bold text-[var(--navy)]">{l.partner_name}</span>
                 <span className="text-[var(--slate)]">{cityNames[l.city_id] ?? ""}</span>
@@ -200,8 +205,8 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
           ))}
         </div>
         {!compact && <span className="flex-1" />}
-        {!compact && cities.length > 1 && (
-          <select className={selectCls} value={cityId} onChange={(e) => { setCityId(e.target.value); setPartnerId(""); }}>
+        {!compact && isAll && cities.length > 1 && (
+          <select className={selectCls} value={pickedCity} onChange={(e) => { setPickedCity(e.target.value); setPartnerId(""); }}>
             <option value="">Toutes les antennes</option>
             {cities.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
           </select>

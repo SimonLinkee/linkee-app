@@ -421,8 +421,9 @@ export default function PartenairesPage() {
   const [currentId, setCurrentId] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [activeFilter, setActiveFilter] = useState<"" | "actif" | "inactif">("");
-  const [sortBy, setSortBy] = useState<"nom" | "statut">("nom");
+  const [activeFilter, setActiveFilter] = useState<"" | "actif" | "inactif">("actif"); // par défaut : seulement les actifs (les inactifs se retrouvent via le filtre)
+  const [catFilter, setCatFilter] = useState(""); // bénéficiaires : typologie
+  const [sortBy, setSortBy] = useState<"nom" | "statut" | "typologie">("nom");
   const [deleteTarget, setDeleteTarget] = useState<Entity | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(["identite"]));
@@ -459,7 +460,8 @@ export default function PartenairesPage() {
       const b = ((bs.data ?? []) as Row[]).map((r) => rowToEntity("beneficiaire", r) as BeneficiaireEntity);
       setPartners(p);
       setBeneficiaires(b);
-      if (p[0]) setCurrentId(p[0].id);
+      const firstP = p.find((x) => x.active) ?? p[0];
+      if (firstP) setCurrentId(firstP.id);
       if (ps.error || bs.error) showToast("Chargement impossible : " + (ps.error ?? bs.error)!.message);
       setLoading(false);
     })();
@@ -571,16 +573,24 @@ export default function PartenairesPage() {
   function switchTab(next: "partner" | "beneficiaire") {
     setTab(next);
     setSearch("");
-    const firstId = (next === "partner" ? partners : beneficiaires)[0]?.id;
+    const nextList = next === "partner" ? partners : beneficiaires;
+    const firstId = (nextList.find((e) => e.active) ?? nextList[0])?.id;
     if (firstId) setCurrentId(firstId);
+    setStatusFilter("");
+    setCatFilter("");
+    setSortBy("nom");
     setOpenSections(new Set(["identite"]));
   }
 
+  const catOptions = Array.from(new Set(beneficiaires.map((b) => b.cat).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const sortKey = (e: Entity) => (sortBy === "statut" ? (e.kind === "partner" ? e.activityStatus || "" : "") : sortBy === "typologie" ? e.cat || "" : "");
   const filteredList = list
     .filter((e) => e.name.toLowerCase().includes(search.toLowerCase()))
-    .filter((e) => !activeFilter || (activeFilter === "actif" ? e.active : !e.active))
+    // la fiche ouverte reste dans la liste même si on vient de la passer inactive (sinon elle disparaîtrait sous les yeux)
+    .filter((e) => e.id === currentId || !activeFilter || (activeFilter === "actif" ? e.active : !e.active))
     .filter((e) => !statusFilter || (e.kind === "partner" && (e.activityStatus || "Non défini") === statusFilter))
-    .sort((a, b) => (sortBy === "statut" ? (a.kind === "partner" ? a.activityStatus || "" : "").localeCompare(b.kind === "partner" ? b.activityStatus || "" : "") || a.name.localeCompare(b.name) : a.name.localeCompare(b.name)));
+    .filter((e) => !catFilter || (e.kind === "beneficiaire" && e.cat === catFilter))
+    .sort((a, b) => sortKey(a).localeCompare(sortKey(b)) || a.name.localeCompare(b.name));
   const pinned = filteredList.filter((e) => e.kind === "beneficiaire" && e.pinned);
   const rest = filteredList.filter((e) => !(e.kind === "beneficiaire" && e.pinned));
 
@@ -679,25 +689,30 @@ export default function PartenairesPage() {
             className="w-full rounded-[40px] border border-[var(--border)] bg-[var(--card)] py-[9px] pr-3 pl-[34px] text-[13px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
           />
         </div>
-        {tab === "partner" && (
-          <>
-            <select value={activeFilter} onChange={(e) => setActiveFilter(e.target.value as typeof activeFilter)} className="rounded-[40px] border border-[var(--border)] bg-[var(--card)] px-3 py-[9px] text-[12.5px] font-semibold text-[var(--slate)]">
-              <option value="">Actifs et inactifs</option>
-              <option value="actif">Actifs seulement</option>
-              <option value="inactif">Inactifs seulement</option>
-            </select>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-[40px] border border-[var(--border)] bg-[var(--card)] px-3 py-[9px] text-[12.5px] font-semibold text-[var(--slate)]">
-              <option value="">Tous statuts</option>
-              {ACTIVITY_STATUS_OPTIONS.map((o) => (
-                <option key={o} value={o}>{o}</option>
-              ))}
-            </select>
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className="rounded-[40px] border border-[var(--border)] bg-[var(--card)] px-3 py-[9px] text-[12.5px] font-semibold text-[var(--slate)]">
-              <option value="nom">Trier par nom</option>
-              <option value="statut">Trier par statut</option>
-            </select>
-          </>
+        <select value={activeFilter} onChange={(e) => setActiveFilter(e.target.value as typeof activeFilter)} className="rounded-[40px] border border-[var(--border)] bg-[var(--card)] px-3 py-[9px] text-[12.5px] font-semibold text-[var(--slate)]">
+          <option value="actif">Actifs seulement</option>
+          <option value="inactif">Inactifs seulement</option>
+          <option value="">Actifs et inactifs</option>
+        </select>
+        {tab === "partner" ? (
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-[40px] border border-[var(--border)] bg-[var(--card)] px-3 py-[9px] text-[12.5px] font-semibold text-[var(--slate)]">
+            <option value="">Tous statuts</option>
+            {ACTIVITY_STATUS_OPTIONS.map((o) => (
+              <option key={o} value={o}>{o}</option>
+            ))}
+          </select>
+        ) : (
+          <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)} className="rounded-[40px] border border-[var(--border)] bg-[var(--card)] px-3 py-[9px] text-[12.5px] font-semibold text-[var(--slate)]">
+            <option value="">Toutes typologies</option>
+            {catOptions.map((o) => (
+              <option key={o} value={o}>{o}</option>
+            ))}
+          </select>
         )}
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className="rounded-[40px] border border-[var(--border)] bg-[var(--card)] px-3 py-[9px] text-[12.5px] font-semibold text-[var(--slate)]">
+          <option value="nom">Trier par nom</option>
+          {tab === "partner" ? <option value="statut">Trier par statut</option> : <option value="typologie">Trier par typologie</option>}
+        </select>
         {!readOnly && (
           <button
             type="button"
