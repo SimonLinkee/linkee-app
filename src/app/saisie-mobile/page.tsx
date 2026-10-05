@@ -112,10 +112,15 @@ function Page() {
       ]);
       setAssocs((as.data ?? []) as Assoc[]);
       const map = new Map<string, Entry>();
-      for (const x of (ds.data ?? []) as { beneficiary_id: string; event_date: string; status: string }[]) map.set(`${x.beneficiary_id}|${x.event_date}`, { key: `${x.beneficiary_id}|${x.event_date}`, beneficiaryId: x.beneficiary_id, date: x.event_date, closed: x.status === "distribuee" });
+      const cancelled = new Set<string>(); // distributions annulées : rien à saisir, on ne les propose pas
+      for (const x of (ds.data ?? []) as { beneficiary_id: string; event_date: string; status: string }[]) {
+        const k = `${x.beneficiary_id}|${x.event_date}`;
+        if (x.status === "annulee") cancelled.add(k);
+        else map.set(k, { key: k, beneficiaryId: x.beneficiary_id, date: x.event_date, closed: x.status === "distribuee" });
+      }
       for (const x of (cs.data ?? []) as { beneficiary_id: string; scheduled_date: string }[]) {
         const k = `${x.beneficiary_id}|${x.scheduled_date}`;
-        if (!map.has(k)) map.set(k, { key: k, beneficiaryId: x.beneficiary_id, date: x.scheduled_date, closed: false });
+        if (!map.has(k) && !cancelled.has(k)) map.set(k, { key: k, beneficiaryId: x.beneficiary_id, date: x.scheduled_date, closed: false });
       }
       const list = Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
       setEntries(list);

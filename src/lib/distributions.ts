@@ -1,15 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 // Status of a distribution, derived from its date and from whether the admin closed it.
-export type DistribStatus = "avenir" | "encours" | "retard" | "cloture";
+export type DistribStatus = "avenir" | "encours" | "retard" | "cloture" | "annulee";
 
 export const isoToday = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-/** À venir (before D-day) · En cours (D-day) · Clôturé (validated) · En retard (not closed by D+1). */
-export function distribStatus(date: string, closed: boolean): DistribStatus {
+/** À venir (before D-day) · En cours (D-day) · Clôturé (validated) · En retard (not closed by D+1) · Annulée (with a reason). */
+export function distribStatus(date: string, closed: boolean, cancelled = false): DistribStatus {
+  if (cancelled) return "annulee";
   if (closed) return "cloture";
   const t = isoToday();
   if (date > t) return "avenir";
@@ -22,6 +23,7 @@ export const STATUS_UI: Record<DistribStatus, { label: string; bg: string; fg: s
   encours: { label: "En cours", bg: "rgba(42,120,214,0.16)", fg: "#2a78d6" },
   retard: { label: "À clôturer — en retard", bg: "var(--critical-bg)", fg: "var(--critical)" },
   cloture: { label: "Clôturé", bg: "var(--good-bg)", fg: "var(--good)" },
+  annulee: { label: "Annulée", bg: "var(--track)", fg: "var(--critical)" },
 };
 
 /** How many distributions of a city should have been closed by yesterday and are not (saved ones and planned drop-offs). */
@@ -36,8 +38,8 @@ export async function countLateDistributions(supabase: SupabaseClient, cityId: s
   const ids = ((b.data ?? []) as { id: string; category: string | null; fiche: { pinned?: boolean } | null }[]).filter((x) => x.category === "Distribution Linkee" || x.fiche?.pinned).map((x) => x.id);
   if (!ids.length || d.error) return 0;
   const saved = (d.data ?? []) as { beneficiary_id: string; event_date: string; status: string }[];
-  const closed = new Set(saved.filter((x) => x.status === "distribuee").map((x) => `${x.beneficiary_id}|${x.event_date}`));
-  const late = new Set(saved.filter((x) => x.status !== "distribuee" && x.event_date < today).map((x) => `${x.beneficiary_id}|${x.event_date}`));
+  const closed = new Set(saved.filter((x) => x.status === "distribuee" || x.status === "annulee").map((x) => `${x.beneficiary_id}|${x.event_date}`));
+  const late = new Set(saved.filter((x) => x.status === "prevue" && x.event_date < today).map((x) => `${x.beneficiary_id}|${x.event_date}`));
   const c = await supabase.from("collectes").select("beneficiary_id,scheduled_date").eq("city_id", cityId).eq("kind", "dropoff").eq("source", "planning").in("beneficiary_id", ids).gte("scheduled_date", sinceIso).lt("scheduled_date", today).neq("status", "annule");
   for (const r of (c.data ?? []) as { beneficiary_id: string; scheduled_date: string }[]) {
     const k = `${r.beneficiary_id}|${r.scheduled_date}`;

@@ -55,6 +55,20 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: "/calendrier",
+    label: "Calendrier",
+    icon: (
+      <>
+        <rect x="3.5" y="4.5" width="17" height="16" rx="2" />
+        <path d="M3.5 9.5 H20.5 M8 3 V6.5 M16 3 V6.5" />
+        <circle cx="8.5" cy="13.5" r="1" fill="currentColor" />
+        <circle cx="12" cy="13.5" r="1" fill="currentColor" />
+        <circle cx="15.5" cy="13.5" r="1" fill="currentColor" />
+        <circle cx="8.5" cy="17" r="1" fill="currentColor" />
+      </>
+    ),
+  },
+  {
     href: "/distributions",
     label: "Distributions",
     icon: (
@@ -189,9 +203,9 @@ export function Sidebar() {
   // Superadmin: everything · Responsable d'antenne: Distribution, Stock, Planning · Resp. Distribution: Distribution only
   // Superadmin, Comptabilité et Responsable d'antenne (pour sa ville) voient tout le menu ; la section "Superadmin"
   // (Villes & comptes, Historique) ne s'affiche que pour le Superadmin.
-  const rolePaths: string[] | null = me.role === "resp_distribution" ? ["/distributions", "/organigramme", "/profil", "/remontees"] : me.role === "resp_rh" ? ["/organigramme", "/profil", "/remontees"] : null;
+  const rolePaths: string[] | null = me.role === "resp_distribution" ? ["/calendrier", "/distributions", "/organigramme", "/profil", "/remontees"] : me.role === "resp_rh" ? ["/calendrier", "/organigramme", "/profil", "/remontees"] : null;
   // « Remontées » : onglet utilisateur pour tous les rôles sauf le Superadmin, qui a « Remontées APP » à la place
-  const visibleNav = (isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/flotte", "/profil", "/valeur-des-dons", "/comptabilite", "/organigramme", "/remontees"].includes(n.href)) : NAV_ITEMS)
+  const visibleNav = (isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/calendrier", "/flotte", "/profil", "/valeur-des-dons", "/comptabilite", "/organigramme", "/remontees"].includes(n.href)) : NAV_ITEMS)
     .filter((n) => (me.role ? !rolePaths || rolePaths.includes(n.href) : false))
     .filter((n) => n.href !== "/remontees" || me.role !== "admin_principal");
   const remonteeBadge = useRemonteeBadge();

@@ -9,6 +9,7 @@ import PhotoStrip from "@/components/PhotoStrip";
 import { STATUS_UI, distribStatus } from "@/lib/distributions";
 
 /* ---------------- types ---------------- */
+type DbStatus = "prevue" | "distribuee" | "annulee";
 type Place = { id: string; name: string; cat: string; address: string };
 type Line = {
   key: string;
@@ -36,7 +37,10 @@ type Draft = {
   volunteers: string;
   coordinators: string;
   flTarget: string;
-  status: "prevue" | "distribuee";
+  status: DbStatus;
+  cancelReason: string;
+  cancelledAt: string | null;
+  cancelledBy: string | null;
   receivedOk: boolean;
   photoPaths: string[];
   eventPhotos: string[];
@@ -54,7 +58,10 @@ type DbDist = {
   volunteers_total: number | null;
   coordinators: number | null;
   fl_target_kg: number | string | null;
-  status: "prevue" | "distribuee";
+  status: DbStatus;
+  cancel_reason: string | null;
+  cancelled_at: string | null;
+  cancelled_by: string | null;
   received_ok: boolean;
   photo_paths: string[] | null;
   event_photo_paths: string[] | null;
@@ -64,7 +71,7 @@ type DbDist = {
 };
 type DbLine = Partial<Record<Exclude<keyof Line, "key">, string | number | null>> & { sort_order: number };
 type PlanDrop = { id: string; beneficiary_id: string; scheduled_date: string; status: string; collecte_items: { denree: string | null; name: string | null; kg: number | string; source_collecte_id: string | null }[] | null };
-type Entry = { key: string; beneficiaryId: string; date: string; status: "prevue" | "distribuee"; saved: boolean; registered: number | null; baskets: number | null; planned: boolean };
+type Entry = { key: string; beneficiaryId: string; date: string; status: DbStatus; saved: boolean; registered: number | null; baskets: number | null; planned: boolean };
 
 /* ---------------- helpers ---------------- */
 const CATS = ["F&L", "Boulang", "Sec", "Frais", "Plats préparés", "Hygiène", "Autre"];
@@ -92,6 +99,8 @@ const OPTIONS: Record<string, string[]> = {
   geo_label: ["Local", "France", "Monde"],
 };
 const STOCK_SUPPLIER = "Stock Linkee";
+// motifs proposés pour l'annulation d'une distribution (« Autre » demande une précision)
+const CANCEL_MOTIFS = ["Météo", "Lieu indisponible", "Pas assez de denrées", "Pas assez de bénévoles", "Problème de véhicule / logistique", "Décision du partenaire", "Autre"];
 
 const blankLine = (): Line => ({ key: uid(), category: "F&L", product: "", nb_colis: "", colis_weight_kg: "", weight_kg: "", supplier: "", don_pct: "", delivery_mode: "", eco_label: "", geo_label: "", source_collecte_id: null });
 
@@ -137,6 +146,9 @@ function dbToDraft(d: DbDist): Draft {
     coordinators: s(d.coordinators),
     flTarget: s(d.fl_target_kg),
     status: d.status,
+    cancelReason: d.cancel_reason ?? "",
+    cancelledAt: d.cancelled_at,
+    cancelledBy: d.cancelled_by,
     receivedOk: d.received_ok,
     photoPaths: d.photo_paths ?? [],
     eventPhotos: d.event_photo_paths ?? [],
@@ -158,7 +170,7 @@ export default function DistributionsPage() {
   const [drops, setDrops] = useState<PlanDrop[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"semaine" | "all" | "encours" | "avenir" | "retard" | "cloture">("semaine"); // par défaut : la semaine en cours
+  const [filter, setFilter] = useState<"semaine" | "all" | "encours" | "avenir" | "retard" | "cloture" | "annulee">("semaine"); // par défaut : la semaine en cours
   const [selKey, setSelKey] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
@@ -228,13 +240,13 @@ export default function DistributionsPage() {
     if (e) void open(e);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries, loading]);
-  const stOf = (e: { date: string; status: string }) => distribStatus(e.date, e.status === "distribuee");
+  const stOf = (e: { date: string; status: string }) => distribStatus(e.date, e.status === "distribuee", e.status === "annulee");
   // semaine en cours, du lundi au dimanche
   const weekFrom = (() => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return isoOf(d); })();
   const weekTo = (() => { const d = new Date(weekFrom + "T12:00:00"); d.setDate(d.getDate() + 6); return isoOf(d); })();
   const inWeek = (e: { date: string }) => e.date >= weekFrom && e.date <= weekTo;
   const shown = entries.filter((e) => filter === "all" || (filter === "semaine" ? inWeek(e) : stOf(e) === filter));
-  const count = (k: "encours" | "avenir" | "retard" | "cloture") => entries.filter((e) => stOf(e) === k).length;
+  const count = (k: "encours" | "avenir" | "retard" | "cloture" | "annulee") => entries.filter((e) => stOf(e) === k).length;
   const nLate = count("retard");
 
   /* ---------- open one distribution (the landing page) ---------- */
@@ -267,7 +279,7 @@ export default function DistributionsPage() {
     else {
       const mine = drops.filter((c) => `${c.beneficiary_id}|${c.scheduled_date}` === e.key);
       const lines = await linesFromItems(mine.flatMap((c) => c.collecte_items ?? []));
-      d = { beneficiaryId: e.beneficiaryId, date: e.date, registered: "", presence: "80", baskets: "", volunteers: "", coordinators: "", flTarget: "", status: "prevue", receivedOk: false, photoPaths: [], eventPhotos: [], interventions: [], comment: "", lines };
+      d = { beneficiaryId: e.beneficiaryId, date: e.date, registered: "", presence: "80", baskets: "", volunteers: "", coordinators: "", flTarget: "", status: "prevue", cancelReason: "", cancelledAt: null, cancelledBy: null, receivedOk: false, photoPaths: [], eventPhotos: [], interventions: [], comment: "", lines };
     }
     setDraft(d);
     window.setTimeout(() => detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
@@ -303,6 +315,9 @@ export default function DistributionsPage() {
         coordinators: numOrNull(d.coordinators) == null ? null : Math.round(num(d.coordinators)),
         fl_target_kg: numOrNull(d.flTarget),
         status: d.status,
+        cancel_reason: d.status === "annulee" ? d.cancelReason : null,
+        cancelled_at: d.status === "annulee" ? d.cancelledAt : null,
+        cancelled_by: d.status === "annulee" ? d.cancelledBy : null,
         received_ok: d.receivedOk,
         photo_paths: d.photoPaths,
         event_photo_paths: d.eventPhotos,
@@ -358,6 +373,43 @@ export default function DistributionsPage() {
     await flush();
   }
 
+  /* ---------- annulation (motif obligatoire) ---------- */
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelMotif, setCancelMotif] = useState("");
+  const [cancelDetail, setCancelDetail] = useState("");
+  const [cancelDrop, setCancelDrop] = useState(true);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  // livraisons du planning encore actives pour ce lieu et ce jour (le camion passerait quand même)
+  const plannedDrops = draft ? drops.filter((c) => c.beneficiary_id === draft.beneficiaryId && c.scheduled_date === draft.date) : [];
+  const cancelReason = cancelMotif === "Autre" ? cancelDetail.trim() : [cancelMotif, cancelDetail.trim()].filter(Boolean).join(" — ");
+  function openCancel() {
+    setCancelMotif("");
+    setCancelDetail("");
+    setCancelDrop(true);
+    setCancelOpen(true);
+  }
+  async function confirmCancel() {
+    if (!draft || !cancelReason) return;
+    setCancelBusy(true);
+    const { data: auth } = await supabase.auth.getUser();
+    const reason = cancelReason;
+    const dropIds = cancelDrop ? plannedDrops.map((c) => c.id) : [];
+    edit((d) => ({ ...d, status: "annulee", receivedOk: false, cancelReason: reason, cancelledAt: new Date().toISOString(), cancelledBy: auth.user?.id ?? null }));
+    await flush();
+    if (dropIds.length) {
+      const { error } = await supabase.from("collectes").update({ status: "annule", motif: `Distribution annulée : ${reason}`, done_at: new Date().toISOString() }).in("id", dropIds);
+      if (error) setMsg("Distribution annulée, mais la livraison du planning n'a pas pu être annulée (" + error.message + ") : fais-le dans le Planning.");
+      else await load();
+    }
+    setCancelBusy(false);
+    setCancelOpen(false);
+  }
+  async function restore() {
+    if (!window.confirm("Rétablir cette distribution ? Elle repasse en « prévue ». Si la livraison avait été annulée dans le Planning, pense à la remettre.")) return;
+    edit((d) => ({ ...d, status: "prevue", cancelReason: "", cancelledAt: null, cancelledBy: null }));
+    await flush();
+  }
+
   async function prefillFromDay() {
     if (!draft || !cityId) return;
     const { data } = await supabase
@@ -382,7 +434,7 @@ export default function DistributionsPage() {
     await flush();
     setSelKey(`${newPlace}|${newDate}`);
     dirty.current = false;
-    setDraft({ beneficiaryId: newPlace, date: newDate, registered: "", presence: "80", baskets: "", volunteers: "", coordinators: "", flTarget: "", status: "prevue", receivedOk: false, photoPaths: [], eventPhotos: [], interventions: [], comment: "", lines: [] });
+    setDraft({ beneficiaryId: newPlace, date: newDate, registered: "", presence: "80", baskets: "", volunteers: "", coordinators: "", flTarget: "", status: "prevue", cancelReason: "", cancelledAt: null, cancelledBy: null, receivedOk: false, photoPaths: [], eventPhotos: [], interventions: [], comment: "", lines: [] });
     edit((d) => d); // creates it right away
   }
 
@@ -406,6 +458,8 @@ export default function DistributionsPage() {
 
   const place = draft ? placeById.get(draft.beneficiaryId) : null;
   const done = draft?.status === "distribuee";
+  const cancelled = draft?.status === "annulee";
+  const st = draft ? distribStatus(draft.date, done, cancelled) : "avenir";
 
   function setLine(i: number, k: keyof Line, v: string) {
     edit((d) => ({
@@ -488,7 +542,8 @@ export default function DistributionsPage() {
                 ["avenir", "À venir"],
                 ["retard", `En retard${nLate ? ` ${nLate}` : ""}`],
                 ["cloture", "Clôturées"],
-              ] as ["semaine" | "all" | "encours" | "avenir" | "retard" | "cloture", string][]
+                ["annulee", `Annulées${count("annulee") ? ` ${count("annulee")}` : ""}`],
+              ] as ["semaine" | "all" | "encours" | "avenir" | "retard" | "cloture" | "annulee", string][]
             ).map(([k, l]) => (
               <button key={k} type="button" onClick={() => setFilter(k)} className={`rounded-[40px] border px-3 py-1 text-[11.5px] font-semibold whitespace-nowrap ${filter === k ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : k === "retard" && nLate ? "border-[var(--critical)] text-[var(--critical)]" : "border-[var(--border)] text-[var(--slate)] hover:border-[#2a78d6]"}`}>
                 {l}
@@ -541,14 +596,14 @@ export default function DistributionsPage() {
           ) : (
             <div className="flex flex-col gap-4">
               {/* header */}
-              <div className="rounded-[20px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]" style={{ borderTop: `4px solid ${done ? "var(--good)" : "#2a78d6"}` }}>
+              <div className="rounded-[20px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]" style={{ borderTop: `4px solid ${cancelled ? "var(--critical)" : done ? "var(--good)" : "#2a78d6"}` }}>
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2.5">
                       <h2 className="font-display text-[28px] leading-tight font-black text-[var(--navy)]">{place?.name ?? "Lieu"}</h2>
                       <DistribBadge />
-                      <span className="rounded-[40px] px-3 py-1.5 text-[12px] font-bold" style={{ background: STATUS_UI[distribStatus(draft.date, done)].bg, color: STATUS_UI[distribStatus(draft.date, done)].fg }}>
-                        {STATUS_UI[distribStatus(draft.date, done)].label}
+                      <span className="rounded-[40px] px-3 py-1.5 text-[12px] font-bold" style={{ background: STATUS_UI[st].bg, color: STATUS_UI[st].fg }}>
+                        {STATUS_UI[st].label}
                       </span>
                     </div>
                     <p className="mt-1 text-[13.5px] text-[var(--slate)]">
@@ -558,18 +613,63 @@ export default function DistributionsPage() {
                     <p className={`mt-1 text-[11.5px] font-semibold ${saveState === "saved" ? "text-[var(--good)]" : "text-[var(--slate)]"}`}>{saveState === "saving" ? "Enregistrement…" : saveState === "saved" ? "Modifications enregistrées" : draft.id ? "" : "Pas encore enregistrée — elle le sera dès ta première modification."}</p>
                   </div>
                   <div className="flex flex-col items-end gap-2">
-                    {done ? (
+                    {cancelled ? (
+                      <button type="button" onClick={restore} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-5 py-2.5 font-display text-[14px] font-bold text-[var(--navy)] hover:border-[#2a78d6]">
+                        Rétablir la distribution
+                      </button>
+                    ) : done ? (
                       <>
                         <span className="flex items-center gap-2 rounded-[40px] bg-[var(--good-bg)] px-4 py-2 font-display text-[14px] font-bold text-[var(--good)]">✓ Clôturée — réceptionnée et distribuée</span>
                         <button type="button" onClick={reopen} className="text-[12px] font-semibold text-[var(--slate)] underline">Rouvrir pour corriger</button>
                       </>
                     ) : (
-                      <button type="button" onClick={validate} className="rounded-[40px] bg-[var(--good)] px-6 py-3 font-display text-[15px] font-bold text-white shadow-[var(--shadow)]">
-                        Bien réceptionné et distribué
-                      </button>
+                      <>
+                        <button type="button" onClick={validate} className="rounded-[40px] bg-[var(--good)] px-6 py-3 font-display text-[15px] font-bold text-white shadow-[var(--shadow)]">
+                          Bien réceptionné et distribué
+                        </button>
+                        <button type="button" onClick={openCancel} className="text-[12px] font-semibold text-[var(--critical)] underline">Annuler la distribution</button>
+                      </>
                     )}
                   </div>
                 </div>
+                {cancelled && (
+                  <div className="mt-4 rounded-xl border-[1.5px] border-[var(--critical)] bg-[var(--critical-bg)] px-4 py-3 text-[13px] text-[var(--critical)]">
+                    <span className="font-bold">Distribution annulée</span>
+                    {draft.cancelledAt ? ` le ${new Date(draft.cancelledAt).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}` : ""} — motif : <span className="font-semibold">{draft.cancelReason || "non renseigné"}</span>
+                  </div>
+                )}
+                {cancelOpen && (
+                  <div className="mt-4 rounded-xl border-[1.5px] border-[var(--critical)] bg-[var(--card)] p-4">
+                    <p className="mb-3 font-display text-[16px] font-black text-[var(--navy)]">Annuler la distribution du {fmtDay(draft.date)} ?</p>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className={labelCls}>Motif (obligatoire)</label>
+                        <select className={fieldCls} value={cancelMotif} onChange={(e) => setCancelMotif(e.target.value)}>
+                          <option value="">Choisir un motif…</option>
+                          {CANCEL_MOTIFS.map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className={labelCls}>{cancelMotif === "Autre" ? "Précise le motif (obligatoire)" : "Précision (facultatif)"}</label>
+                        <input className={fieldCls} value={cancelDetail} onChange={(e) => setCancelDetail(e.target.value)} placeholder="Ex : salle prêtée réquisitionnée par la mairie" />
+                      </div>
+                    </div>
+                    {plannedDrops.length > 0 && (
+                      <label className="mt-3 flex items-center gap-2 text-[12.5px] font-semibold text-[var(--navy)]">
+                        <input type="checkbox" checked={cancelDrop} onChange={(e) => setCancelDrop(e.target.checked)} className="h-4 w-4 accent-[var(--critical)]" />
+                        Annuler aussi la livraison prévue au Planning ce jour-là (le camion ne passera pas)
+                      </label>
+                    )}
+                    <div className="mt-4 flex flex-wrap justify-end gap-2">
+                      <button type="button" onClick={() => setCancelOpen(false)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-2 text-[12.5px] font-semibold text-[var(--navy)]">Retour</button>
+                      <button type="button" disabled={!cancelReason || cancelBusy} onClick={confirmCancel} className="rounded-[40px] bg-[var(--critical)] px-5 py-2 font-display text-[13.5px] font-bold text-white disabled:opacity-50">
+                        {cancelBusy ? "Annulation…" : "Confirmer l'annulation"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* key figures: green = to fill in, grey = calculated */}

@@ -136,6 +136,23 @@ export default function VillagePage() {
     setAssocs((prev) => prev.map((x) => (x.id === a.id ? { ...x, archived: !a.archived } : x)));
     if (!a.archived) setSelId(null);
   }
+  // Supprime définitivement l'association. Ses notes et ses interventions sur les distributions
+  // partent avec (on delete cascade) : le message le dit, et propose l'archivage pour garder l'historique.
+  async function deleteAssoc(a: Assoc) {
+    const nInter = stats.get(a.id)?.count ?? 0;
+    const { count: nNotes } = await supabase.from("association_notes").select("id", { count: "exact", head: true }).eq("association_id", a.id);
+    const lies = [nInter ? `${nInter} intervention${nInter > 1 ? "s" : ""} sur les distributions (commentaires et photos compris)` : "", nNotes ? `${nNotes} note${nNotes > 1 ? "s" : ""} d'échange` : ""].filter(Boolean);
+    const msg = lies.length
+      ? `Supprimer « ${a.name} » ?\n\nSeront aussi supprimées : ${lies.join(" et ")}.\nPour garder cet historique, utilise plutôt « Archiver ».\n\nCette action est définitive.`
+      : `Supprimer « ${a.name} » ? Cette action est définitive.`;
+    if (!window.confirm(msg)) return;
+    window.clearTimeout(timers.current[a.id]); // pas d'enregistrement en attente sur une asso supprimée
+    const { data, error } = await supabase.from("associations").delete().eq("id", a.id).select("id");
+    if (error || !data?.length) return setErr("Suppression impossible : " + (error?.message ?? "la base l'a refusée (droits insuffisants ?)"));
+    setAssocs((prev) => prev.filter((x) => x.id !== a.id));
+    setInters((prev) => prev.filter((x) => x.association_id !== a.id));
+    setSelId(null);
+  }
   async function addNote() {
     if (!selId || !noteBody.trim()) return;
     const { data, error } = await supabase.from("association_notes").insert({ association_id: selId, note_date: noteDate, kind: noteKind, body: noteBody.trim() }).select("id,note_date,kind,body").single();
@@ -225,9 +242,14 @@ export default function VillagePage() {
                       <span className={`font-semibold text-[var(--good)] transition-opacity ${saved ? "opacity-100" : "opacity-0"}`}>Modifications enregistrées</span>
                     </div>
                   </div>
-                  <button type="button" onClick={() => toggleArchive(cur)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-2 text-[12.5px] font-semibold text-[var(--navy)] hover:border-[#eb6834]">
-                    {cur.archived ? "Restaurer" : "Archiver"}
-                  </button>
+                  <div className="flex flex-none items-center gap-2">
+                    <button type="button" onClick={() => toggleArchive(cur)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-2 text-[12.5px] font-semibold text-[var(--navy)] hover:border-[#eb6834]">
+                      {cur.archived ? "Restaurer" : "Archiver"}
+                    </button>
+                    <button type="button" onClick={() => deleteAssoc(cur)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-2 text-[12.5px] font-semibold text-[var(--critical)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)]">
+                      Supprimer
+                    </button>
+                  </div>
                 </div>
 
                 <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">

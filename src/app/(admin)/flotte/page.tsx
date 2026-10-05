@@ -179,7 +179,12 @@ export default function FlottePage() {
   }
   // Retire un véhicule de la flotte (sa fiche, ses contrôles, devis & factures et l'historique de ses photos)
   async function deleteVehicle(v: Vehicle) {
-    if (!window.confirm(`Supprimer « ${v.name}${v.plate ? ` (${v.plate})` : ""} » de la flotte ?\n\nSa fiche, ses contrôles, révisions, devis & factures et l'historique de ses photos seront supprimés. Cette action est définitive.`)) return;
+    // Ce qui part avec le véhicule : sa fiche (factures incluses) et ses événements (photos du lundi, contrôles, tickets) via on delete cascade
+    const { count: nEvents } = await supabase.from("vehicle_events").select("id", { count: "exact", head: true }).eq("vehicle_id", v.id);
+    const lies = [v.invoices.length ? `${v.invoices.length} devis/facture${v.invoices.length > 1 ? "s" : ""}` : "", nEvents ? `${nEvents} photo${nEvents > 1 ? "s" : ""}, contrôle${nEvents > 1 ? "s" : ""} ou ticket${nEvents > 1 ? "s" : ""} déclarés par les logisticiens` : ""].filter(Boolean);
+    const label = v.plate ? v.plate : v.name;
+    const msg = `Supprimer le véhicule ${label} ?` + (lies.length ? `\n\nSeront aussi supprimés : ${lies.join(" et ")}.` : "") + `\n\nCette action est définitive.`;
+    if (!window.confirm(msg)) return;
     if (saveTimer.current) window.clearTimeout(saveTimer.current); // pas d'enregistrement en attente sur un véhicule supprimé
     const { data, error } = await supabase.from("vehicles").delete().eq("id", v.id).select("id");
     if (error || !data?.length) return showToast("Suppression impossible : " + (error?.message ?? "la base l'a refusée (droits insuffisants ?)"));
@@ -401,11 +406,12 @@ export default function FlottePage() {
               type="button"
               onClick={() => deleteVehicle(current)}
               title="Supprimer ce véhicule de la flotte"
-              className="flex h-9 w-9 flex-none items-center justify-center rounded-full text-[var(--muted)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]"
+              className="flex flex-none items-center gap-1.5 rounded-[40px] border-[1.5px] border-[var(--border)] px-3 py-1.5 text-[12.5px] font-semibold text-[var(--critical)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)]"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
                 <path d="M4 7 H20 M9 7 V4.5 A1 1 0 0 1 10 3.5 H14 A1 1 0 0 1 15 4.5 V7 M6.5 7 L7.3 19.5 A2 2 0 0 0 9.3 21.4 H14.7 A2 2 0 0 0 16.7 19.5 L17.5 7" />
               </svg>
+              Supprimer
             </button>
             <label className="flex flex-none cursor-pointer items-center gap-2 text-[12.5px] font-semibold text-[var(--navy)]" title="Un véhicule loué n'a pas de suivi d'entretien : seules les photos du lundi matin restent actives.">
               <input type="checkbox" checked={!!current.rented} onChange={(e) => updateCurrent((v) => ({ ...v, rented: e.target.checked }))} className="h-4 w-4 accent-[var(--turquoise)]" />

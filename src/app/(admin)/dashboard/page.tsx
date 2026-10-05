@@ -219,6 +219,7 @@ export default function DashboardPage() {
         .from("distributions")
         .select("id,event_date,distribution_lines(category,weight_kg)")
         .eq("beneficiary_id", activeBeneficiaryId)
+        .neq("status", "annulee")
         .gte("event_date", isoOf(range.from))
         .lte("event_date", isoOf(range.to));
       if (cancelled) return;
