@@ -263,6 +263,10 @@ export default function PlanningPage() {
     if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) setCurrentDate(new Date(d + "T00:00:00"));
   }, []);
   const [stops, setStops] = useState<Stop[]>([]);
+  // date à laquelle appartiennent les arrêts chargés : au changement de jour, `stops` contient encore ceux du jour
+  // précédent le temps du chargement — l'ajout automatique et l'enregistrement attendent donc que les deux coïncident
+  const [stopsIso, setStopsIso] = useState<string | null>(null);
+  const isoRef = useRef<string | null>(null); // jour réellement affiché, pour ignorer les réponses arrivées trop tard
   const [loadingDay, setLoadingDay] = useState(true);
   const [geo, setGeo] = useState<Record<string, LatLng>>({});
   const [weekLines, setWeekLines] = useState<WeekLine[]>([]);
@@ -418,12 +422,16 @@ export default function PlanningPage() {
 
   /* ---------- load the selected day (+ its checklist override + the week) ---------- */
   async function loadDay() {
+    const forIso = iso;
     setLoadingDay(true);
+    setStopsIso(null);
     dirty.current = false;
-    const { data, error } = await supabase.from("collectes").select(SELECT_DAY).eq("city_id", cityId ?? "").eq("scheduled_date", iso).eq("source", "planning").order("sort_order");
+    const { data, error } = await supabase.from("collectes").select(SELECT_DAY).eq("city_id", cityId ?? "").eq("scheduled_date", forIso).eq("source", "planning").order("sort_order");
+    if (isoRef.current !== forIso) return; // on a changé de jour entre-temps : ce chargement n'est plus le bon
     if (error) fail("Chargement impossible", error.message);
     const list = ((data ?? []) as unknown as DbCollecte[]).map((r) => rowToStop(r, depotAddress));
     setStops(list);
+    setStopsIso(forIso);
     // rows that were never scheduled (fresh copies) get their times written once
     if ((data ?? []).some((r) => (r as { scheduled_time: string | null }).scheduled_time === null && (r as { status: string }).status !== "annule")) dirty.current = true;
     setLoadingDay(false);
@@ -512,6 +520,7 @@ export default function PlanningPage() {
   }
   useEffect(() => {
     if (!cityId) return;
+    isoRef.current = iso;
     loadDay();
     loadDayStart();
     loadOverride();
@@ -528,7 +537,7 @@ export default function PlanningPage() {
   // jamais consulté).
   const autoDropoffChecked = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (ro || loadingDay || !cityId || !places.length) return;
+    if (ro || loadingDay || !cityId || !places.length || stopsIso !== iso) return;
     if (iso < isoDate(new Date())) return;
     const key = `${cityId}|${iso}`;
     if (autoDropoffChecked.current.has(key)) return;
@@ -546,11 +555,11 @@ export default function PlanningPage() {
     (async () => {
       for (const p of toAdd) await insertStop(p, p.kind, {});
     })();
-  }, [ro, loadingDay, cityId, iso, places, stops]);
+  }, [ro, loadingDay, cityId, iso, places, stops, stopsIso]);
 
   /* ---------- write back order / times after user edits ---------- */
   useEffect(() => {
-    if (!dirty.current || !cityId || loadingDay || stops.length === 0) return;
+    if (!dirty.current || !cityId || loadingDay || stops.length === 0 || stopsIso !== iso) return;
     if (persistTimer.current) window.clearTimeout(persistTimer.current);
     persistTimer.current = window.setTimeout(async () => {
       const rows = sched.stops.map((st, i) => ({
@@ -612,6 +621,7 @@ export default function PlanningPage() {
   /* ---------- stops ---------- */
   async function insertStop(place: Place, kind: Kind, extra: { comment?: string; denree?: string; volume?: number | null }, insertAt?: number) {
     if (!cityId) return showToast("Aucune ville n'est associée à ton compte.");
+    const forIso = iso;
     const stopDuration = kind === "dechetterie" ? 60 : (place.duration ?? 10);
     const { data, error } = await supabase
       .from("collectes")
@@ -621,7 +631,7 @@ export default function PlanningPage() {
         partner_id: place.partnerId,
         beneficiary_id: place.beneficiaryId,
         label: !place.partnerId && !place.beneficiaryId ? place.name : null,
-        scheduled_date: iso,
+        scheduled_date: forIso,
         sort_order: stops.length,
         status: "todo",
         comment: extra.comment || null,
@@ -632,6 +642,7 @@ export default function PlanningPage() {
       .select("id")
       .single();
     if (error || !data) return fail("Ajout impossible", error?.message ?? "erreur inconnue");
+    if (isoRef.current !== forIso) return; // l'arrêt est bien créé à sa date, mais on affiche un autre jour : ne pas le mélanger
     const stop: Stop = {
       id: data.id as string, name: place.name, cat: place.cat, kind, duration: stopDuration, status: "planifie", dbStatus: "todo",
       comment: extra.comment || undefined, address: place.address, partnerId: place.partnerId, beneficiaryId: place.beneficiaryId,
