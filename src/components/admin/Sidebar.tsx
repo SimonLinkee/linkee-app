@@ -240,7 +240,8 @@ export function Sidebar() {
   // (Villes & comptes, Historique) ne s'affiche que pour le Superadmin.
   const rolePaths: string[] | null = me.role === "resp_distribution" ? ["/calendrier", "/distributions", "/village-associatif", "/organigramme", "/profil", "/remontees"] : me.role === "resp_rh" ? ["/calendrier", "/organigramme", "/profil", "/remontees"] : null;
   // « Remontées » : onglet utilisateur pour tous les rôles sauf le Superadmin, qui a « Remontées APP » à la place
-  const visibleNav = (isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/calendrier", "/flotte", "/profil", "/valeur-des-dons", "/comptabilite", "/organigramme", "/remontees"].includes(n.href)) : NAV_ITEMS)
+  // Le menu est le même quelle que soit la ville affichée (et en vue « Toutes les villes ») : seules les pages d'une ville demandent d'en choisir une.
+  const visibleNav = NAV_ITEMS
     .filter((n) => (me.role ? !rolePaths || rolePaths.includes(n.href) : false))
     .filter((n) => n.href !== "/remontees" || me.role !== "admin_principal");
   const activity = useNavActivity(pathname, city?.id ?? null, isAll, me.role);
