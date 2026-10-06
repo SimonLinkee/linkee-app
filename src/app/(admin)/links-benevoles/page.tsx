@@ -97,7 +97,7 @@ export default function LinksBenevolesAdminPage() {
     <div>
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="flex items-center gap-2.5 font-display text-[32px] leading-none font-black">Links Bénévoles <BetaBadge label="Bêta test" /></h1>
+          <h1 className="flex items-center gap-2.5 font-display text-[32px] leading-none font-black">Link citoyen <BetaBadge label="Bêta test" /></h1>
           <p className="mt-1 text-[13.5px] text-[var(--slate)]">Petites collectes confiées à des bénévoles (Linkers) — {city?.name}.</p>
         </div>
       </div>

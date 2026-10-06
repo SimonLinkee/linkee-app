@@ -11,6 +11,7 @@ import { useCity } from "@/components/admin/CityContext";
 import { countLateDistributions } from "@/lib/distributions";
 import { useRemonteeAppBadge, useRemonteeBadge } from "@/lib/remontees";
 import { useMyPhoto } from "@/lib/profilePhoto";
+import { useNavActivity } from "@/lib/navActivity";
 
 /** readable text colour (white or dark navy) on top of a hex background */
 function textOn(hex: string) {
@@ -56,7 +57,7 @@ const NAV_ITEMS = [
   },
   {
     href: "/calendrier",
-    label: "Calendrier",
+    label: "Calendrier et actu",
     icon: (
       <>
         <rect x="3.5" y="4.5" width="17" height="16" rx="2" />
@@ -123,7 +124,7 @@ const NAV_ITEMS = [
   },
   {
     href: "/links-benevoles",
-    label: "Links Bénévoles",
+    label: "Link citoyen",
     icon: (
       <>
         <circle cx="8" cy="8" r="2.6" />
@@ -178,6 +179,17 @@ const NAV_ITEMS = [
   },
 ];
 
+// Raccourcis tout en haut (entre le compte et le choix de la ville), qui clignotent quand il y a du nouveau
+const PINNED = ["/calendrier", "/todo"];
+// Groupes d'onglets, séparés par un trait discret : pilotage · opérations de terrain · réseau de partenaires · équipe
+const NAV_GROUPS: string[][] = [
+  ["/dashboard", "/valeur-des-dons"],
+  ["/planning", "/distributions", "/stock", "/flotte", "/links-benevoles"],
+  ["/partenaires", "/comptabilite"],
+  ["/organigramme", "/remontees", "/profil"],
+];
+type NavItem = (typeof NAV_ITEMS)[number];
+
 const SUPER_ITEM = {
   href: "/villes-comptes",
   label: "Villes & comptes",
@@ -208,6 +220,11 @@ export function Sidebar() {
   const visibleNav = (isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/calendrier", "/flotte", "/profil", "/valeur-des-dons", "/comptabilite", "/organigramme", "/remontees"].includes(n.href)) : NAV_ITEMS)
     .filter((n) => (me.role ? !rolePaths || rolePaths.includes(n.href) : false))
     .filter((n) => n.href !== "/remontees" || me.role !== "admin_principal");
+  const activity = useNavActivity(pathname, city?.id ?? null, isAll, me.role);
+  const byHref = new Map<string, NavItem>(visibleNav.map((n) => [n.href, n]));
+  const pinnedItems = PINNED.map((h) => byHref.get(h)).filter((x): x is NavItem => !!x);
+  const placed = new Set<string>([...PINNED, ...NAV_GROUPS.flat()]);
+  const groups = [...NAV_GROUPS.map((g) => g.map((h) => byHref.get(h)).filter((x): x is NavItem => !!x)), visibleNav.filter((n) => !placed.has(n.href))].filter((g) => g.length > 0);
   const remonteeBadge = useRemonteeBadge();
   const myPhoto = useMyPhoto();
   const unseenRemontees = useRemonteeAppBadge(me.role === "admin_principal");
@@ -234,6 +251,47 @@ export function Sidebar() {
     await supabase.auth.signOut();
     router.push("/login");
     router.refresh();
+  }
+
+  function renderItem(item: NavItem) {
+        const active = pathname === item.href || pathname.startsWith(item.href + "/") || (item.href === "/links-benevoles" && pathname.startsWith("/linker"));
+        const fresh = item.href === "/calendrier" ? activity.calendar : item.href === "/todo" ? activity.todo : 0; // nouveautés des autres depuis ta dernière visite
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            style={"accent" in item && item.accent ? (active ? { background: "#B23B72", color: "#fff" } : { color: "#F09BBE" }) : undefined}
+            title={fresh > 0 ? `${fresh} nouveauté${fresh > 1 ? "s" : ""} depuis ta dernière visite` : undefined}
+            className={`flex items-center gap-[11px] rounded-xl px-3 py-2 text-sm font-semibold ${fresh > 0 && !active ? "nav-blink " : ""}${
+              "accent" in item && item.accent
+                ? active ? "" : "hover:bg-white/8"
+                : active
+                  ? "bg-[var(--turquoise)] text-[#04262e]"
+                  : "text-[var(--panel-fg-dim)] hover:bg-white/8 hover:text-[var(--panel-fg)]"
+            }`}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.7}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-[18px] w-[18px] flex-none"
+            >
+              {item.icon}
+            </svg>
+            <span className="flex-1">{item.label}</span>
+            {fresh > 0 && !active && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--turquoise)] px-1.5 text-[11px] font-bold text-[#04262e]">{fresh}</span>}
+            {item.href === "/links-benevoles" && <BetaBadge onDark={!active} className={active ? "ring-1 ring-[#04262e]/40" : ""} />}
+            {item.href === "/remontees" && remonteeBadge > 0 && (
+              <span title="Nouvelles réponses" className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#B23B72] px-1.5 text-[11px] font-bold text-white ring-1 ring-white/70">{remonteeBadge}</span>
+            )}
+            {item.href === "/distributions" && lateDist > 0 && (
+              <span title="Distributions à clôturer" className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--critical)] px-1.5 text-[11px] font-bold text-white">{lateDist}</span>
+            )}
+          </Link>
+        );
   }
 
   return (
@@ -278,6 +336,8 @@ export function Sidebar() {
           </svg>
         </button>
       </div>
+
+      {pinnedItems.length > 0 && <div className="mb-3.5 flex flex-none flex-col gap-[2px]">{pinnedItems.map((item) => renderItem(item))}</div>}
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {/* big city selector: solid colour of the city you are browsing */}
@@ -354,43 +414,12 @@ export function Sidebar() {
         )}
 
         <nav className="flex flex-none flex-col gap-[2px]">
-          {visibleNav.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(item.href + "/") || (item.href === "/links-benevoles" && pathname.startsWith("/linker"));
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                style={"accent" in item && item.accent ? (active ? { background: "#B23B72", color: "#fff" } : { color: "#F09BBE" }) : undefined}
-                className={`flex items-center gap-[11px] rounded-xl px-3 py-2 text-sm font-semibold ${
-                  "accent" in item && item.accent
-                    ? active ? "" : "hover:bg-white/8"
-                    : active
-                      ? "bg-[var(--turquoise)] text-[#04262e]"
-                      : "text-[var(--panel-fg-dim)] hover:bg-white/8 hover:text-[var(--panel-fg)]"
-                }`}
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={1.7}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="h-[18px] w-[18px] flex-none"
-                >
-                  {item.icon}
-                </svg>
-                <span className="flex-1">{item.label}</span>
-                {item.href === "/links-benevoles" && <BetaBadge onDark={!active} className={active ? "ring-1 ring-[#04262e]/40" : ""} />}
-                {item.href === "/remontees" && remonteeBadge > 0 && (
-                  <span title="Nouvelles réponses" className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#B23B72] px-1.5 text-[11px] font-bold text-white ring-1 ring-white/70">{remonteeBadge}</span>
-                )}
-                {item.href === "/distributions" && lateDist > 0 && (
-                  <span title="Distributions à clôturer" className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--critical)] px-1.5 text-[11px] font-bold text-white">{lateDist}</span>
-                )}
-              </Link>
-            );
-          })}
+          {groups.map((g, gi) => (
+            <div key={gi} className="flex flex-col gap-[2px]">
+              {gi > 0 && <div className="mx-3 my-1.5 h-px bg-white/10" aria-hidden="true" />}
+              {g.map((item) => renderItem(item))}
+            </div>
+          ))}
           {me.role === "admin_principal" && (
             <>
           <div className="my-2 h-px bg-white/12" />

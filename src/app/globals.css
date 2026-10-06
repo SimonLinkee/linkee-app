@@ -123,3 +123,13 @@
   --font-display: var(--font-barlow-condensed);
   --font-script: var(--font-pacifico);
 }
+
+/* Onglet du menu qui clignote doucement quand il y a du nouveau (Calendrier et actu, TODO) */
+@keyframes nav-blink {
+  0%, 100% { background-color: rgba(255, 255, 255, 0.04); }
+  50% { background-color: rgba(79, 193, 214, 0.42); }
+}
+.nav-blink { animation: nav-blink 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .nav-blink { animation: none; background-color: rgba(79, 193, 214, 0.3); }
+}

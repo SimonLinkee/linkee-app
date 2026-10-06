@@ -86,7 +86,7 @@ export default function MobileLinksPage() {
 
   return (
     <div>
-      <h1 className="mb-1 flex items-center gap-2 font-display text-[26px] leading-tight font-black text-[var(--navy)]">Links Bénévoles <BetaBadge label="Bêta test" /></h1>
+      <h1 className="mb-1 flex items-center gap-2 font-display text-[26px] leading-tight font-black text-[var(--navy)]">Link citoyen <BetaBadge label="Bêta test" /></h1>
       <p className="mb-4 text-[13px] text-[var(--slate)]">Petites collectes confiées à des bénévoles (Linkers) — {city?.name ?? ""}.</p>
       <BetaNote href="/mobile/remontees" className="mb-4" />
 

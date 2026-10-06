@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity, type City } from "@/components/admin/CityContext";
 import { isSuper } from "@/lib/roles";
+import { CAL_ICONS, iconOf, safeLink } from "@/lib/calendarIcons";
+import SharedGallery from "@/components/SharedGallery";
 
 // Calendrier multi-villes + encart ACTU (news Linkee national). Migration 058.
 // Lecture : équipe interne, toutes villes (vue nationale par défaut).
@@ -19,11 +21,13 @@ type CalEvent = {
   end_time: string | null;
   place: string | null;
   description: string | null;
+  link: string | null;
+  icon: string | null;
 };
 type News = { id: string; title: string; body: string | null; pinned: boolean; published_on: string };
-type Form = { id?: string; title: string; date: string; start: string; end: string; cityId: string; place: string; description: string };
+type Form = { id?: string; title: string; date: string; start: string; end: string; cityId: string; place: string; description: string; link: string; icon: string };
 
-const EV_COLS = "id,city_id,title,event_date,start_time,end_time,place,description";
+const EV_COLS = "id,city_id,title,event_date,start_time,end_time,place,description,link,icon";
 const DOWS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 const isoOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const hm = (t: string | null) => (t ? t.slice(0, 5) : "");
@@ -132,16 +136,18 @@ export default function CalendrierPage() {
   function openNew(date?: string) {
     if (!writable.length) return;
     const defCity = writable.find((c) => c.id === city?.id)?.id ?? writable[0].id;
-    setForm({ title: "", date: date ?? today, start: "10:00", end: "12:00", cityId: defCity, place: "", description: "" });
+    setForm({ title: "", date: date ?? today, start: "", end: "", cityId: defCity, place: "", description: "", link: "", icon: "" });
   }
   function openEvent(e: CalEvent) {
-    setForm({ id: e.id, title: e.title, date: e.event_date, start: hm(e.start_time), end: hm(e.end_time), cityId: e.city_id, place: e.place ?? "", description: e.description ?? "" });
+    setForm({ id: e.id, title: e.title, date: e.event_date, start: hm(e.start_time), end: hm(e.end_time), cityId: e.city_id, place: e.place ?? "", description: e.description ?? "", link: e.link ?? "", icon: e.icon ?? "" });
   }
   async function saveEvent() {
     if (!form || !form.title.trim() || !form.date || !canWrite(form.cityId)) return;
     if (form.start && form.end && form.end < form.start) return setErr("L'heure de fin est avant l'heure de début.");
+    const link = safeLink(form.link);
+    if (form.link.trim() && !link) return setErr("Le lien n'est pas valide : colle une adresse qui commence par http:// ou https://.");
     setBusy(true);
-    const row = { city_id: form.cityId, title: form.title.trim(), event_date: form.date, start_time: form.start || null, end_time: form.end || null, place: form.place.trim() || null, description: form.description.trim() || null };
+    const row = { city_id: form.cityId, title: form.title.trim(), event_date: form.date, start_time: form.start || null, end_time: form.end || null, place: form.place.trim() || null, description: form.description.trim() || null, link, icon: form.icon || null };
     let error;
     if (form.id) ({ error } = await supabase.from("calendar_events").update({ ...row, updated_at: new Date().toISOString() }).eq("id", form.id));
     else {
@@ -155,7 +161,7 @@ export default function CalendrierPage() {
     await loadEvents();
   }
   async function deleteEvent() {
-    if (!form?.id || !window.confirm(`Supprimer l'événement « ${form.title} » ? Cette action est définitive.`)) return;
+    if (!form?.id || !window.confirm(`Supprimer l'entrée « ${form.title} » ? Cette action est définitive.`)) return;
     setBusy(true);
     const { data, error } = await supabase.from("calendar_events").delete().eq("id", form.id).select("id");
     setBusy(false);
@@ -194,12 +200,12 @@ export default function CalendrierPage() {
     <div>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-[32px] leading-none font-black">Calendrier</h1>
-          <p className="mt-1 text-[13.5px] text-[var(--slate)]">Les événements de toutes les antennes, au même endroit.</p>
+          <h1 className="font-display text-[32px] leading-none font-black">Calendrier et actu</h1>
+          <p className="mt-1 text-[13.5px] text-[var(--slate)]">Les événements, liens et notes de toutes les antennes, au même endroit.</p>
         </div>
         {writable.length > 0 && (
           <button type="button" onClick={() => openNew()} className={priCls}>
-            + Nouvel événement
+            + Ajouter une entrée
           </button>
         )}
       </div>
@@ -320,22 +326,40 @@ export default function CalendrierPage() {
                 return (
                   <div key={iso} onClick={() => openNew(iso)} className={`min-h-[104px] border-t border-[var(--border)] px-1.5 pt-1.5 pb-2 ${writable.length ? "cursor-pointer hover:bg-[var(--input-bg)]" : ""}`}>
                     <span className={`inline-block px-1 text-[12px] font-semibold ${iso === today ? "rounded-[40px] bg-[var(--turquoise)] px-2 text-[#001641]" : out ? "text-[var(--slate)] opacity-40" : "text-[var(--slate)]"}`}>{d.getDate()}</span>
-                    {evs.slice(0, 3).map((e) => (
-                      <button
-                        key={e.id}
-                        type="button"
-                        onClick={(ev) => {
-                          ev.stopPropagation();
-                          openEvent(e);
-                        }}
-                        title={`${e.title} — ${cityById.get(e.city_id)?.name ?? ""}`}
-                        className="mt-[3px] block w-full truncate rounded-md border-l-[3px] px-1.5 py-0.5 text-left text-[11.5px] font-semibold text-[var(--navy)]"
-                        style={{ borderColor: colorOf(e.city_id), background: tint(colorOf(e.city_id), 16) }}
-                      >
-                        {hm(e.start_time) && <span className="mr-1 opacity-75">{hm(e.start_time)}</span>}
-                        {e.title}
-                      </button>
-                    ))}
+                    {evs.slice(0, 3).map((e) => {
+                      const ic = iconOf(e.icon);
+                      return (
+                        <div key={e.id} className="mt-[3px] flex items-stretch gap-0.5">
+                          <button
+                            type="button"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              openEvent(e);
+                            }}
+                            title={`${e.title} — ${cityById.get(e.city_id)?.name ?? ""}${ic ? ` — ${ic.l}` : ""}`}
+                            className="block min-w-0 flex-1 truncate rounded-md border-l-[3px] px-1.5 py-0.5 text-left text-[11.5px] font-semibold text-[var(--navy)]"
+                            style={{ borderColor: colorOf(e.city_id), background: tint(colorOf(e.city_id), 16) }}
+                          >
+                            {ic && <span className="mr-1" aria-label={ic.l}>{ic.e}</span>}
+                            {hm(e.start_time) && <span className="mr-1 opacity-75">{hm(e.start_time)}</span>}
+                            {e.title}
+                          </button>
+                          {e.link && (
+                            <a
+                              href={e.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(ev) => ev.stopPropagation()}
+                              title="Ouvrir le lien dans un nouvel onglet"
+                              aria-label={`Ouvrir le lien de ${e.title}`}
+                              className="flex w-5 flex-none items-center justify-center rounded-md text-[12px] font-bold text-[var(--turquoise)] hover:bg-[var(--track)]"
+                            >
+                              ↗
+                            </a>
+                          )}
+                        </div>
+                      );
+                    })}
                     {evs.length > 3 && (
                       <button
                         type="button"
@@ -366,10 +390,16 @@ export default function CalendrierPage() {
                     <span className="text-[11px] font-bold text-[var(--slate)] uppercase">{d.toLocaleDateString("fr-FR", { weekday: "short" })}</span>
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[14px] font-bold text-[var(--navy)]">{e.title}</span>
+                    <span className="block text-[14px] font-bold text-[var(--navy)]">{iconOf(e.icon) && <span className="mr-1.5" title={iconOf(e.icon)!.l}>{iconOf(e.icon)!.e}</span>}{e.title}</span>
                     <span className="mt-0.5 block text-[12.5px] text-[var(--slate)]">
                       {[hm(e.start_time) && `${hm(e.start_time)}${hm(e.end_time) ? `–${hm(e.end_time)}` : ""}`, e.place].filter(Boolean).join(" · ") || "Horaire et lieu à préciser"}
                     </span>
+                    {e.description && <span className="mt-0.5 block text-[12.5px] whitespace-pre-line text-[var(--navy)]">{e.description}</span>}
+                    {e.link && (
+                      <span role="link" tabIndex={0} onClick={(ev) => { ev.stopPropagation(); window.open(e.link!, "_blank", "noopener,noreferrer"); }} onKeyDown={(ev) => { if (ev.key === "Enter") { ev.stopPropagation(); window.open(e.link!, "_blank", "noopener,noreferrer"); } }} className="mt-0.5 mr-2 inline-block text-[12.5px] font-semibold text-[var(--turquoise)] underline">
+                        Ouvrir le lien ↗
+                      </span>
+                    )}
                     <span className="mt-1.5 inline-flex items-center gap-1.5 rounded-[40px] px-2.5 py-px text-[11.5px] font-bold" style={{ color: c, background: tint(c, 14) }}>
                       <span className="h-2 w-2 rounded-full" style={{ background: c }} />
                       {cityById.get(e.city_id)?.name ?? "Ville"}
@@ -388,7 +418,7 @@ export default function CalendrierPage() {
             <button key={e.id} type="button" onClick={() => openEvent(e)} className={`flex w-full gap-2.5 py-2.5 text-left ${i ? "border-t border-[var(--border)]" : ""}`}>
               <span className="w-1 flex-none rounded" style={{ background: colorOf(e.city_id) }} />
               <span className="min-w-0">
-                <span className="block truncate text-[13px] font-bold text-[var(--navy)]">{e.title}</span>
+                <span className="block truncate text-[13px] font-bold text-[var(--navy)]">{iconOf(e.icon) && <span className="mr-1">{iconOf(e.icon)!.e}</span>}{e.title}{e.link && <span className="ml-1 text-[var(--turquoise)]" title="Contient un lien">↗</span>}</span>
                 <span className="text-[12px] text-[var(--slate)]">
                   {fmtShort(e.event_date)}
                   {hm(e.start_time) ? ` · ${hm(e.start_time)}` : ""} · {cityById.get(e.city_id)?.name ?? ""}
@@ -399,13 +429,31 @@ export default function CalendrierPage() {
         </aside>
       </div>
 
+      <SharedGallery />
+
       {/* ---- fenêtre événement ---- */}
       {form && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(0,10,30,0.45)] p-4" onClick={() => setForm(null)}>
           <div role="dialog" aria-modal="true" className="max-h-[92vh] w-full max-w-[520px] overflow-auto rounded-[20px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]" onClick={(e) => e.stopPropagation()}>
-            <h3 className="mb-3 font-display text-[21px] font-black text-[var(--navy)]">{form.id ? (formReadOnly ? "Événement" : "Modifier l'événement") : "Nouvel événement"}</h3>
-            <label className={labelCls}>Titre</label>
-            <input autoFocus disabled={formReadOnly} className={fieldCls} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Ex : Distribution solidaire place de la Comédie" />
+            <h3 className="mb-3 font-display text-[21px] font-black text-[var(--navy)]">{form.id ? (formReadOnly ? "Entrée du calendrier" : "Modifier l'entrée") : "Nouvelle entrée"}</h3>
+            <label className={labelCls}>Intitulé</label>
+            <input autoFocus disabled={formReadOnly} className={fieldCls} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Ex : CR BAU - 30/09" />
+            <label className={`${labelCls} mt-2.5`}>Lien (facultatif)</label>
+            <div className="flex items-center gap-2">
+              <input disabled={formReadOnly} className={fieldCls} value={form.link} onChange={(e) => setForm({ ...form, link: e.target.value })} placeholder="https://docs.google.com/…" inputMode="url" />
+              {safeLink(form.link) && (
+                <a href={safeLink(form.link)!} target="_blank" rel="noopener noreferrer" className="flex-none text-[12.5px] font-semibold whitespace-nowrap text-[var(--turquoise)] underline">Ouvrir ↗</a>
+              )}
+            </div>
+            <label className={`${labelCls} mt-2.5`}>Priorité (pictogramme)</label>
+            <div className="flex flex-wrap gap-1.5">
+              <button type="button" disabled={formReadOnly} onClick={() => setForm({ ...form, icon: "" })} className={`rounded-[40px] border-[1.5px] px-3 py-1.5 text-[12.5px] font-semibold ${!form.icon ? "border-[var(--navy)] text-[var(--navy)]" : "border-[var(--border)] text-[var(--slate)]"}`}>Aucun</button>
+              {CAL_ICONS.map((i) => (
+                <button key={i.k} type="button" disabled={formReadOnly} onClick={() => setForm({ ...form, icon: i.k })} className={`rounded-[40px] border-[1.5px] px-3 py-1.5 text-[12.5px] font-semibold ${form.icon === i.k ? "border-[var(--navy)] bg-[var(--track)] text-[var(--navy)]" : "border-[var(--border)] text-[var(--slate)]"}`}>
+                  <span className="mr-1">{i.e}</span>{i.l}
+                </button>
+              ))}
+            </div>
             <div className="mt-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               <div>
                 <label className={labelCls}>Date</label>
@@ -430,9 +478,9 @@ export default function CalendrierPage() {
             </div>
             <label className={`${labelCls} mt-2.5`}>Lieu</label>
             <input disabled={formReadOnly} className={fieldCls} value={form.place} onChange={(e) => setForm({ ...form, place: e.target.value })} placeholder="Adresse ou nom du lieu" />
-            <label className={`${labelCls} mt-2.5`}>Description</label>
-            <textarea disabled={formReadOnly} rows={3} className={fieldCls} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Infos utiles, contact, matériel…" />
-            {formReadOnly && <p className="mt-2.5 text-[12px] text-[var(--slate)]">Événement d&apos;une autre ville : tu peux le consulter, seule son antenne peut le modifier.</p>}
+            <label className={`${labelCls} mt-2.5`}>Message court (facultatif)</label>
+            <textarea disabled={formReadOnly} rows={2} className={fieldCls} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Un mot pour se rappeler de quoi il s'agit" />
+            {formReadOnly && <p className="mt-2.5 text-[12px] text-[var(--slate)]">Entrée d&apos;une autre ville : tu peux la consulter, seule son antenne peut la modifier.</p>}
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
               {form.id && !formReadOnly ? (
                 <button type="button" disabled={busy} onClick={deleteEvent} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-2 text-[12.5px] font-semibold text-[var(--critical)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)]">
