@@ -2,14 +2,14 @@
 -- À exécuter dans Supabase → SQL Editor → Run (rejouable sans risque).
 --
 -- Deux canaux de présence temps réel, jamais mélangés :
---   presence:team    → l'équipe : Superadmin, Comptabilité, Responsable d'antenne, Logisticien (comptes actifs)
+--   presence:team    → l'équipe : Superadmin, Comptabilité, Responsable d'antenne (comptes actifs) ; le Logisticien n'y a pas accès
 --   presence:linkers → les Linkers bénévoles, entre eux
 -- Les canaux sont PRIVÉS : sans ces règles, personne ne peut s'y connecter. Un Linker ne peut donc pas écouter le canal de l'équipe,
 -- ni l'inverse. Rien n'est enregistré en base : la présence disparaît quand l'onglet se ferme.
 
 create or replace function public.presence_team_member() returns boolean
   language sql stable security definer set search_path = public as $$
-  select coalesce(public.real_role()::text in ('admin_principal', 'comptabilite', 'admin_local', 'logisticien'), false)
+  select coalesce(public.real_role()::text in ('admin_principal', 'comptabilite', 'admin_local'), false)
      and coalesce((select p.active from public.profiles p where p.id = auth.uid()), false) $$;
 
 create or replace function public.presence_linker_member() returns boolean

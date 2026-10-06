@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 
 // « Qui est connecté » : pastilles en haut à droite, comme dans Google Drive. Présence temps réel (Supabase Realtime), rien
 // n'est enregistré en base ; les canaux sont privés (migration 063) :
-//   channel="team"    → l'équipe (Superadmin, Comptabilité, Responsable d'antenne, Logisticien)
+//   channel="team"    → l'équipe (Superadmin, Comptabilité, Responsable d'antenne)
 //   channel="linkers" → les Linkers bénévoles, entre eux (prénom et initiale seulement)
 
 type Who = { id: string; name: string; role: string; page: string; photo: string | null };
