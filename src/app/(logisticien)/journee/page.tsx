@@ -60,8 +60,10 @@ type Stop = {
   presetItems?: { id: string; name: string; category: string; colis: number; upc: number; grammage: number }[];
   planned?: { id: string; name: string; colis: number }[]; // stock outflow planned by the admin (pick-up stop)
   passage?: Passage; // partner's "Checklist de passage" (key, isothermal boxes, containers rotation)
+  phones: StopPhone[]; // numéros à appeler pour cet arrêt (contacts de la fiche) : un bouton « appeler » chacun
   result?: StopResult;
 };
+type StopPhone = { label: string; tel: string };
 
 const DENREE_OPTIONS = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
 const DEFAULT_DEPOT_ADDRESS = "110 Rue du Companet, 69140 Rillieux-la-Pape"; // used when the city has no depot address yet
@@ -73,13 +75,30 @@ function one<T>(v: T | T[] | null | undefined): T | null {
 }
 const isoDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const dbWeekday = (d: Date) => (d.getDay() === 0 ? 7 : d.getDay());
+/** Numéros de la fiche d'un partenaire / d'une association : contacts (nom ou fonction + téléphone) et numéro principal, sans doublon. */
+function stopPhones(fiche: { contacts?: { type?: string; nom?: string; tel?: string }[]; tel?: string }, mainLabel: string): StopPhone[] {
+  const out: StopPhone[] = [];
+  const seen = new Set<string>();
+  const add = (label: string, raw: string | undefined) => {
+    const tel = (raw ?? "").trim();
+    const digits = tel.replace(/\D/g, "");
+    if (digits.length < 6 || seen.has(digits)) return;
+    seen.add(digits);
+    out.push({ label: label.trim() || "Contact", tel });
+  };
+  for (const c of Array.isArray(fiche.contacts) ? fiche.contacts : []) add(c.nom || c.type || "Contact", c.tel);
+  add(mainLabel, fiche.tel);
+  return out.slice(0, 3);
+}
+/** Lien « tel: » : on garde les chiffres (et le + de tête) pour que le téléphone compose le bon numéro. */
+const telHref = (tel: string) => "tel:" + tel.replace(/[^\d+]/g, "");
 const ACCESS_KEY_MAP: Record<string, string> = { digicode: "digicode", quai: "quai", camion: "camion", etage: "ascenseur", horaire: "horaire" };
 
 
 
 function rowToStop(r: DbStop, all: DbStop[], depotAddress: string): Stop {
   const rel = one(r.partners) ?? one(r.beneficiaries);
-  const fiche = (rel?.fiche ?? {}) as { access?: Record<string, boolean>; accessNote?: string; denrees?: Record<string, boolean> };
+  const fiche = (rel?.fiche ?? {}) as { access?: Record<string, boolean>; accessNote?: string; denrees?: Record<string, boolean>; contacts?: { type?: string; nom?: string; tel?: string }[]; tel?: string };
   const kind: Kind = r.kind === "dropoff" ? "dropoff" : r.kind === "stock" ? "stock" : r.kind === "partner" ? "partner" : r.kind === "pause" ? "pause" : r.kind === "dechetterie" ? "dechetterie" : "exceptionnel";
   const items: ResultItem[] = (r.collecte_items ?? []).map((it) => {
     const src = it.source_collecte_id ? all.find((x) => x.id === it.source_collecte_id) : null;
@@ -100,6 +119,7 @@ function rowToStop(r: DbStop, all: DbStop[], depotAddress: string): Stop {
     accessDetails: fiche.accessNote || undefined,
     planned: r.planned_items?.map((p) => ({ id: p.id, name: p.name, colis: p.colis })),
     passage: ((one(r.partners)?.fiche ?? {}) as { passage?: Passage }).passage,
+    phones: rel ? stopPhones(fiche, one(r.partners) ? "Partenaire" : "Association") : [],
     sitePhoto: one(r.partners)?.photo_url || undefined,
     comment: r.comment || undefined,
     allowedTypes: kind === "dropoff" ? Object.entries(fiche.denrees ?? {}).filter(([, on]) => on).map(([k]) => k) : undefined,
@@ -1204,6 +1224,23 @@ export default function JourneePage() {
                         Y aller
                       </a>
                     </div>
+                    )}
+                    {!isPause && s.kind !== "stock" && s.kind !== "dechetterie" && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {s.phones.length === 0 ? (
+                          <span className="text-[12px] text-[var(--muted)]">Aucun numéro renseigné pour cet arrêt</span>
+                        ) : (
+                          s.phones.map((ph) => (
+                            <a key={ph.tel} href={telHref(ph.tel)} className="flex min-h-[44px] items-center gap-2 rounded-[40px] border-[1.5px] border-[var(--good)] bg-[var(--good-bg)] px-4 py-2 text-[13px] font-bold text-[var(--good)]" aria-label={`Appeler ${ph.label} au ${ph.tel}`}>
+                              <Icon className="h-4 w-4 flex-none" sw={2}><path d="M5 4 H9 L11 9 L8.5 10.5 A11 11 0 0 0 13.5 15.5 L15 13 L20 15 V19 A2 2 0 0 1 18 21 A16 16 0 0 1 3 6 A2 2 0 0 1 5 4 Z" /></Icon>
+                              <span className="flex flex-col leading-tight">
+                                <span className="text-[11px] font-semibold opacity-80">{ph.label}</span>
+                                <span className="tabular-nums">{ph.tel}</span>
+                              </span>
+                            </a>
+                          ))
+                        )}
+                      </div>
                     )}
                     {s.comment && (
                       <div className="mt-2 flex items-start gap-2 rounded-xl bg-[var(--exc-accent-bg)] px-3 py-2.5 text-[12.5px] leading-[1.45] font-semibold text-[var(--navy)]">

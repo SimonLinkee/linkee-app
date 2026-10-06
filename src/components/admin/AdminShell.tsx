@@ -4,13 +4,17 @@ import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { CityProvider, useCity } from "@/components/admin/CityContext";
 import { Sidebar } from "@/components/admin/Sidebar";
+import PresenceBar from "@/components/PresenceBar";
+
+// Rôles qui voient (et apparaissent dans) la pastille « qui est connecté » : Superadmin, Comptabilité, Responsable d'antenne (+ le Logisticien dans son appli)
+const PRESENCE_ROLES = ["admin_principal", "comptabilite", "admin_local"];
 
 // Pages qui ne s'ouvrent que pour une ville : en vue « Toutes les villes », on propose de choisir la ville au lieu d'une page vide.
 // Le menu, lui, reste identique partout.
 export const CITY_ONLY_PATHS = ["/partenaires", "/planning", "/stock", "/todo", "/distributions", "/village-associatif", "/prospection", "/links-benevoles"];
 
 function Frame({ children }: { children: ReactNode }) {
-  const { ready, isAll, city, cities, select } = useCity();
+  const { ready, isAll, city, cities, select, role } = useCity();
   const pathname = usePathname();
   const blocked = ready && isAll && CITY_ONLY_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
 
@@ -20,6 +24,11 @@ function Frame({ children }: { children: ReactNode }) {
       <div className="min-w-0 flex-1">
         {/* thin band in the colour of the city you are browsing */}
         <div className="h-1.5 w-full transition-colors" style={{ background: !ready ? "transparent" : isAll ? "linear-gradient(90deg,#2a78d6,#eb6834,#1baf7a,#B23B72,#7C5CD9)" : (city?.color ?? "transparent") }} />
+        {ready && PRESENCE_ROLES.includes(role) && (
+          <div className="flex justify-end px-[38px] pt-3">
+            <PresenceBar channel="team" />
+          </div>
+        )}
         {/* key: switching city remounts the page so it reloads that city's data */}
         <main key={isAll ? "all" : (city?.id ?? "none")} className="px-[38px] py-8 pb-[60px]">{!ready ? null : blocked ? (
           <div className="mx-auto mt-10 max-w-[520px] rounded-[20px] border border-dashed border-[var(--border)] bg-[var(--card)] px-6 py-10 text-center">

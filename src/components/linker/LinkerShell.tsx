@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import PresenceBar from "@/components/PresenceBar";
 import type { ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
 import BetaBadge from "@/components/BetaBadge";
@@ -43,6 +44,7 @@ export default function LinkerShell({ children }: { children: ReactNode }) {
           <BetaBadge onDark label="Bêta test" />
         </div>
         <div className="flex items-center gap-2.5 text-[12.5px] font-bold">
+          <PresenceBar channel="linkers" max={3} />
           {linker && <span className="rounded-[40px] bg-white/12 px-3 py-1">🪙 {linker.points}</span>}
           <button type="button" onClick={logout} className="text-[var(--panel-fg-dim)] hover:text-[var(--panel-fg)]">
             Déconnexion
