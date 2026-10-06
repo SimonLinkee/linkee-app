@@ -23,7 +23,7 @@ const COMPTA_PATHS = SUPER_ONLY.filter((p) => p !== '/villes-comptes' && p !== '
 // Écrans du Responsable d'antenne (pour sa ville uniquement : règles d'accès de la base, voir migration 047).
 // '/comptabilite' : il y valide / refuse les demandes de Cerfa de son antenne ; l'émission du Cerfa reste réservée à la
 // Comptabilité et au Superadmin, y compris côté base.
-const ANTENNE_PATHS = ['/dashboard', '/calendrier', '/village-associatif', '/partenaires', '/beneficiaires', '/planning', '/distributions', '/stock', '/flotte', '/todo', '/links-benevoles', '/valeur-des-dons', '/comptabilite', '/organigramme', '/profil', '/version', '/saisie-mobile', '/mobile']
+const ANTENNE_PATHS = ['/dashboard', '/calendrier', '/village-associatif', '/prospection', '/partenaires', '/beneficiaires', '/planning', '/distributions', '/stock', '/flotte', '/todo', '/links-benevoles', '/valeur-des-dons', '/comptabilite', '/organigramme', '/profil', '/version', '/saisie-mobile', '/mobile']
 // '/calendrier' : calendrier multi-villes + ACTU (migration 058) — équipe interne : Superadmin, Comptabilité, Resp. d'antenne,
 // Resp. Distribution et Resp. RH. Pas le logisticien, ni les partenaires, bénéficiaires ou Linkers.
 // '/organigramme' : trombinoscope de l'équipe (PC) — équipe interne seulement : le logisticien, les Linkers, partenaires et

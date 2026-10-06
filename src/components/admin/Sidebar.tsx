@@ -81,6 +81,17 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: "/prospection",
+    label: "Prospection",
+    icon: (
+      <>
+        <circle cx="12" cy="12" r="8.5" />
+        <circle cx="12" cy="12" r="4.5" />
+        <circle cx="12" cy="12" r="1" fill="currentColor" />
+      </>
+    ),
+  },
+  {
     href: "/village-associatif",
     label: "Village associatif",
     icon: (
@@ -197,7 +208,7 @@ const PINNED = ["/calendrier", "/todo"];
 const NAV_GROUPS: string[][] = [
   ["/dashboard", "/valeur-des-dons"],
   ["/planning", "/distributions", "/stock", "/flotte", "/links-benevoles"],
-  ["/partenaires", "/village-associatif", "/comptabilite"],
+  ["/partenaires", "/prospection", "/village-associatif", "/comptabilite"],
   ["/organigramme", "/remontees", "/profil"],
 ];
 type NavItem = (typeof NAV_ITEMS)[number];

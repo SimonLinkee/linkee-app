@@ -271,6 +271,9 @@ export default function CalendrierPage() {
         )}
       </section>
 
+      {/* ---- galerie photos : entre l'ACTU et le calendrier ---- */}
+      <SharedGallery />
+
       {/* ---- barre : mois, villes, vue ---- */}
       <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-[var(--border)] bg-[var(--card)] px-4 py-3 shadow-[var(--shadow)]">
         <div className="flex items-center gap-2">
@@ -428,8 +431,6 @@ export default function CalendrierPage() {
           ))}
         </aside>
       </div>
-
-      <SharedGallery />
 
       {/* ---- fenêtre événement ---- */}
       {form && (

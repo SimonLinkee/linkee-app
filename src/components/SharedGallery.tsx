@@ -91,7 +91,7 @@ export default function SharedGallery() {
   const scrollBy = (dir: 1 | -1) => track.current?.scrollBy({ left: dir * 280, behavior: "smooth" });
 
   return (
-    <section className="mt-4 rounded-[20px] border border-[var(--border)] bg-[var(--card)] shadow-[var(--shadow)]" style={{ borderTop: "4px solid var(--pink)" }}>
+    <section className="mb-4 rounded-[20px] border border-[var(--border)] bg-[var(--card)] shadow-[var(--shadow)]" style={{ borderTop: "4px solid var(--pink)" }}>
       <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left">
         <span>
           <span className="font-display text-[19px] font-black text-[var(--navy)]">Galerie photos</span>

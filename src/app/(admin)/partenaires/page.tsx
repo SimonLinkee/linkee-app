@@ -472,8 +472,6 @@ export default function PartenairesPage() {
       const b = ((bs.data ?? []) as Row[]).map((r) => rowToEntity("beneficiaire", r) as BeneficiaireEntity);
       setPartners(p);
       setBeneficiaires(b);
-      const firstP = p.find((x) => x.active) ?? p[0];
-      if (firstP) setCurrentId(firstP.id);
       if (ps.error || bs.error) showToast("Chargement impossible : " + (ps.error ?? bs.error)!.message);
       setLoading(false);
     })();
@@ -525,8 +523,7 @@ export default function PartenairesPage() {
     if (deleteTarget.kind === "partner") setPartners((prev) => prev.filter((p) => p.id !== deleteTarget.id));
     else setBeneficiaires((prev) => prev.filter((b) => b.id !== deleteTarget.id));
     if (currentId === deleteTarget.id) {
-      const remaining = (deleteTarget.kind === "partner" ? partners : beneficiaires).filter((e) => e.id !== deleteTarget.id);
-      setCurrentId(remaining[0]?.id ?? "");
+      setCurrentId("");
     }
     showToast(`« ${deleteTarget.name} » supprimé.`);
     setDeleteTarget(null);
@@ -549,6 +546,7 @@ export default function PartenairesPage() {
     else setBeneficiaires((prev) => [...prev, created as BeneficiaireEntity]);
     setSearch("");
     setCurrentId(created.id);
+    window.setTimeout(() => ficheRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 120);
     setOpenSections(new Set(["identite"]));
     showToast("Fiche créée — renseigne le nom et les informations ci-dessous.");
   }
@@ -585,9 +583,7 @@ export default function PartenairesPage() {
   function switchTab(next: "partner" | "beneficiaire") {
     setTab(next);
     setSearch("");
-    const nextList = next === "partner" ? partners : beneficiaires;
-    const firstId = (nextList.find((e) => e.active) ?? nextList[0])?.id;
-    if (firstId) setCurrentId(firstId);
+    setCurrentId("");
     setStatusFilter("");
     setCatFilter("");
     setSortBy("nom");
@@ -611,8 +607,14 @@ export default function PartenairesPage() {
     const active = e.id === currentId;
     return (
       <div
-        onClick={() => setCurrentId(e.id)}
-        className={`flex cursor-pointer items-center gap-2.5 rounded-xl border-[1.5px] px-2.5 py-[9px] ${
+        aria-expanded={active}
+        onClick={(ev) => {
+          const el = ev.currentTarget;
+          const opening = e.id !== currentId;
+          setCurrentId(opening ? e.id : "");
+          if (opening) window.setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+        }}
+        className={`flex scroll-mt-4 cursor-pointer items-center gap-2.5 rounded-xl border-[1.5px] px-2.5 py-[9px] ${
           active ? "border-[var(--turquoise)] bg-[var(--track)]" : "border-transparent hover:bg-[var(--input-bg)]"
         }`}
       >
@@ -645,6 +647,7 @@ export default function PartenairesPage() {
           )}
           <span className={`h-2 w-2 rounded-full ${e.active ? "bg-[var(--good)]" : "bg-[var(--muted)]"}`} />
         </span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 flex-none text-[var(--slate)] transition-transform ${active ? "rotate-180" : ""}`} aria-hidden="true"><path d="M6 9 L12 15 L18 9" /></svg>
         {!readOnly && (
           <button
             type="button"
@@ -663,6 +666,706 @@ export default function PartenairesPage() {
       </div>
     );
   }
+
+  // La fiche s'ouvre juste sous la ligne cliquée (accordéon) ; en cliquer une autre la referme.
+  const renderFiche = () => (
+    <div ref={ficheRef} className="scroll-mt-4 rounded-[20px] border border-[var(--border)] bg-[var(--card)] px-7 pt-[26px] pb-[30px] shadow-[var(--shadow)]">
+      {!current ? (
+        <div className="flex flex-col items-center gap-2.5 py-[60px] text-center text-[var(--slate)]">
+          <p>Sélectionnez une fiche dans la liste.</p>
+        </div>
+      ) : (
+        <>
+          <div className="mb-2 flex items-start gap-[18px]">
+            <div
+              onClick={() => (readOnly ? undefined : current.kind === "partner" ? logoInput.current?.click() : showToast("Le logo est disponible pour les partenaires."))}
+              className={`group relative flex h-[66px] w-[66px] flex-none items-center justify-center overflow-hidden rounded-[20px] font-display text-[22px] font-extrabold text-white ${readOnly ? "" : "cursor-pointer"}`}
+              style={{ background: current.logoUrl ? "var(--card)" : colorFor(current.name) }}
+              title={readOnly ? undefined : "Changer le logo"}
+            >
+              <input ref={logoInput} type="file" accept="image/*" hidden onChange={uploadLogo} />
+              {current.logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={current.logoUrl} alt="" className="h-full w-full object-cover" />
+              ) : (
+                initials(current.name)
+              )}
+              <span className={`absolute inset-0 items-center justify-center rounded-[20px] bg-[rgba(0,22,65,0.55)] opacity-0 transition-opacity group-hover:opacity-100 ${readOnly ? "hidden" : "flex"}`}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px] text-white">
+                  <path d="M4 8 L7 4 H17 L20 8" />
+                  <rect x="3" y="8" width="18" height="12" rx="2" />
+                  <circle cx="12" cy="14" r="3.2" />
+                </svg>
+              </span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2.5">
+                <input
+                  value={current.name}
+                  readOnly={readOnly}
+                  onChange={(e) => updateEntity((entity) => ({ ...entity, name: e.target.value }))}
+                  className="min-w-0 flex-1 rounded-lg border-b-[1.5px] border-transparent bg-transparent px-1 py-0.5 font-display text-[27px] font-black text-[var(--navy)] outline-none hover:border-b-[var(--turquoise)] hover:bg-[var(--input-bg)] focus:border-b-[var(--turquoise)] focus:bg-[var(--input-bg)]"
+                />
+                {current.kind === "beneficiaire" && current.pinned && <DistribBadge />}
+                {!readOnly && (
+                  <button
+                    type="button"
+                    title="Supprimer cette fiche"
+                    onClick={() => setDeleteTarget(current)}
+                    className="flex h-8 w-8 flex-none items-center justify-center rounded-full text-[var(--muted)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[17px] w-[17px]">
+                      <path d="M4 7 H20 M9 7 V4.5 A1 1 0 0 1 10 3.5 H14 A1 1 0 0 1 15 4.5 V7 M6.5 7 L7.3 19.5 A2 2 0 0 0 9.3 21.4 H14.7 A2 2 0 0 0 16.7 19.5 L17.5 7" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-3">
+                <select
+                  value={current.cat}
+                  disabled={readOnly}
+                  onChange={(e) => updateEntity((entity) => ({ ...entity, cat: e.target.value, ...(entity.kind === "beneficiaire" ? { pinned: e.target.value === "Distribution Linkee" } : {}) }))}
+                  className="cursor-pointer rounded-[40px] border border-[var(--border)] bg-[var(--input-bg)] px-3 py-[5px] text-[12.5px] font-semibold text-[var(--slate)]"
+                >
+                  {(current.kind === "partner"
+                    ? ["Boulangerie", "Supermarché", "Traiteur", "Hôtel", "Restauration rapide", "Restauration collective", "Restauration collective Standard", "Traiteur, hôtel et restauration rapide", "Industriel", "Grossiste", "Association", "Evenementiel", "Non alimentaire"]
+                    : ["Distribution Linkee", "Association partenaire"]
+                  ).map((c) => (
+                    <option key={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="flex flex-none items-center gap-2">
+              <span className="text-xs font-semibold text-[var(--slate)]">
+                {current.active ? "Actif — visible dans l'app du logisticien" : "Inactif — masqué de l'app du logisticien"}
+              </span>
+              <button
+                type="button"
+                disabled={readOnly}
+                onClick={() => updateEntity((entity) => ({ ...entity, active: !entity.active }))}
+                className={`relative h-[21px] w-[38px] rounded-[40px] transition-colors ${current.active ? "bg-[var(--good)]" : "bg-[var(--track)]"}`}
+              >
+                <span
+                  className="absolute top-0.5 h-[17px] w-[17px] rounded-full bg-white shadow transition-[left]"
+                  style={{ left: current.active ? 19 : 2 }}
+                />
+              </button>
+            </div>
+          </div>
+          {current.kind === "partner" && current.active && (
+            <div className="mb-3 rounded-[14px] border-[1.5px] border-[var(--border)] bg-[var(--card)] p-3">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="text-[13px] font-bold text-[var(--navy)]">Rythme</span>
+                <div className="flex rounded-[40px] border border-[var(--border)] bg-[var(--input-bg)] p-[3px]">
+                  {RYTHME_OPTIONS.map((o) => {
+                    const on = current.rythme === o.k;
+                    return (
+                      <button
+                        key={o.k}
+                        type="button"
+                        disabled={readOnly}
+                        title={o.hint}
+                        onClick={() => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, rythme: on ? "" : o.k } : entity))}
+                        className={`rounded-[40px] px-3.5 py-1 font-display text-[12.5px] font-bold ${on ? "text-white" : "text-[var(--slate)]"}`}
+                        style={on ? { background: o.color } : undefined}
+                      >
+                        {o.l}
+                      </button>
+                    );
+                  })}
+                </div>
+                <span className="text-[11.5px] text-[var(--slate)]">
+                  {current.rythme === "regulier"
+                    ? formatCreneaux(current.creneaux)
+                      ? `Ajouté automatiquement au planning : ${formatCreneaux(current.creneaux)}`
+                      : "Renseigne ses créneaux ci-dessous pour qu'il apparaisse au planning."
+                    : current.rythme === "ponctuel"
+                      ? "Fait ses demandes lui-même depuis son espace partenaire."
+                      : "Non défini — choisis Régulier ou Ponctuel."}
+                </span>
+              </div>
+              {current.rythme === "regulier" && (
+                <label className="mt-2.5 flex items-start gap-2.5">
+                  <input
+                    type="checkbox"
+                    disabled={readOnly}
+                    checked={!!current.linkSystematique}
+                    onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, linkSystematique: e.target.checked } : entity))}
+                    className="mt-0.5 h-[16px] w-[16px] accent-[#eb6834]"
+                  />
+                  <span>
+                    <span className="block text-[12.5px] font-bold text-[var(--navy)]">Link bénévole systématique sur chaque créneau</span>
+                    <span className="block text-[11.5px] leading-[1.4] text-[var(--slate)]">Un rappel « Link bénévole à prévoir » s&apos;affiche dans le Planning les jours de ses créneaux, tant qu&apos;aucun Link n&apos;est créé pour ce jour-là.</span>
+                  </span>
+                </label>
+              )}
+            </div>
+          )}
+          {current.kind === "partner" && (
+            <label className="mb-4 flex items-start gap-2.5 rounded-[14px] border-[1.5px] p-3" style={{ borderColor: current.benevoleOnly ? "#eb6834" : "var(--border)", background: current.benevoleOnly ? "rgba(235,104,52,.08)" : "var(--card)" }}>
+              <input
+                type="checkbox"
+                disabled={readOnly}
+                checked={!!current.benevoleOnly}
+                onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, benevoleOnly: e.target.checked } : entity))}
+                className="mt-0.5 h-[17px] w-[17px] accent-[#eb6834]"
+              />
+              <span>
+                <span className="flex items-center gap-2 text-[13px] font-bold text-[var(--navy)]">Éligible collecte bénévole <BetaBadge label="Bêta test" /></span>
+                <span className="block text-[11.5px] leading-[1.4] text-[var(--slate)]">
+                  Ce partenaire sort du planning pro classique et n&apos;a plus accès à la collecte exceptionnelle classique — il passe par les Links Bénévoles (ou une collecte « pro » planifiée, relabellisée pour lui). Pense aussi à activer 🎒 et/ou 🚗 dans Links Bénévoles.
+                </span>
+              </span>
+            </label>
+          )}
+          <div className={`mb-4 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--good)] transition-opacity ${autosaveVisible ? "opacity-100" : "opacity-0"}`}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" className="h-[13px] w-[13px]">
+              <path d="M20 6 L9 17 L4 12" />
+            </svg>
+            Modifications enregistrées
+          </div>
+
+          <div className="mb-4 grid grid-cols-2 gap-1.5 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-1.5 sm:grid-cols-4">
+            {(current.kind === "partner" ? FICHE_TABS : BENEFICIAIRE_FICHE_TABS).filter((t) => !(readOnly && t.k === "valorisation")).map((t) => {
+              const on = ficheTab === t.k;
+              return (
+                <button
+                  key={t.k}
+                  type="button"
+                  onClick={() => setFicheTab(t.k)}
+                  className={`flex min-w-0 items-center justify-center gap-2 rounded-[10px] px-3 py-2.5 transition-colors ${on ? "" : "hover:bg-[var(--input-bg)]"}`}
+                  style={on ? { background: t.color, color: t.fg } : { color: "var(--navy)" }}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 flex-none" style={on ? undefined : { color: t.color === "#0a1a3f" ? "var(--slate)" : t.color }}>
+                    {t.icon}
+                  </svg>
+                  <span className="truncate text-[13.5px] font-semibold">{t.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div>
+          {current.kind === "partner" && ficheTab === "documents" && <PartnerDocuments key={current.id} partnerId={current.id} role="admin" readOnly={readOnly} />}
+          {current.kind === "beneficiaire" && ficheTab === "documents" && <PartnerDocuments key={current.id} beneficiaryId={current.id} role="admin" readOnly={readOnly} />}
+          {current.kind === "partner" && ficheTab === "valorisation" && !readOnly && <PartnerValuation key={current.id} partnerId={current.id} category={current.cat} />}
+          {current.kind === "partner" && ficheTab === "collectes" && <PartnerCollectes key={current.id} partnerId={current.id} cityId={cityId} category={current.cat} readOnly={readOnly} />}
+
+          {ficheTab === "fiche" && (
+          <>
+          <AccordionSection title="Adresse & accès" sectionKey="identite" open={openSections.has("identite")} onToggle={toggleSection}>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label className={labelCls}>Adresse</label>
+                <AddressSearch
+                  className={inputCls}
+                  value={current.address}
+                  onChange={(v) => updateEntity((entity) => ({ ...entity, address: v }))}
+                  onPick={(hit) => updateEntity((entity) => ({ ...entity, address: hit.label }))}
+                  placeholder="Numéro, rue, code postal, ville"
+                />
+                <p className="mt-1 text-[11px] font-semibold text-[var(--muted)]">Choisis une suggestion dans la liste pour garantir un matching fiable avec les Links Bénévoles.</p>
+              </div>
+              <div>
+                <label className={labelCls}>Numéro SIREN</label>
+                <SirenField
+                  siren={current.siren}
+                  info={current.sirenInfo}
+                  onSirenChange={(v) => updateEntity((entity) => ({ ...entity, siren: v }))}
+                  onInfoChange={(info) => updateEntity((entity) => ({ ...entity, sirenInfo: info }))}
+                />
+              </div>
+              {current.kind === "partner" && (
+                <div>
+                  <label className={labelCls}>Antenne</label>
+                  <input className={inputCls} value={current.antenne} onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, antenne: e.target.value } : entity))} />
+                </div>
+              )}
+              {current.kind === "partner" && (
+                <div>
+                  <label className={labelCls}>Statut d&apos;activité <span className="font-normal text-[var(--muted)]">(filtrable/triable dans la liste)</span></label>
+                  <select className={inputCls} value={current.activityStatus || "Non défini"} onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, activityStatus: e.target.value } : entity))}>
+                    {ACTIVITY_STATUS_OPTIONS.map((o) => (
+                      <option key={o}>{o}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {current.kind === "partner" && (
+                <div>
+                  <label className={labelCls}>Fréquence d&apos;émission Cerfa <span className="font-normal text-[var(--muted)]">(sert uniquement aux alertes de retard)</span></label>
+                  <select className={inputCls} value={current.cerfaFrequency || "ponctuel"} onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, cerfaFrequency: e.target.value as CerfaFrequency } : entity))}>
+                    {CERFA_FREQUENCIES.map((f) => (
+                      <option key={f.k} value={f.k}>{f.l}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {current.kind === "beneficiaire" && (
+                <div>
+                  <label className={labelCls}>Téléphone</label>
+                  <input className={inputCls} value={current.tel} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, tel: e.target.value } : entity))} />
+                </div>
+              )}
+              {current.kind === "beneficiaire" && (
+                <div>
+                  <label className={labelCls}>Email</label>
+                  <input className={inputCls} value={current.mail} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, mail: e.target.value } : entity))} />
+                </div>
+              )}
+              <div className="sm:col-span-2">
+                <label className={labelCls}>Conditions d&apos;accès</label>
+                <AccessChips
+                  access={current.access}
+                  onToggle={(k) => updateEntity((entity) => ({ ...entity, access: { ...entity.access, [k]: !entity.access[k] } }))}
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className={labelCls}>Détails d&apos;accès (texte libre)</label>
+                <textarea
+                  className={`${inputCls} min-h-[56px] resize-y`}
+                  value={current.accessNote}
+                  onChange={(e) => updateEntity((entity) => ({ ...entity, accessNote: e.target.value }))}
+                />
+              </div>
+              {current.kind === "beneficiaire" && (
+                <div className="sm:col-span-2">
+                  <label className={labelCls}>
+                    Créneau de livraison fixe <span className="font-normal text-[var(--muted)]">(pour les associations livrées chaque semaine par le planning pro)</span>
+                  </label>
+                  <p className="mb-2 text-[11.5px] text-[var(--slate)]">
+                    Renseigne un jour + une plage horaire pour que cette association apparaisse automatiquement dans le Planning ce jour-là, sans avoir à l&apos;ajouter à la main chaque semaine.
+                    Ne sert qu&apos;au planning pro — sans effet sur Links Bénévoles, qui se base sur les horaires d&apos;ouverture ci-dessous.
+                  </p>
+                  {formatCreneaux(current.creneaux) && <p className="mb-2 text-[12px] font-semibold text-[var(--navy)]">{formatCreneaux(current.creneaux)}</p>}
+                  <SlotsEditor
+                    value={current.creneaux ?? {}}
+                    onChange={(v) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, creneaux: v } : entity))}
+                  />
+                </div>
+              )}
+            </div>
+          </AccordionSection>
+
+          {current.kind === "partner" && (
+            <AccordionSection title="Créneaux de collecte" sectionKey="creneaux" open={openSections.has("creneaux")} onToggle={toggleSection}>
+              <p className="mb-3 text-[11.5px] text-[var(--slate)]">
+                Jour + heure de début + heure de fin — utilisés pour planifier les collectes. Plusieurs créneaux possibles, y compris plusieurs le même jour.
+              </p>
+              {formatCreneaux(current.creneaux) && <p className="mb-3 text-[12px] font-semibold text-[var(--navy)]">{formatCreneaux(current.creneaux)}</p>}
+              <SlotsEditor
+                value={current.creneaux ?? {}}
+                onChange={(v) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, creneaux: v } : entity))}
+              />
+            </AccordionSection>
+          )}
+
+          {current.kind === "partner" && (
+            <AccordionSection title="Denrées & logistique" sectionKey="logistics" open={openSections.has("logistics")} onToggle={toggleSection}>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label className={labelCls}>Types de denrées gérés</label>
+                  <DenreeChips
+                    denrees={current.denrees}
+                    onToggle={(d) => updateEntity((entity) => ({ ...entity, denrees: { ...entity.denrees, [d]: !entity.denrees[d] } }))}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Conditionnement</label>
+                  <select
+                    className={inputCls}
+                    value={current.conditionnement}
+                    onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, conditionnement: e.target.value } : entity))}
+                  >
+                    {["Carton", "Palette", "Autre"].map((c) => (
+                      <option key={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>Durée de collecte sur place (min)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={5}
+                    className={inputCls}
+                    value={current.dureeCollecte || 10}
+                    onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, dureeCollecte: +e.target.value || 10 } : entity))}
+                  />
+                </div>
+              </div>
+            </AccordionSection>
+          )}
+
+          {current.kind === "partner" && (
+            <AccordionSection title="Checklist de passage" sectionKey="passage" open={openSections.has("passage")} onToggle={toggleSection}>
+              <p className="mb-3 text-[11.5px] text-[var(--slate)]">
+                Ce qui est coché apparaît dans la checklist d&apos;Akram les jours où ce partenaire est au planning, et sous forme d&apos;icône après son nom dans le Planning.
+              </p>
+              <div className="flex flex-col">
+                {PASSAGE_ITEMS.map((it) => {
+                  const on = !!current.passage?.[it.k];
+                  return (
+                    <div key={it.k} className="border-t border-[var(--border)] py-3 first:border-t-0">
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full" style={{ background: it.bg, color: it.fg }}>
+                          <PassageIcon k={it.k} size={18} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[13.5px] font-bold text-[var(--navy)]">{it.label}</span>
+                          <span className="block text-[11.5px] text-[var(--slate)]">{it.hint}</span>
+                        </span>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={on}
+                          aria-label={it.label}
+                          onClick={() => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, passage: { ...entity.passage, [it.k]: !on } } : entity))}
+                          className={`relative h-[22px] w-[38px] flex-none rounded-full transition-colors ${on ? "bg-[var(--good)]" : "bg-[var(--border)]"}`}
+                        >
+                          <span className={`absolute top-[2px] h-[18px] w-[18px] rounded-full bg-white shadow transition-all ${on ? "left-[18px]" : "left-[2px]"}`} />
+                        </button>
+                      </div>
+                      {it.k === "rotation" && on && (
+                        <input
+                          className={`${inputCls} mt-2.5`}
+                          placeholder="Commentaire : ex. 3 bacs gris à rendre, en récupérer 3 propres au comptoir"
+                          value={current.passage?.rotationNote ?? ""}
+                          onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, passage: { ...entity.passage, rotationNote: e.target.value } } : entity))}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </AccordionSection>
+          )}
+
+          {current.kind === "partner" && (
+            <AccordionSection title='Cadre "Informations de collecte" (visible côté partenaire)' sectionKey="partnerspace" open={openSections.has("partnerspace")} onToggle={toggleSection}>
+              <p className="mb-3 text-[11.5px] text-[var(--slate)]">Ces champs s&apos;affichent en lecture seule dans l&apos;espace du partenaire — lui seul ne peut pas les modifier.</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label className={labelCls}>Créneau habituel (texte affiché)</label>
+                  <input
+                    className={inputCls}
+                    placeholder="Ex : Lundi entre 08h30 et 09h00"
+                    value={current.slotDisplay || ""}
+                    onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, slotDisplay: e.target.value } : entity))}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Volume estimatif habituel</label>
+                  <select
+                    className={inputCls}
+                    value={current.volumeRange || "10/20kg"}
+                    onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, volumeRange: e.target.value } : entity))}
+                  >
+                    {["10/20kg", "20/50kg", "50/100kg", "100/250kg", "250/500kg", "+500kg"].map((v) => (
+                      <option key={v}>{v}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={labelCls}>Commentaire visible par le partenaire (optionnel)</label>
+                  <textarea
+                    className={`${inputCls} min-h-[56px] resize-y`}
+                    value={current.partnerComment || ""}
+                    onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, partnerComment: e.target.value } : entity))}
+                  />
+                </div>
+              </div>
+            </AccordionSection>
+          )}
+
+          {current.kind === "beneficiaire" && (
+            <AccordionSection title="Horaires d'ouverture et équipements sur site" sectionKey="accueil" open={openSections.has("accueil")} onToggle={toggleSection}>
+              <div className="mb-3.5">
+                <label className={labelCls}>
+                  Horaires d&apos;ouverture <span className="font-normal text-[var(--muted)]">(utilisés pour trouver l&apos;association la plus proche ouverte, dans Links Bénévoles)</span>
+                </label>
+                <div className="flex flex-col overflow-hidden rounded-[14px] border border-[var(--border)]">
+                  {DAYS.map((d) => {
+                    const h = current.hours?.[d.k] ?? null;
+                    const setH = (v: Hours) =>
+                      updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, hours: { ...(entity.hours ?? {}), [d.k]: v } } : entity));
+                    return (
+                      <div key={d.k} className="grid grid-cols-[70px_auto_1fr_1fr] items-center gap-2.5 bg-[var(--card)] px-3 py-2 border-b border-[var(--border)] last:border-b-0 sm:grid-cols-[90px_auto_1fr_1fr]">
+                        <span className="text-[12.5px] font-bold text-[var(--navy)]">{d.l}</span>
+                        <label className="flex items-center gap-1.5 text-[11.5px] whitespace-nowrap text-[var(--slate)]">
+                          <input type="checkbox" checked={!h} onChange={(e) => setH(e.target.checked ? null : { open: "09:00", close: "18:00" })} className="h-[15px] w-[15px] accent-[var(--critical)]" />
+                          Fermé
+                        </label>
+                        <input type="time" disabled={!h} className={`${inputCls} !px-2 !py-1.5 !text-xs disabled:opacity-35`} value={h?.open ?? "09:00"} onChange={(e) => h && setH({ ...h, open: e.target.value })} />
+                        <input type="time" disabled={!h} className={`${inputCls} !px-2 !py-1.5 !text-xs disabled:opacity-35`} value={h?.close ?? "18:00"} onChange={(e) => h && setH({ ...h, close: e.target.value })} />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label className={labelCls}>Note horaires (facultatif) <span className="font-normal text-[var(--muted)]">— fermetures exceptionnelles, précisions…</span></label>
+                  <input className={inputCls} value={current.horaires} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, horaires: e.target.value } : entity))} />
+                </div>
+                <div>
+                  <label className={labelCls}>Volumes acceptés</label>
+                  <input className={inputCls} value={current.volumesAcceptes} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, volumesAcceptes: e.target.value } : entity))} />
+                </div>
+                <div>
+                  <label className={labelCls}>Surface de stockage (m²)</label>
+                  <input
+                    type="number"
+                    className={inputCls}
+                    value={current.stockageM2}
+                    onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, stockageM2: +e.target.value || 0 } : entity))}
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={labelCls}>Typologie de denrées acceptées</label>
+                  <DenreeChips
+                    denrees={current.denrees}
+                    onToggle={(d) => updateEntity((entity) => ({ ...entity, denrees: { ...entity.denrees, [d]: !entity.denrees[d] } }))}
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={labelCls}>Équipement sur place</label>
+                  <div className="flex flex-wrap gap-2">
+                    {(
+                      [
+                        ["cuisine", "Cuisine"],
+                        ["frigo", "Frigo"],
+                        ["chambreFroide", "Chambre froide"],
+                        ["stockage", "Stockage"],
+                        ["porc", "Accepte le porc"],
+                      ] as const
+                    ).map(([k, l]) => (
+                      <label
+                        key={k}
+                        className={`inline-flex items-center gap-1.5 rounded-[40px] border-[1.5px] px-3.5 py-2 text-xs font-semibold ${
+                          current.equipement[k] ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)]"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="hidden"
+                          checked={current.equipement[k]}
+                          onChange={() =>
+                            updateEntity((entity) =>
+                              entity.kind === "beneficiaire" ? { ...entity, equipement: { ...entity.equipement, [k]: !entity.equipement[k] } } : entity
+                            )
+                          }
+                        />
+                        {current.equipement[k] && (
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                            <path d="M20 6 L9 17 L4 12" />
+                          </svg>
+                        )}
+                        <span>{l}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </AccordionSection>
+          )}
+
+          {current.kind === "beneficiaire" && (
+            <AccordionSection title="Profil de l'association" sectionKey="profil" open={openSections.has("profil")} onToggle={toggleSection}>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className={labelCls}>Type de structure</label>
+                  <select className={inputCls} value={current.structureType} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, structureType: e.target.value } : entity))}>
+                    <option value="">— Non renseigné —</option>
+                    {STRUCTURE_TYPE_OPTIONS.map((o) => <option key={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>Statut</label>
+                  <select className={inputCls} value={current.statut} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, statut: e.target.value } : entity))}>
+                    <option value="">— Non renseigné —</option>
+                    {STATUT_OPTIONS.map((o) => <option key={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={labelCls}>Public <span className="font-normal text-[var(--muted)]">(catégories de bénéficiaires accueillis)</span></label>
+                  <ExtensibleChips
+                    options={Array.from(new Set([...DEFAULT_PUBLIC_OPTIONS, ...Object.keys(current.publicCibles)]))}
+                    selected={current.publicCibles}
+                    onToggle={(k) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, publicCibles: { ...entity.publicCibles, [k]: !entity.publicCibles[k] } } : entity))}
+                    onAdd={(k) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, publicCibles: { ...entity.publicCibles, [k]: true } } : entity))}
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={labelCls}>Nombre de bénéficiaires</label>
+                  <SingleChoiceChips options={BENEFICIARY_COUNT_OPTIONS} value={current.beneficiaryCount} onChange={(v) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, beneficiaryCount: v } : entity))} />
+                </div>
+                <div>
+                  <label className={labelCls}>Réseau / fédération</label>
+                  <input className={inputCls} placeholder="Ex : Habitat & Humanisme" value={current.network} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, network: e.target.value } : entity))} />
+                </div>
+                <div className="flex items-end">
+                  <label className="flex items-center gap-2 text-[13px] font-semibold text-[var(--navy)]">
+                    <input type="checkbox" checked={current.addressVerified} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, addressVerified: e.target.checked } : entity))} className="h-[17px] w-[17px] accent-[var(--good)]" />
+                    Adresse vérifiée
+                  </label>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={labelCls}>Description</label>
+                  <textarea className={`${inputCls} min-h-[64px] resize-y`} value={current.description} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, description: e.target.value } : entity))} />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={labelCls}>Commentaires</label>
+                  <textarea className={`${inputCls} min-h-[64px] resize-y`} value={current.comment} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, comment: e.target.value } : entity))} />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="flex items-center gap-2 text-[13px] font-semibold text-[var(--navy)]">
+                    <input type="checkbox" checked={current.isLinkeeSite} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, isLinkeeSite: e.target.checked } : entity))} className="h-[17px] w-[17px] accent-[#2a78d6]" />
+                    Site Linkee <span className="font-normal text-[var(--muted)]">(entrepôt ou local Linkee — pas une association externe)</span>
+                  </label>
+                </div>
+              </div>
+            </AccordionSection>
+          )}
+
+          <AccordionSection title="Contacts" sectionKey="contacts" open={openSections.has("contacts")} onToggle={toggleSection}>
+            <div className="mb-2.5 flex flex-col gap-2.5">
+              {current.contacts.map((c, idx) => (
+                <div key={idx} className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[110px_1fr_1fr_1fr_30px]">
+                  <select
+                    className="rounded-[11px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[12.5px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
+                    value={c.type}
+                    onChange={(e) =>
+                      updateEntity((entity) => ({ ...entity, contacts: entity.contacts.map((row, i) => (i === idx ? { ...row, type: e.target.value } : row)) }))
+                    }
+                  >
+                    {["Admin", "Opérationnel", "Comptable"].map((t) => (
+                      <option key={t}>{t}</option>
+                    ))}
+                  </select>
+                  <input
+                    className="rounded-[11px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[12.5px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
+                    placeholder="Nom"
+                    value={c.nom}
+                    onChange={(e) => updateEntity((entity) => ({ ...entity, contacts: entity.contacts.map((row, i) => (i === idx ? { ...row, nom: e.target.value } : row)) }))}
+                  />
+                  <input
+                    className="rounded-[11px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[12.5px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
+                    placeholder="Téléphone"
+                    value={c.tel}
+                    onChange={(e) => updateEntity((entity) => ({ ...entity, contacts: entity.contacts.map((row, i) => (i === idx ? { ...row, tel: e.target.value } : row)) }))}
+                  />
+                  <input
+                    className="rounded-[11px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[12.5px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
+                    placeholder="Email"
+                    value={c.mail}
+                    onChange={(e) => updateEntity((entity) => ({ ...entity, contacts: entity.contacts.map((row, i) => (i === idx ? { ...row, mail: e.target.value } : row)) }))}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => updateEntity((entity) => ({ ...entity, contacts: entity.contacts.filter((_, i) => i !== idx) }))}
+                    className="flex h-7 w-7 items-center justify-center rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-[13px] w-[13px]">
+                      <path d="M6 6 L18 18 M18 6 L6 18" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                updateEntity((entity) => ({ ...entity, contacts: [...entity.contacts, { type: "Opérationnel", nom: "", tel: "", mail: "" }] }));
+                setOpenSections((prev) => new Set(prev).add("contacts"));
+              }}
+              className="w-full rounded-[11px] border-[1.5px] border-dashed border-[var(--border)] bg-[var(--input-bg)] py-2 text-[12.5px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]"
+            >
+              + Ajouter un contact
+            </button>
+          </AccordionSection>
+
+          {current.kind === "partner" && (
+            <AccordionSection title="Accès espace partenaire" sectionKey="portal" open={openSections.has("portal")} onToggle={toggleSection}>
+              <div className="grid grid-cols-1 gap-3">
+                <div>
+                  <label className={labelCls}>Email de connexion à l&apos;espace partenaire</label>
+                  <input
+                    className={inputCls}
+                    placeholder="contact@partenaire.fr"
+                    value={current.portalEmail || ""}
+                    onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, portalEmail: e.target.value } : entity))}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Sites rattachés à ce même compte (menu déroulant côté partenaire)</label>
+                  <div className="flex flex-wrap gap-2">
+                    {partners
+                      .filter((p) => p.id !== current.id)
+                      .map((p) => {
+                        const linked = (current.linkedSites || []).includes(p.id);
+                        return (
+                          <label
+                            key={p.id}
+                            className={`inline-flex items-center gap-1.5 rounded-[40px] border-[1.5px] px-3.5 py-2 text-xs font-semibold ${
+                              linked ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)]"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="hidden"
+                              checked={linked}
+                              onChange={() =>
+                                updateEntity((entity) => {
+                                  if (entity.kind !== "partner") return entity;
+                                  const sites = new Set(entity.linkedSites || []);
+                                  if (sites.has(p.id)) sites.delete(p.id);
+                                  else sites.add(p.id);
+                                  return { ...entity, linkedSites: Array.from(sites) };
+                                })
+                              }
+                            />
+                            {linked && (
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                                <path d="M20 6 L9 17 L4 12" />
+                              </svg>
+                            )}
+                            <span>{p.name}</span>
+                          </label>
+                        );
+                      })}
+                  </div>
+                  <p className="mt-2 text-[11.5px] text-[var(--slate)]">
+                    Un même partenaire (ex. plusieurs boutiques d&apos;une même enseigne) peut ainsi basculer entre ses sites depuis un seul identifiant, sans recréer un compte à chaque fois.
+                  </p>
+                </div>
+              </div>
+            </AccordionSection>
+          )}
+
+          {current.kind === "beneficiaire" && (
+            <AccordionSection title="Accès espace bénéficiaire" sectionKey="portal" open={openSections.has("portal")} onToggle={toggleSection}>
+              <div>
+                <label className={labelCls}>Email de connexion à l&apos;espace bénéficiaire</label>
+                <input
+                  className={inputCls}
+                  placeholder="contact@association.fr"
+                  value={current.portalEmail || ""}
+                  onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, portalEmail: e.target.value } : entity))}
+                />
+                <p className="mt-2 text-[11.5px] text-[var(--slate)]">
+                  Note libre — le compte lui-même se crée dans Comptes &amp; villes en rattachant l&apos;association à ce compte.
+                </p>
+              </div>
+            </AccordionSection>
+          )}
+          </>
+          )}
+          </div>
+        </>
+      )}
+    </div>
+  );
 
   return (
     <ReadOnlyCtx.Provider value={readOnly}>
@@ -777,8 +1480,8 @@ export default function PartenairesPage() {
         />
       )}
 
-      <div className="mt-[18px] grid grid-cols-1 items-start gap-[18px] xl:grid-cols-[330px_1fr]">
-        <div className="max-h-[calc(100vh-200px)] overflow-y-auto rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-2.5 shadow-[var(--shadow)]">
+      <div className="mt-[18px] grid grid-cols-1 items-start gap-[18px]">
+        <div className="rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-2.5 shadow-[var(--shadow)]">
           {loading && <p className="p-4 text-[13px] text-[var(--slate)]">Chargement…</p>}
           {!loading && filteredList.length === 0 && (
             <p className="p-4 text-[13px] text-[var(--slate)]">
@@ -789,7 +1492,10 @@ export default function PartenairesPage() {
             <>
               <div className="px-2.5 pt-2.5 pb-1.5 text-[10.5px] font-bold tracking-[0.05em] text-[var(--muted)] uppercase">Distributions Linkee</div>
               {pinned.map((e) => (
-                <Row key={e.id} e={e} />
+                <div key={e.id}>
+                  <Row e={e} />
+                  {e.id === currentId && renderFiche()}
+                </div>
               ))}
               <div className="px-2.5 pt-2.5 pb-1.5 text-[10.5px] font-bold tracking-[0.05em] text-[var(--muted)] uppercase">
                 {tab === "partner" ? "Tous les partenaires" : "Associations partenaires"}
@@ -797,705 +1503,11 @@ export default function PartenairesPage() {
             </>
           )}
           {rest.map((e) => (
-            <Row key={e.id} e={e} />
-          ))}
-        </div>
-
-        <div ref={ficheRef} className="scroll-mt-4 rounded-[20px] border border-[var(--border)] bg-[var(--card)] px-7 pt-[26px] pb-[30px] shadow-[var(--shadow)]">
-          {!current ? (
-            <div className="flex flex-col items-center gap-2.5 py-[60px] text-center text-[var(--slate)]">
-              <p>Sélectionnez une fiche dans la liste.</p>
+            <div key={e.id}>
+              <Row e={e} />
+              {e.id === currentId && renderFiche()}
             </div>
-          ) : (
-            <>
-              <div className="mb-2 flex items-start gap-[18px]">
-                <div
-                  onClick={() => (readOnly ? undefined : current.kind === "partner" ? logoInput.current?.click() : showToast("Le logo est disponible pour les partenaires."))}
-                  className={`group relative flex h-[66px] w-[66px] flex-none items-center justify-center overflow-hidden rounded-[20px] font-display text-[22px] font-extrabold text-white ${readOnly ? "" : "cursor-pointer"}`}
-                  style={{ background: current.logoUrl ? "var(--card)" : colorFor(current.name) }}
-                  title={readOnly ? undefined : "Changer le logo"}
-                >
-                  <input ref={logoInput} type="file" accept="image/*" hidden onChange={uploadLogo} />
-                  {current.logoUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={current.logoUrl} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    initials(current.name)
-                  )}
-                  <span className={`absolute inset-0 items-center justify-center rounded-[20px] bg-[rgba(0,22,65,0.55)] opacity-0 transition-opacity group-hover:opacity-100 ${readOnly ? "hidden" : "flex"}`}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px] text-white">
-                      <path d="M4 8 L7 4 H17 L20 8" />
-                      <rect x="3" y="8" width="18" height="12" rx="2" />
-                      <circle cx="12" cy="14" r="3.2" />
-                    </svg>
-                  </span>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2.5">
-                    <input
-                      value={current.name}
-                      readOnly={readOnly}
-                      onChange={(e) => updateEntity((entity) => ({ ...entity, name: e.target.value }))}
-                      className="min-w-0 flex-1 rounded-lg border-b-[1.5px] border-transparent bg-transparent px-1 py-0.5 font-display text-[27px] font-black text-[var(--navy)] outline-none hover:border-b-[var(--turquoise)] hover:bg-[var(--input-bg)] focus:border-b-[var(--turquoise)] focus:bg-[var(--input-bg)]"
-                    />
-                    {current.kind === "beneficiaire" && current.pinned && <DistribBadge />}
-                    {!readOnly && (
-                      <button
-                        type="button"
-                        title="Supprimer cette fiche"
-                        onClick={() => setDeleteTarget(current)}
-                        className="flex h-8 w-8 flex-none items-center justify-center rounded-full text-[var(--muted)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]"
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-[17px] w-[17px]">
-                          <path d="M4 7 H20 M9 7 V4.5 A1 1 0 0 1 10 3.5 H14 A1 1 0 0 1 15 4.5 V7 M6.5 7 L7.3 19.5 A2 2 0 0 0 9.3 21.4 H14.7 A2 2 0 0 0 16.7 19.5 L17.5 7" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-3">
-                    <select
-                      value={current.cat}
-                      disabled={readOnly}
-                      onChange={(e) => updateEntity((entity) => ({ ...entity, cat: e.target.value, ...(entity.kind === "beneficiaire" ? { pinned: e.target.value === "Distribution Linkee" } : {}) }))}
-                      className="cursor-pointer rounded-[40px] border border-[var(--border)] bg-[var(--input-bg)] px-3 py-[5px] text-[12.5px] font-semibold text-[var(--slate)]"
-                    >
-                      {(current.kind === "partner"
-                        ? ["Boulangerie", "Supermarché", "Traiteur", "Hôtel", "Restauration rapide", "Restauration collective", "Restauration collective Standard", "Traiteur, hôtel et restauration rapide", "Industriel", "Grossiste", "Association", "Evenementiel", "Non alimentaire"]
-                        : ["Distribution Linkee", "Association partenaire"]
-                      ).map((c) => (
-                        <option key={c}>{c}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="flex flex-none items-center gap-2">
-                  <span className="text-xs font-semibold text-[var(--slate)]">
-                    {current.active ? "Actif — visible dans l'app du logisticien" : "Inactif — masqué de l'app du logisticien"}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={readOnly}
-                    onClick={() => updateEntity((entity) => ({ ...entity, active: !entity.active }))}
-                    className={`relative h-[21px] w-[38px] rounded-[40px] transition-colors ${current.active ? "bg-[var(--good)]" : "bg-[var(--track)]"}`}
-                  >
-                    <span
-                      className="absolute top-0.5 h-[17px] w-[17px] rounded-full bg-white shadow transition-[left]"
-                      style={{ left: current.active ? 19 : 2 }}
-                    />
-                  </button>
-                </div>
-              </div>
-              {current.kind === "partner" && current.active && (
-                <div className="mb-3 rounded-[14px] border-[1.5px] border-[var(--border)] bg-[var(--card)] p-3">
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <span className="text-[13px] font-bold text-[var(--navy)]">Rythme</span>
-                    <div className="flex rounded-[40px] border border-[var(--border)] bg-[var(--input-bg)] p-[3px]">
-                      {RYTHME_OPTIONS.map((o) => {
-                        const on = current.rythme === o.k;
-                        return (
-                          <button
-                            key={o.k}
-                            type="button"
-                            disabled={readOnly}
-                            title={o.hint}
-                            onClick={() => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, rythme: on ? "" : o.k } : entity))}
-                            className={`rounded-[40px] px-3.5 py-1 font-display text-[12.5px] font-bold ${on ? "text-white" : "text-[var(--slate)]"}`}
-                            style={on ? { background: o.color } : undefined}
-                          >
-                            {o.l}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <span className="text-[11.5px] text-[var(--slate)]">
-                      {current.rythme === "regulier"
-                        ? formatCreneaux(current.creneaux)
-                          ? `Ajouté automatiquement au planning : ${formatCreneaux(current.creneaux)}`
-                          : "Renseigne ses créneaux ci-dessous pour qu'il apparaisse au planning."
-                        : current.rythme === "ponctuel"
-                          ? "Fait ses demandes lui-même depuis son espace partenaire."
-                          : "Non défini — choisis Régulier ou Ponctuel."}
-                    </span>
-                  </div>
-                  {current.rythme === "regulier" && (
-                    <label className="mt-2.5 flex items-start gap-2.5">
-                      <input
-                        type="checkbox"
-                        disabled={readOnly}
-                        checked={!!current.linkSystematique}
-                        onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, linkSystematique: e.target.checked } : entity))}
-                        className="mt-0.5 h-[16px] w-[16px] accent-[#eb6834]"
-                      />
-                      <span>
-                        <span className="block text-[12.5px] font-bold text-[var(--navy)]">Link bénévole systématique sur chaque créneau</span>
-                        <span className="block text-[11.5px] leading-[1.4] text-[var(--slate)]">Un rappel « Link bénévole à prévoir » s&apos;affiche dans le Planning les jours de ses créneaux, tant qu&apos;aucun Link n&apos;est créé pour ce jour-là.</span>
-                      </span>
-                    </label>
-                  )}
-                </div>
-              )}
-              {current.kind === "partner" && (
-                <label className="mb-4 flex items-start gap-2.5 rounded-[14px] border-[1.5px] p-3" style={{ borderColor: current.benevoleOnly ? "#eb6834" : "var(--border)", background: current.benevoleOnly ? "rgba(235,104,52,.08)" : "var(--card)" }}>
-                  <input
-                    type="checkbox"
-                    disabled={readOnly}
-                    checked={!!current.benevoleOnly}
-                    onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, benevoleOnly: e.target.checked } : entity))}
-                    className="mt-0.5 h-[17px] w-[17px] accent-[#eb6834]"
-                  />
-                  <span>
-                    <span className="flex items-center gap-2 text-[13px] font-bold text-[var(--navy)]">Éligible collecte bénévole <BetaBadge label="Bêta test" /></span>
-                    <span className="block text-[11.5px] leading-[1.4] text-[var(--slate)]">
-                      Ce partenaire sort du planning pro classique et n&apos;a plus accès à la collecte exceptionnelle classique — il passe par les Links Bénévoles (ou une collecte « pro » planifiée, relabellisée pour lui). Pense aussi à activer 🎒 et/ou 🚗 dans Links Bénévoles.
-                    </span>
-                  </span>
-                </label>
-              )}
-              <div className={`mb-4 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--good)] transition-opacity ${autosaveVisible ? "opacity-100" : "opacity-0"}`}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" className="h-[13px] w-[13px]">
-                  <path d="M20 6 L9 17 L4 12" />
-                </svg>
-                Modifications enregistrées
-              </div>
-
-              <div className="mb-4 grid grid-cols-2 gap-1.5 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-1.5 sm:grid-cols-4">
-                {(current.kind === "partner" ? FICHE_TABS : BENEFICIAIRE_FICHE_TABS).filter((t) => !(readOnly && t.k === "valorisation")).map((t) => {
-                  const on = ficheTab === t.k;
-                  return (
-                    <button
-                      key={t.k}
-                      type="button"
-                      onClick={() => setFicheTab(t.k)}
-                      className={`flex min-w-0 items-center justify-center gap-2 rounded-[10px] px-3 py-2.5 transition-colors ${on ? "" : "hover:bg-[var(--input-bg)]"}`}
-                      style={on ? { background: t.color, color: t.fg } : { color: "var(--navy)" }}
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 flex-none" style={on ? undefined : { color: t.color === "#0a1a3f" ? "var(--slate)" : t.color }}>
-                        {t.icon}
-                      </svg>
-                      <span className="truncate text-[13.5px] font-semibold">{t.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div>
-              {current.kind === "partner" && ficheTab === "documents" && <PartnerDocuments key={current.id} partnerId={current.id} role="admin" readOnly={readOnly} />}
-              {current.kind === "beneficiaire" && ficheTab === "documents" && <PartnerDocuments key={current.id} beneficiaryId={current.id} role="admin" readOnly={readOnly} />}
-              {current.kind === "partner" && ficheTab === "valorisation" && !readOnly && <PartnerValuation key={current.id} partnerId={current.id} category={current.cat} />}
-              {current.kind === "partner" && ficheTab === "collectes" && <PartnerCollectes key={current.id} partnerId={current.id} cityId={cityId} category={current.cat} readOnly={readOnly} />}
-
-              {ficheTab === "fiche" && (
-              <>
-              <AccordionSection title="Adresse & accès" sectionKey="identite" open={openSections.has("identite")} onToggle={toggleSection}>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="sm:col-span-2">
-                    <label className={labelCls}>Adresse</label>
-                    <AddressSearch
-                      className={inputCls}
-                      value={current.address}
-                      onChange={(v) => updateEntity((entity) => ({ ...entity, address: v }))}
-                      onPick={(hit) => updateEntity((entity) => ({ ...entity, address: hit.label }))}
-                      placeholder="Numéro, rue, code postal, ville"
-                    />
-                    <p className="mt-1 text-[11px] font-semibold text-[var(--muted)]">Choisis une suggestion dans la liste pour garantir un matching fiable avec les Links Bénévoles.</p>
-                  </div>
-                  <div>
-                    <label className={labelCls}>Numéro SIREN</label>
-                    <SirenField
-                      siren={current.siren}
-                      info={current.sirenInfo}
-                      onSirenChange={(v) => updateEntity((entity) => ({ ...entity, siren: v }))}
-                      onInfoChange={(info) => updateEntity((entity) => ({ ...entity, sirenInfo: info }))}
-                    />
-                  </div>
-                  {current.kind === "partner" && (
-                    <div>
-                      <label className={labelCls}>Antenne</label>
-                      <input className={inputCls} value={current.antenne} onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, antenne: e.target.value } : entity))} />
-                    </div>
-                  )}
-                  {current.kind === "partner" && (
-                    <div>
-                      <label className={labelCls}>Statut d&apos;activité <span className="font-normal text-[var(--muted)]">(filtrable/triable dans la liste)</span></label>
-                      <select className={inputCls} value={current.activityStatus || "Non défini"} onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, activityStatus: e.target.value } : entity))}>
-                        {ACTIVITY_STATUS_OPTIONS.map((o) => (
-                          <option key={o}>{o}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                  {current.kind === "partner" && (
-                    <div>
-                      <label className={labelCls}>Fréquence d&apos;émission Cerfa <span className="font-normal text-[var(--muted)]">(sert uniquement aux alertes de retard)</span></label>
-                      <select className={inputCls} value={current.cerfaFrequency || "ponctuel"} onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, cerfaFrequency: e.target.value as CerfaFrequency } : entity))}>
-                        {CERFA_FREQUENCIES.map((f) => (
-                          <option key={f.k} value={f.k}>{f.l}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                  {current.kind === "beneficiaire" && (
-                    <div>
-                      <label className={labelCls}>Téléphone</label>
-                      <input className={inputCls} value={current.tel} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, tel: e.target.value } : entity))} />
-                    </div>
-                  )}
-                  {current.kind === "beneficiaire" && (
-                    <div>
-                      <label className={labelCls}>Email</label>
-                      <input className={inputCls} value={current.mail} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, mail: e.target.value } : entity))} />
-                    </div>
-                  )}
-                  <div className="sm:col-span-2">
-                    <label className={labelCls}>Conditions d&apos;accès</label>
-                    <AccessChips
-                      access={current.access}
-                      onToggle={(k) => updateEntity((entity) => ({ ...entity, access: { ...entity.access, [k]: !entity.access[k] } }))}
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className={labelCls}>Détails d&apos;accès (texte libre)</label>
-                    <textarea
-                      className={`${inputCls} min-h-[56px] resize-y`}
-                      value={current.accessNote}
-                      onChange={(e) => updateEntity((entity) => ({ ...entity, accessNote: e.target.value }))}
-                    />
-                  </div>
-                  {current.kind === "beneficiaire" && (
-                    <div className="sm:col-span-2">
-                      <label className={labelCls}>
-                        Créneau de livraison fixe <span className="font-normal text-[var(--muted)]">(pour les associations livrées chaque semaine par le planning pro)</span>
-                      </label>
-                      <p className="mb-2 text-[11.5px] text-[var(--slate)]">
-                        Renseigne un jour + une plage horaire pour que cette association apparaisse automatiquement dans le Planning ce jour-là, sans avoir à l&apos;ajouter à la main chaque semaine.
-                        Ne sert qu&apos;au planning pro — sans effet sur Links Bénévoles, qui se base sur les horaires d&apos;ouverture ci-dessous.
-                      </p>
-                      {formatCreneaux(current.creneaux) && <p className="mb-2 text-[12px] font-semibold text-[var(--navy)]">{formatCreneaux(current.creneaux)}</p>}
-                      <SlotsEditor
-                        value={current.creneaux ?? {}}
-                        onChange={(v) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, creneaux: v } : entity))}
-                      />
-                    </div>
-                  )}
-                </div>
-              </AccordionSection>
-
-              {current.kind === "partner" && (
-                <AccordionSection title="Créneaux de collecte" sectionKey="creneaux" open={openSections.has("creneaux")} onToggle={toggleSection}>
-                  <p className="mb-3 text-[11.5px] text-[var(--slate)]">
-                    Jour + heure de début + heure de fin — utilisés pour planifier les collectes. Plusieurs créneaux possibles, y compris plusieurs le même jour.
-                  </p>
-                  {formatCreneaux(current.creneaux) && <p className="mb-3 text-[12px] font-semibold text-[var(--navy)]">{formatCreneaux(current.creneaux)}</p>}
-                  <SlotsEditor
-                    value={current.creneaux ?? {}}
-                    onChange={(v) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, creneaux: v } : entity))}
-                  />
-                </AccordionSection>
-              )}
-
-              {current.kind === "partner" && (
-                <AccordionSection title="Denrées & logistique" sectionKey="logistics" open={openSections.has("logistics")} onToggle={toggleSection}>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div className="sm:col-span-2">
-                      <label className={labelCls}>Types de denrées gérés</label>
-                      <DenreeChips
-                        denrees={current.denrees}
-                        onToggle={(d) => updateEntity((entity) => ({ ...entity, denrees: { ...entity.denrees, [d]: !entity.denrees[d] } }))}
-                      />
-                    </div>
-                    <div>
-                      <label className={labelCls}>Conditionnement</label>
-                      <select
-                        className={inputCls}
-                        value={current.conditionnement}
-                        onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, conditionnement: e.target.value } : entity))}
-                      >
-                        {["Carton", "Palette", "Autre"].map((c) => (
-                          <option key={c}>{c}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={labelCls}>Durée de collecte sur place (min)</label>
-                      <input
-                        type="number"
-                        min={0}
-                        step={5}
-                        className={inputCls}
-                        value={current.dureeCollecte || 10}
-                        onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, dureeCollecte: +e.target.value || 10 } : entity))}
-                      />
-                    </div>
-                  </div>
-                </AccordionSection>
-              )}
-
-              {current.kind === "partner" && (
-                <AccordionSection title="Checklist de passage" sectionKey="passage" open={openSections.has("passage")} onToggle={toggleSection}>
-                  <p className="mb-3 text-[11.5px] text-[var(--slate)]">
-                    Ce qui est coché apparaît dans la checklist d&apos;Akram les jours où ce partenaire est au planning, et sous forme d&apos;icône après son nom dans le Planning.
-                  </p>
-                  <div className="flex flex-col">
-                    {PASSAGE_ITEMS.map((it) => {
-                      const on = !!current.passage?.[it.k];
-                      return (
-                        <div key={it.k} className="border-t border-[var(--border)] py-3 first:border-t-0">
-                          <div className="flex items-center gap-3">
-                            <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full" style={{ background: it.bg, color: it.fg }}>
-                              <PassageIcon k={it.k} size={18} />
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block text-[13.5px] font-bold text-[var(--navy)]">{it.label}</span>
-                              <span className="block text-[11.5px] text-[var(--slate)]">{it.hint}</span>
-                            </span>
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={on}
-                              aria-label={it.label}
-                              onClick={() => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, passage: { ...entity.passage, [it.k]: !on } } : entity))}
-                              className={`relative h-[22px] w-[38px] flex-none rounded-full transition-colors ${on ? "bg-[var(--good)]" : "bg-[var(--border)]"}`}
-                            >
-                              <span className={`absolute top-[2px] h-[18px] w-[18px] rounded-full bg-white shadow transition-all ${on ? "left-[18px]" : "left-[2px]"}`} />
-                            </button>
-                          </div>
-                          {it.k === "rotation" && on && (
-                            <input
-                              className={`${inputCls} mt-2.5`}
-                              placeholder="Commentaire : ex. 3 bacs gris à rendre, en récupérer 3 propres au comptoir"
-                              value={current.passage?.rotationNote ?? ""}
-                              onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, passage: { ...entity.passage, rotationNote: e.target.value } } : entity))}
-                            />
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </AccordionSection>
-              )}
-
-              {current.kind === "partner" && (
-                <AccordionSection title='Cadre "Informations de collecte" (visible côté partenaire)' sectionKey="partnerspace" open={openSections.has("partnerspace")} onToggle={toggleSection}>
-                  <p className="mb-3 text-[11.5px] text-[var(--slate)]">Ces champs s&apos;affichent en lecture seule dans l&apos;espace du partenaire — lui seul ne peut pas les modifier.</p>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div className="sm:col-span-2">
-                      <label className={labelCls}>Créneau habituel (texte affiché)</label>
-                      <input
-                        className={inputCls}
-                        placeholder="Ex : Lundi entre 08h30 et 09h00"
-                        value={current.slotDisplay || ""}
-                        onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, slotDisplay: e.target.value } : entity))}
-                      />
-                    </div>
-                    <div>
-                      <label className={labelCls}>Volume estimatif habituel</label>
-                      <select
-                        className={inputCls}
-                        value={current.volumeRange || "10/20kg"}
-                        onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, volumeRange: e.target.value } : entity))}
-                      >
-                        {["10/20kg", "20/50kg", "50/100kg", "100/250kg", "250/500kg", "+500kg"].map((v) => (
-                          <option key={v}>{v}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className={labelCls}>Commentaire visible par le partenaire (optionnel)</label>
-                      <textarea
-                        className={`${inputCls} min-h-[56px] resize-y`}
-                        value={current.partnerComment || ""}
-                        onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, partnerComment: e.target.value } : entity))}
-                      />
-                    </div>
-                  </div>
-                </AccordionSection>
-              )}
-
-              {current.kind === "beneficiaire" && (
-                <AccordionSection title="Horaires d'ouverture et équipements sur site" sectionKey="accueil" open={openSections.has("accueil")} onToggle={toggleSection}>
-                  <div className="mb-3.5">
-                    <label className={labelCls}>
-                      Horaires d&apos;ouverture <span className="font-normal text-[var(--muted)]">(utilisés pour trouver l&apos;association la plus proche ouverte, dans Links Bénévoles)</span>
-                    </label>
-                    <div className="flex flex-col overflow-hidden rounded-[14px] border border-[var(--border)]">
-                      {DAYS.map((d) => {
-                        const h = current.hours?.[d.k] ?? null;
-                        const setH = (v: Hours) =>
-                          updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, hours: { ...(entity.hours ?? {}), [d.k]: v } } : entity));
-                        return (
-                          <div key={d.k} className="grid grid-cols-[70px_auto_1fr_1fr] items-center gap-2.5 bg-[var(--card)] px-3 py-2 border-b border-[var(--border)] last:border-b-0 sm:grid-cols-[90px_auto_1fr_1fr]">
-                            <span className="text-[12.5px] font-bold text-[var(--navy)]">{d.l}</span>
-                            <label className="flex items-center gap-1.5 text-[11.5px] whitespace-nowrap text-[var(--slate)]">
-                              <input type="checkbox" checked={!h} onChange={(e) => setH(e.target.checked ? null : { open: "09:00", close: "18:00" })} className="h-[15px] w-[15px] accent-[var(--critical)]" />
-                              Fermé
-                            </label>
-                            <input type="time" disabled={!h} className={`${inputCls} !px-2 !py-1.5 !text-xs disabled:opacity-35`} value={h?.open ?? "09:00"} onChange={(e) => h && setH({ ...h, open: e.target.value })} />
-                            <input type="time" disabled={!h} className={`${inputCls} !px-2 !py-1.5 !text-xs disabled:opacity-35`} value={h?.close ?? "18:00"} onChange={(e) => h && setH({ ...h, close: e.target.value })} />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div className="sm:col-span-2">
-                      <label className={labelCls}>Note horaires (facultatif) <span className="font-normal text-[var(--muted)]">— fermetures exceptionnelles, précisions…</span></label>
-                      <input className={inputCls} value={current.horaires} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, horaires: e.target.value } : entity))} />
-                    </div>
-                    <div>
-                      <label className={labelCls}>Volumes acceptés</label>
-                      <input className={inputCls} value={current.volumesAcceptes} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, volumesAcceptes: e.target.value } : entity))} />
-                    </div>
-                    <div>
-                      <label className={labelCls}>Surface de stockage (m²)</label>
-                      <input
-                        type="number"
-                        className={inputCls}
-                        value={current.stockageM2}
-                        onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, stockageM2: +e.target.value || 0 } : entity))}
-                      />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className={labelCls}>Typologie de denrées acceptées</label>
-                      <DenreeChips
-                        denrees={current.denrees}
-                        onToggle={(d) => updateEntity((entity) => ({ ...entity, denrees: { ...entity.denrees, [d]: !entity.denrees[d] } }))}
-                      />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className={labelCls}>Équipement sur place</label>
-                      <div className="flex flex-wrap gap-2">
-                        {(
-                          [
-                            ["cuisine", "Cuisine"],
-                            ["frigo", "Frigo"],
-                            ["chambreFroide", "Chambre froide"],
-                            ["stockage", "Stockage"],
-                            ["porc", "Accepte le porc"],
-                          ] as const
-                        ).map(([k, l]) => (
-                          <label
-                            key={k}
-                            className={`inline-flex items-center gap-1.5 rounded-[40px] border-[1.5px] px-3.5 py-2 text-xs font-semibold ${
-                              current.equipement[k] ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)]"
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              className="hidden"
-                              checked={current.equipement[k]}
-                              onChange={() =>
-                                updateEntity((entity) =>
-                                  entity.kind === "beneficiaire" ? { ...entity, equipement: { ...entity.equipement, [k]: !entity.equipement[k] } } : entity
-                                )
-                              }
-                            />
-                            {current.equipement[k] && (
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
-                                <path d="M20 6 L9 17 L4 12" />
-                              </svg>
-                            )}
-                            <span>{l}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </AccordionSection>
-              )}
-
-              {current.kind === "beneficiaire" && (
-                <AccordionSection title="Profil de l'association" sectionKey="profil" open={openSections.has("profil")} onToggle={toggleSection}>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className={labelCls}>Type de structure</label>
-                      <select className={inputCls} value={current.structureType} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, structureType: e.target.value } : entity))}>
-                        <option value="">— Non renseigné —</option>
-                        {STRUCTURE_TYPE_OPTIONS.map((o) => <option key={o}>{o}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={labelCls}>Statut</label>
-                      <select className={inputCls} value={current.statut} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, statut: e.target.value } : entity))}>
-                        <option value="">— Non renseigné —</option>
-                        {STATUT_OPTIONS.map((o) => <option key={o}>{o}</option>)}
-                      </select>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className={labelCls}>Public <span className="font-normal text-[var(--muted)]">(catégories de bénéficiaires accueillis)</span></label>
-                      <ExtensibleChips
-                        options={Array.from(new Set([...DEFAULT_PUBLIC_OPTIONS, ...Object.keys(current.publicCibles)]))}
-                        selected={current.publicCibles}
-                        onToggle={(k) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, publicCibles: { ...entity.publicCibles, [k]: !entity.publicCibles[k] } } : entity))}
-                        onAdd={(k) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, publicCibles: { ...entity.publicCibles, [k]: true } } : entity))}
-                      />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className={labelCls}>Nombre de bénéficiaires</label>
-                      <SingleChoiceChips options={BENEFICIARY_COUNT_OPTIONS} value={current.beneficiaryCount} onChange={(v) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, beneficiaryCount: v } : entity))} />
-                    </div>
-                    <div>
-                      <label className={labelCls}>Réseau / fédération</label>
-                      <input className={inputCls} placeholder="Ex : Habitat & Humanisme" value={current.network} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, network: e.target.value } : entity))} />
-                    </div>
-                    <div className="flex items-end">
-                      <label className="flex items-center gap-2 text-[13px] font-semibold text-[var(--navy)]">
-                        <input type="checkbox" checked={current.addressVerified} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, addressVerified: e.target.checked } : entity))} className="h-[17px] w-[17px] accent-[var(--good)]" />
-                        Adresse vérifiée
-                      </label>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className={labelCls}>Description</label>
-                      <textarea className={`${inputCls} min-h-[64px] resize-y`} value={current.description} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, description: e.target.value } : entity))} />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className={labelCls}>Commentaires</label>
-                      <textarea className={`${inputCls} min-h-[64px] resize-y`} value={current.comment} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, comment: e.target.value } : entity))} />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className="flex items-center gap-2 text-[13px] font-semibold text-[var(--navy)]">
-                        <input type="checkbox" checked={current.isLinkeeSite} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, isLinkeeSite: e.target.checked } : entity))} className="h-[17px] w-[17px] accent-[#2a78d6]" />
-                        Site Linkee <span className="font-normal text-[var(--muted)]">(entrepôt ou local Linkee — pas une association externe)</span>
-                      </label>
-                    </div>
-                  </div>
-                </AccordionSection>
-              )}
-
-              <AccordionSection title="Contacts" sectionKey="contacts" open={openSections.has("contacts")} onToggle={toggleSection}>
-                <div className="mb-2.5 flex flex-col gap-2.5">
-                  {current.contacts.map((c, idx) => (
-                    <div key={idx} className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[110px_1fr_1fr_1fr_30px]">
-                      <select
-                        className="rounded-[11px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[12.5px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
-                        value={c.type}
-                        onChange={(e) =>
-                          updateEntity((entity) => ({ ...entity, contacts: entity.contacts.map((row, i) => (i === idx ? { ...row, type: e.target.value } : row)) }))
-                        }
-                      >
-                        {["Admin", "Opérationnel", "Comptable"].map((t) => (
-                          <option key={t}>{t}</option>
-                        ))}
-                      </select>
-                      <input
-                        className="rounded-[11px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[12.5px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
-                        placeholder="Nom"
-                        value={c.nom}
-                        onChange={(e) => updateEntity((entity) => ({ ...entity, contacts: entity.contacts.map((row, i) => (i === idx ? { ...row, nom: e.target.value } : row)) }))}
-                      />
-                      <input
-                        className="rounded-[11px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[12.5px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
-                        placeholder="Téléphone"
-                        value={c.tel}
-                        onChange={(e) => updateEntity((entity) => ({ ...entity, contacts: entity.contacts.map((row, i) => (i === idx ? { ...row, tel: e.target.value } : row)) }))}
-                      />
-                      <input
-                        className="rounded-[11px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[12.5px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
-                        placeholder="Email"
-                        value={c.mail}
-                        onChange={(e) => updateEntity((entity) => ({ ...entity, contacts: entity.contacts.map((row, i) => (i === idx ? { ...row, mail: e.target.value } : row)) }))}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => updateEntity((entity) => ({ ...entity, contacts: entity.contacts.filter((_, i) => i !== idx) }))}
-                        className="flex h-7 w-7 items-center justify-center rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]"
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-[13px] w-[13px]">
-                          <path d="M6 6 L18 18 M18 6 L6 18" />
-                        </svg>
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    updateEntity((entity) => ({ ...entity, contacts: [...entity.contacts, { type: "Opérationnel", nom: "", tel: "", mail: "" }] }));
-                    setOpenSections((prev) => new Set(prev).add("contacts"));
-                  }}
-                  className="w-full rounded-[11px] border-[1.5px] border-dashed border-[var(--border)] bg-[var(--input-bg)] py-2 text-[12.5px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]"
-                >
-                  + Ajouter un contact
-                </button>
-              </AccordionSection>
-
-              {current.kind === "partner" && (
-                <AccordionSection title="Accès espace partenaire" sectionKey="portal" open={openSections.has("portal")} onToggle={toggleSection}>
-                  <div className="grid grid-cols-1 gap-3">
-                    <div>
-                      <label className={labelCls}>Email de connexion à l&apos;espace partenaire</label>
-                      <input
-                        className={inputCls}
-                        placeholder="contact@partenaire.fr"
-                        value={current.portalEmail || ""}
-                        onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, portalEmail: e.target.value } : entity))}
-                      />
-                    </div>
-                    <div>
-                      <label className={labelCls}>Sites rattachés à ce même compte (menu déroulant côté partenaire)</label>
-                      <div className="flex flex-wrap gap-2">
-                        {partners
-                          .filter((p) => p.id !== current.id)
-                          .map((p) => {
-                            const linked = (current.linkedSites || []).includes(p.id);
-                            return (
-                              <label
-                                key={p.id}
-                                className={`inline-flex items-center gap-1.5 rounded-[40px] border-[1.5px] px-3.5 py-2 text-xs font-semibold ${
-                                  linked ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)]"
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  className="hidden"
-                                  checked={linked}
-                                  onChange={() =>
-                                    updateEntity((entity) => {
-                                      if (entity.kind !== "partner") return entity;
-                                      const sites = new Set(entity.linkedSites || []);
-                                      if (sites.has(p.id)) sites.delete(p.id);
-                                      else sites.add(p.id);
-                                      return { ...entity, linkedSites: Array.from(sites) };
-                                    })
-                                  }
-                                />
-                                {linked && (
-                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
-                                    <path d="M20 6 L9 17 L4 12" />
-                                  </svg>
-                                )}
-                                <span>{p.name}</span>
-                              </label>
-                            );
-                          })}
-                      </div>
-                      <p className="mt-2 text-[11.5px] text-[var(--slate)]">
-                        Un même partenaire (ex. plusieurs boutiques d&apos;une même enseigne) peut ainsi basculer entre ses sites depuis un seul identifiant, sans recréer un compte à chaque fois.
-                      </p>
-                    </div>
-                  </div>
-                </AccordionSection>
-              )}
-
-              {current.kind === "beneficiaire" && (
-                <AccordionSection title="Accès espace bénéficiaire" sectionKey="portal" open={openSections.has("portal")} onToggle={toggleSection}>
-                  <div>
-                    <label className={labelCls}>Email de connexion à l&apos;espace bénéficiaire</label>
-                    <input
-                      className={inputCls}
-                      placeholder="contact@association.fr"
-                      value={current.portalEmail || ""}
-                      onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, portalEmail: e.target.value } : entity))}
-                    />
-                    <p className="mt-2 text-[11.5px] text-[var(--slate)]">
-                      Note libre — le compte lui-même se crée dans Comptes &amp; villes en rattachant l&apos;association à ce compte.
-                    </p>
-                  </div>
-                </AccordionSection>
-              )}
-              </>
-              )}
-              </div>
-            </>
-          )}
+          ))}
         </div>
       </div>
 
