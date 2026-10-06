@@ -26,7 +26,7 @@ type Line = {
   source_collecte_id: string | null;
 };
 type Inter = { associationId: string; comment: string; photoPaths: string[] };
-type Assoc = { id: string; name: string; activity_type: string | null; archived: boolean };
+type Assoc = { id: string; name: string; activity_type: string | null; archived: boolean; kind: string | null; distrib_actions: string | null };
 type Draft = {
   id?: string;
   beneficiaryId: string;
@@ -194,7 +194,7 @@ export default function DistributionsPage() {
       .map((b) => ({ id: b.id, name: b.name, cat: b.category ?? "", address: b.address ?? "" }));
     setPlaces(pl);
     const ids = pl.map((p) => p.id);
-    const aq = await supabase.from("associations").select("id,name,activity_type,archived").eq("city_id", cityId).order("name");
+    const aq = await supabase.from("associations").select("id,name,activity_type,archived,kind,distrib_actions").eq("city_id", cityId).order("name");
     setAssocs((aq.data ?? []) as Assoc[]);
     const pq = await supabase.from("partners").select("name").eq("city_id", cityId).is("deleted_at", null).order("name");
     setSuppliers(((pq.data ?? []) as { name: string }[]).map((p) => p.name));
@@ -853,23 +853,23 @@ export default function DistributionsPage() {
               <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4" style={{ borderTop: "4px solid #eb6834" }}>
                 <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
                   <h3 className="flex items-center gap-2 text-[14.5px] font-semibold text-[var(--navy)]">
-                    Associations présentes
+                    Village associatif
                     <span className="rounded-[40px] bg-[#eb6834] px-2.5 py-0.5 text-[12px] font-bold text-white">{draft.interventions.length}</span>
                   </h3>
                   <Link href="/distributions/village" className="text-[12px] font-semibold text-[#eb6834]">Ouvrir le Village associatif →</Link>
                 </div>
-                <p className="mb-3 text-[11.5px] text-[var(--slate)]">Choisis dans la liste celles qui sont intervenues. Chaque intervention apparaît aussi dans la fiche de l&apos;association.</p>
+                <p className="mb-3 text-[11.5px] text-[var(--slate)]">Qui est venu, et pour quoi faire : choisis l&apos;association ou l&apos;institution, précise l&apos;objet de son intervention, ajoute une photo si tu veux. Tout apparaît aussi dans sa fiche du Village associatif.</p>
                 <select
                   value=""
                   onChange={(e) => {
                     const id = e.target.value;
-                    if (id) edit((d) => (d.interventions.some((i) => i.associationId === id) ? d : { ...d, interventions: [...d.interventions, { associationId: id, comment: "", photoPaths: [] }] }));
+                    if (id) edit((d) => (d.interventions.some((i) => i.associationId === id) ? d : { ...d, interventions: [...d.interventions, { associationId: id, comment: assocs.find((x) => x.id === id)?.distrib_actions ?? "", photoPaths: [] }] }));
                   }}
                   className={`${fieldCls} max-w-[420px]`}
                 >
-                  <option value="">{assocs.filter((a) => !a.archived && !draft.interventions.some((i) => i.associationId === a.id)).length ? "Ajouter une association présente…" : assocs.length ? "Toutes les associations sont déjà ajoutées" : "Aucune association dans le Village associatif"}</option>
+                  <option value="">{assocs.filter((a) => !a.archived && !draft.interventions.some((i) => i.associationId === a.id)).length ? "Ajouter une association ou une institution…" : assocs.length ? "Toutes les associations sont déjà ajoutées" : "Aucune association dans le Village associatif"}</option>
                   {assocs.filter((a) => !a.archived && !draft.interventions.some((i) => i.associationId === a.id)).map((a) => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
+                    <option key={a.id} value={a.id}>{a.name}{a.kind === "institution" ? " (institution)" : ""}</option>
                   ))}
                 </select>                {draft.interventions.length > 0 && (
                   <div className="mt-4 flex flex-col gap-3">
@@ -881,7 +881,7 @@ export default function DistributionsPage() {
                             <span className="text-[13.5px] font-semibold text-[var(--navy)]">{a?.name ?? "Association"}{a?.activity_type ? <span className="ml-2 text-[11.5px] font-normal text-[var(--slate)]">{a.activity_type}</span> : null}</span>
                             <button type="button" onClick={() => edit((d) => ({ ...d, interventions: d.interventions.filter((i) => i.associationId !== iv.associationId) }))} className="text-[12px] font-semibold text-[var(--slate)] hover:text-[var(--critical)]">Retirer</button>
                           </div>
-                          <textarea className={`${fillCls} min-h-[64px] resize-y`} placeholder="Ce que l'association a fait, retour sur son intervention…" value={iv.comment} onChange={(e) => edit((d) => ({ ...d, interventions: d.interventions.map((i) => (i.associationId === iv.associationId ? { ...i, comment: e.target.value } : i)) }))} />
+                          <textarea className={`${fillCls} min-h-[64px] resize-y`} placeholder="Objet de l'intervention : ce qu'elle a fait, retour sur sa venue…" value={iv.comment} onChange={(e) => edit((d) => ({ ...d, interventions: d.interventions.map((i) => (i.associationId === iv.associationId ? { ...i, comment: e.target.value } : i)) }))} />
                           <div className="mt-2">
                             <PhotoStrip paths={iv.photoPaths} folder={`${cityId}/dist-${draft.beneficiaryId}-${draft.date}`} onChange={(p) => edit((d) => ({ ...d, interventions: d.interventions.map((i) => (i.associationId === iv.associationId ? { ...i, photoPaths: p } : i)) }))} accent="#eb6834" size={72} label="Photos" />
                           </div>

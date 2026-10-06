@@ -12,6 +12,7 @@ import { countLateDistributions } from "@/lib/distributions";
 import { useRemonteeAppBadge, useRemonteeBadge } from "@/lib/remontees";
 import { useMyPhoto } from "@/lib/profilePhoto";
 import { useNavActivity } from "@/lib/navActivity";
+import { isSuper } from "@/lib/roles";
 
 /** readable text colour (white or dark navy) on top of a hex background */
 function textOn(hex: string) {
@@ -76,6 +77,17 @@ const NAV_ITEMS = [
       <>
         <path d="M5 9 H19 L17.5 19 H6.5 Z" />
         <path d="M9 9 V6.5 A3 3 0 0 1 15 6.5 V9" />
+      </>
+    ),
+  },
+  {
+    href: "/village-associatif",
+    label: "Village associatif",
+    icon: (
+      <>
+        <path d="M3 20 V11 L8 7 L13 11 V20" />
+        <path d="M13 20 V13 L17.5 9.5 L22 13 V20" />
+        <path d="M2 20 H23 M7 20 V15 H9 V20" />
       </>
     ),
   },
@@ -185,7 +197,7 @@ const PINNED = ["/calendrier", "/todo"];
 const NAV_GROUPS: string[][] = [
   ["/dashboard", "/valeur-des-dons"],
   ["/planning", "/distributions", "/stock", "/flotte", "/links-benevoles"],
-  ["/partenaires", "/comptabilite"],
+  ["/partenaires", "/village-associatif", "/comptabilite"],
   ["/organigramme", "/remontees", "/profil"],
 ];
 type NavItem = (typeof NAV_ITEMS)[number];
@@ -215,7 +227,7 @@ export function Sidebar() {
   // Superadmin: everything · Responsable d'antenne: Distribution, Stock, Planning · Resp. Distribution: Distribution only
   // Superadmin, Comptabilité et Responsable d'antenne (pour sa ville) voient tout le menu ; la section "Superadmin"
   // (Villes & comptes, Historique) ne s'affiche que pour le Superadmin.
-  const rolePaths: string[] | null = me.role === "resp_distribution" ? ["/calendrier", "/distributions", "/organigramme", "/profil", "/remontees"] : me.role === "resp_rh" ? ["/calendrier", "/organigramme", "/profil", "/remontees"] : null;
+  const rolePaths: string[] | null = me.role === "resp_distribution" ? ["/calendrier", "/distributions", "/village-associatif", "/organigramme", "/profil", "/remontees"] : me.role === "resp_rh" ? ["/calendrier", "/organigramme", "/profil", "/remontees"] : null;
   // « Remontées » : onglet utilisateur pour tous les rôles sauf le Superadmin, qui a « Remontées APP » à la place
   const visibleNav = (isAll ? NAV_ITEMS.filter((n) => ["/dashboard", "/calendrier", "/flotte", "/profil", "/valeur-des-dons", "/comptabilite", "/organigramme", "/remontees"].includes(n.href)) : NAV_ITEMS)
     .filter((n) => (me.role ? !rolePaths || rolePaths.includes(n.href) : false))
@@ -475,6 +487,25 @@ export function Sidebar() {
           )}
         </nav>
       </div>
+
+      {/* outils externes : s'ouvrent dans un nouvel onglet (PayFit et Axonaut refusent d'être affichés dans une autre page) */}
+      {me.role && (
+        <div className="mt-3 flex flex-none flex-col gap-1.5 border-t border-white/10 pt-3">
+          {[
+            { href: "https://payfit.com/fr/", label: "Ma RH", sub: "PayFit", show: true },
+            { href: "https://axonaut.com/", label: "Facturation", sub: "Axonaut", show: isSuper(me.role) },
+          ]
+            .filter((x) => x.show)
+            .map((x) => (
+              <a key={x.href} href={x.href} target="_blank" rel="noopener noreferrer" title={`${x.label} — ${x.sub} (s'ouvre dans un nouvel onglet)`} className="flex items-center justify-between gap-2 rounded-full border border-white/25 px-4 py-1.5 text-[12.5px] font-bold text-[var(--panel-fg)] hover:border-[var(--turquoise)] hover:bg-white/8">
+                <span>{x.label}</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 flex-none opacity-80" aria-hidden="true">
+                  <path d="M14 4 H20 V10 M20 4 L11 13 M18 14 V19 A1 1 0 0 1 17 20 H5 A1 1 0 0 1 4 19 V7 A1 1 0 0 1 5 6 H10" />
+                </svg>
+              </a>
+            ))}
+        </div>
+      )}
     </aside>
   );
 }
