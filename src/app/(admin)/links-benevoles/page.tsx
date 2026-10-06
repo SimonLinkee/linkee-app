@@ -207,7 +207,7 @@ export default function LinksBenevolesAdminPage() {
                       </label>
                     )}
                     {canAssign && l.status === "acceptee" && (
-                      <button type="button" onClick={() => unassign(l.id)} className="self-start text-[11px] font-semibold text-[var(--slate)] underline hover:text-[var(--critical)]">Retirer l'attribution</button>
+                      <button type="button" onClick={() => unassign(l.id)} className="self-start text-[11px] font-semibold text-[var(--slate)] underline hover:text-[var(--critical)]">Retirer l&apos;attribution</button>
                     )}
                     <label className="flex items-center gap-1.5 self-start text-[11px] font-semibold text-[var(--slate)]">
                       Valeur du don
