@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
 import DistribTabs from "@/components/DistribTabs";
 import PhotoStrip from "@/components/PhotoStrip";
-import { STATUS_UI, distribStatus } from "@/lib/distributions";
+import { STATUS_UI, distribStatus, isoToday } from "@/lib/distributions";
 
 /* ---------------- types ---------------- */
 type DbStatus = "prevue" | "distribuee" | "annulee";
@@ -170,6 +170,7 @@ export default function DistributionsPage() {
   const [drops, setDrops] = useState<PlanDrop[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
+  const [pastOpen, setPastOpen] = useState(false); // vue « Toutes » : les distributions passées sont repliées par défaut
   const [filter, setFilter] = useState<"semaine" | "all" | "encours" | "avenir" | "retard" | "cloture" | "annulee">("semaine"); // par défaut : la semaine en cours
   const [selKey, setSelKey] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -248,6 +249,37 @@ export default function DistributionsPage() {
   const shown = entries.filter((e) => filter === "all" || (filter === "semaine" ? inWeek(e) : stOf(e) === filter));
   const count = (k: "encours" | "avenir" | "retard" | "cloture" | "annulee") => entries.filter((e) => stOf(e) === k).length;
   const nLate = count("retard");
+  // Vue « Toutes » : la prochaine distribution en premier puis les suivantes dans l'ordre ; les passées en dessous, de la plus récente à la plus ancienne
+  const todayIso = isoToday();
+  const upcoming = entries.filter((e) => e.date >= todayIso).sort((a, b) => a.date.localeCompare(b.date));
+  const past = entries.filter((e) => e.date < todayIso).sort((a, b) => b.date.localeCompare(a.date));
+  const pastShown = pastOpen || (!!selKey && past.some((e) => e.key === selKey)); // une distribution passée ouverte (lien direct) déplie la section
+  const shownList = filter === "avenir" ? [...shown].sort((a, b) => a.date.localeCompare(b.date)) : shown; // « À venir » : la plus proche d'abord
+
+  const card = (e: Entry, next = false) => {
+    const p = placeById.get(e.beneficiaryId);
+    const on = e.key === selKey;
+    return (
+        <button key={e.key} type="button" onClick={() => open(e)} className={`flex w-[236px] flex-none items-center gap-2.5 rounded-xl border-[1.5px] bg-[var(--card)] px-2.5 py-2 text-left ${on ? "border-[#2a78d6] shadow-[var(--shadow)]" : "border-[var(--border)] hover:border-[#2a78d6]"}`}>
+          <span className="flex h-10 w-10 flex-none flex-col items-center justify-center rounded-[10px] bg-[#2a78d6] text-white">
+            <span className="font-display text-[15px] leading-none font-black">{new Date(e.date + "T00:00:00").getDate()}</span>
+            <span className="text-[9px] font-semibold uppercase">{new Date(e.date + "T00:00:00").toLocaleDateString("fr-FR", { month: "short" })}</span>
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[13px] font-semibold text-[var(--navy)]">{next && <span className="mr-1.5 rounded-[40px] bg-[var(--navy-deep)] px-1.5 py-px text-[9.5px] font-bold text-[var(--panel-fg)] uppercase">Prochaine</span>}{p?.name ?? "Lieu"}</span>
+            <span className="mt-0.5 inline-block rounded-[40px] px-2 py-px text-[10.5px] font-bold" style={{ background: STATUS_UI[stOf(e)].bg, color: STATUS_UI[stOf(e)].fg }}>
+              {stOf(e) === "retard" ? "En retard" : STATUS_UI[stOf(e)].label}
+            </span>
+            {(e.registered != null || e.baskets != null) && (
+              <span className="ml-1.5 text-[11px] text-[var(--slate)]">
+                {e.registered != null ? `${e.registered} insc.` : ""}
+                {e.baskets != null ? ` · ${e.baskets} paniers` : ""}
+              </span>
+            )}
+          </span>
+        </button>
+    );
+  };
 
   /* ---------- open one distribution (the landing page) ---------- */
   async function suppliersFor(sourceIds: string[]) {
@@ -559,32 +591,23 @@ export default function DistributionsPage() {
           </div>
           {loading && <p className="text-[13px] text-[var(--slate)]">Chargement…</p>}
           {!loading && shown.length === 0 && <p className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--card)] px-4 py-3 text-[13px] text-[var(--slate)]">Aucune distribution. Planifie une dépose dans un lieu « Distribution Linkee », ou crée-en une avec le bouton en haut.</p>}
-          <div className="flex gap-2 overflow-x-auto pb-2">
-            {shown.map((e) => {
-              const p = placeById.get(e.beneficiaryId);
-              const on = e.key === selKey;
-              return (
-                <button key={e.key} type="button" onClick={() => open(e)} className={`flex w-[236px] flex-none items-center gap-2.5 rounded-xl border-[1.5px] bg-[var(--card)] px-2.5 py-2 text-left ${on ? "border-[#2a78d6] shadow-[var(--shadow)]" : "border-[var(--border)] hover:border-[#2a78d6]"}`}>
-                  <span className="flex h-10 w-10 flex-none flex-col items-center justify-center rounded-[10px] bg-[#2a78d6] text-white">
-                    <span className="font-display text-[15px] leading-none font-black">{new Date(e.date + "T00:00:00").getDate()}</span>
-                    <span className="text-[9px] font-semibold uppercase">{new Date(e.date + "T00:00:00").toLocaleDateString("fr-FR", { month: "short" })}</span>
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-semibold text-[var(--navy)]">{p?.name ?? "Lieu"}</span>
-                    <span className="mt-0.5 inline-block rounded-[40px] px-2 py-px text-[10.5px] font-bold" style={{ background: STATUS_UI[stOf(e)].bg, color: STATUS_UI[stOf(e)].fg }}>
-                      {stOf(e) === "retard" ? "En retard" : STATUS_UI[stOf(e)].label}
-                    </span>
-                    {(e.registered != null || e.baskets != null) && (
-                      <span className="ml-1.5 text-[11px] text-[var(--slate)]">
-                        {e.registered != null ? `${e.registered} insc.` : ""}
-                        {e.baskets != null ? ` · ${e.baskets} paniers` : ""}
-                      </span>
-                    )}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          {filter === "all" ? (
+            <>
+              {upcoming.length > 0 && <div className="mb-1.5 text-[11px] font-bold tracking-[0.04em] text-[var(--slate)] uppercase">À venir · la prochaine en premier</div>}
+              <div className="flex flex-wrap gap-2 pb-2">{upcoming.map((e, i) => card(e, i === 0))}</div>
+              {past.length > 0 && (
+                <div className="mt-2">
+                  <button type="button" aria-expanded={pastShown} onClick={() => setPastOpen((v) => !v)} className="flex w-full items-center justify-between rounded-xl border border-[var(--border)] bg-[var(--card)] px-3.5 py-2.5 text-left text-[13px] font-semibold text-[var(--navy)]">
+                    <span>Distributions passées <span className="font-medium text-[var(--slate)]">({past.length}) · de la plus récente à la plus ancienne</span></span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 flex-none text-[var(--slate)] transition-transform ${pastShown ? "rotate-180" : ""}`} aria-hidden="true"><path d="M6 9 L12 15 L18 9" /></svg>
+                  </button>
+                  {pastShown && <div className="mt-2 flex flex-wrap gap-2 pb-2">{past.map((e) => card(e))}</div>}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="flex gap-2 overflow-x-auto pb-2">{shownList.map((e) => card(e))}</div>
+          )}
         </div>
 
         {/* ---- landing page of the selected distribution ---- */}
