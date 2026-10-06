@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
-import { signedUrls } from "@/lib/photos";
+import { signedUrls, uploadPrivatePhoto } from "@/lib/photos";
 import FleetLiveCard from "@/components/FleetLiveCard";
 
 type CheckItem = { key: string; label: string; intervalDays: number; lastDate: string };
@@ -19,11 +19,16 @@ type Vehicle = {
   checks: CheckItem[];
   revisions: CheckItem[];
   invoices: Invoice[];
+  cubage?: number | null; // volume utile, en m³
+  frigo?: boolean; // camion frigorifique
+  chargeUtile?: number | null; // charge utile MAXIMALE (kg) : le poids maximum qu'on peut charger dans le véhicule
+  photoPath?: string | null; // photo du véhicule (coffre privé collecte-photos)
   rented?: boolean; // véhicule loué : l'entretien est assuré par le loueur, seules les photos du lundi matin restent à faire
 };
 
 type Report = { tourDate: string | null; tourUrls: string[]; receipts: { id: string; date: string; amount: number | null; url: string }[] };
 const TODAY = new Date();
+const VEHICLE_TYPES = ["Camion", "Camionnette / fourgon", "Voiture", "Vélo cargo", "Autre"];
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
 const defaultChecks = (): CheckItem[] => [
@@ -52,6 +57,10 @@ const rowToVehicle = (r: VehicleRow): Vehicle => ({
   revisions: r.fiche?.revisions ?? defaultRevisions(),
   invoices: r.fiche?.invoices ?? [],
   rented: !!r.fiche?.rented,
+  cubage: r.fiche?.cubage ?? null,
+  frigo: !!r.fiche?.frigo,
+  chargeUtile: r.fiche?.chargeUtile ?? null,
+  photoPath: r.fiche?.photoPath ?? null,
 });
 
 function status(item: CheckItem) {
@@ -92,6 +101,8 @@ export default function FlottePage() {
   const saveTimer = useRef<number | null>(null);
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(["checks"]));
   const [autosaveVisible, setAutosaveVisible] = useState(false);
+  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
+  const [photoBusy, setPhotoBusy] = useState(false);
   const [docModal, setDocModal] = useState<{ v: Vehicle; inv: Invoice } | null>(null);
 
   const current = vehicles.find((v) => v.id === currentId);
@@ -161,7 +172,7 @@ export default function FlottePage() {
     saveTimer.current = window.setTimeout(async () => {
       const { error } = await supabase
         .from("vehicles")
-        .update({ name: v.name, plate: v.plate, assigned_to: v.assignedTo || null, fiche: { type: v.type, statut: v.statut, checks: v.checks, revisions: v.revisions, invoices: v.invoices, ...(v.rented ? { rented: true } : {}) } })
+        .update({ name: v.name, plate: v.plate, assigned_to: v.assignedTo || null, fiche: { type: v.type, statut: v.statut, checks: v.checks, revisions: v.revisions, invoices: v.invoices, cubage: v.cubage ?? null, frigo: !!v.frigo, chargeUtile: v.chargeUtile ?? null, photoPath: v.photoPath ?? null, ...(v.rented ? { rented: true } : {}) } })
         .eq("id", v.id);
       if (error) showToast("Enregistrement impossible : " + error.message);
       else flashAutosave();
@@ -200,6 +211,39 @@ export default function FlottePage() {
       else next.add(key);
       return next;
     });
+  }
+  // liens d'affichage des photos des véhicules (coffre privé)
+  const photoKey = vehicles.map((v) => v.photoPath ?? "").join("|");
+  useEffect(() => {
+    const paths = vehicles.map((v) => v.photoPath).filter((p): p is string => !!p);
+    if (!paths.length) return;
+    let off = false;
+    signedUrls(supabase, paths).then((urls) => {
+      if (!off) setPhotoUrls(Object.fromEntries(paths.map((p, i): [string, string] => [p, urls[i]]).filter(([, u]) => u)));
+    });
+    return () => {
+      off = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photoKey]);
+  async function setVehiclePhoto(file: File) {
+    if (!current) return;
+    setPhotoBusy(true);
+    try {
+      const path = await uploadPrivatePhoto(supabase, `vehicules/${current.id}`, file);
+      const old = current.photoPath;
+      updateCurrent((v) => ({ ...v, photoPath: path }));
+      if (old) await supabase.storage.from("collecte-photos").remove([old]);
+    } catch (e) {
+      window.alert("Photo non enregistrée : " + (e as Error).message);
+    }
+    setPhotoBusy(false);
+  }
+  async function removeVehiclePhoto() {
+    if (!current?.photoPath || !window.confirm("Retirer la photo de ce véhicule ?")) return;
+    const old = current.photoPath;
+    updateCurrent((v) => ({ ...v, photoPath: null }));
+    await supabase.storage.from("collecte-photos").remove([old]);
   }
   function updateCurrent(updater: (v: Vehicle) => Vehicle) {
     const cur = vehicles.find((v) => v.id === currentId);
@@ -438,6 +482,69 @@ export default function FlottePage() {
               <path d="M20 6 L9 17 L4 12" />
             </svg>
             Modifications enregistrées
+          </div>
+
+          {/* caractéristiques du véhicule : photo, type, cubage, frigorifique, charge utile */}
+          <div className="mb-4 rounded-[14px] border border-[var(--border)] p-4">
+            <h4 className="mb-3 font-display text-[15px] font-extrabold text-[var(--navy)]">Caractéristiques du véhicule</h4>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-[190px_1fr]">
+              <div>
+                <div className="flex h-[140px] w-full items-center justify-center overflow-hidden rounded-[14px] border border-dashed border-[var(--border)] bg-[var(--input-bg)]">
+                  {current.photoPath && photoUrls[current.photoPath] ? (
+                    <a href={photoUrls[current.photoPath]} target="_blank" rel="noopener noreferrer" title="Voir en grand" className="block h-full w-full">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={photoUrls[current.photoPath]} alt={`Photo du véhicule ${current.name}`} className="h-full w-full object-cover" />
+                    </a>
+                  ) : (
+                    <span className="px-3 text-center text-[12px] text-[var(--slate)]">{current.photoPath ? "Chargement de la photo…" : "Pas encore de photo"}</span>
+                  )}
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <label className={`cursor-pointer rounded-[40px] border-[1.5px] border-[var(--border)] px-3 py-1.5 text-[12px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)] ${photoBusy ? "opacity-50" : ""}`}>
+                    {photoBusy ? "Envoi…" : current.photoPath ? "Changer la photo" : "Ajouter une photo"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      disabled={photoBusy}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = "";
+                        if (f) void setVehiclePhoto(f);
+                      }}
+                    />
+                  </label>
+                  {current.photoPath && (
+                    <button type="button" onClick={() => void removeVehiclePhoto()} className="text-[12px] font-semibold text-[var(--slate)] underline hover:text-[var(--critical)]">Retirer</button>
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-1 content-start gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-[11.5px] font-semibold text-[var(--slate)]">Type de véhicule</label>
+                  <select value={current.type} onChange={(e) => updateCurrent((v) => ({ ...v, type: e.target.value }))} className="w-full rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[13px] font-semibold text-[var(--navy)] outline-none focus:border-[var(--turquoise)]">
+                    {Array.from(new Set([...VEHICLE_TYPES, current.type])).map((t) => <option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11.5px] font-semibold text-[var(--slate)]">Camion frigorifique</label>
+                  <div className="inline-flex rounded-[40px] bg-[var(--track)] p-[3px]">
+                    {([[true, "Oui"], [false, "Non"]] as const).map(([val, label]) => (
+                      <button key={label} type="button" onClick={() => updateCurrent((v) => ({ ...v, frigo: val }))} className={`rounded-[40px] px-5 py-1.5 text-[12.5px] font-bold ${!!current.frigo === val ? "bg-[var(--card)] text-[var(--navy)] shadow-[var(--shadow)]" : "text-[var(--slate)]"}`}>{label}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11.5px] font-semibold text-[var(--slate)]">Cubage (m³)</label>
+                  <input type="number" min={0} step="0.1" placeholder="Ex : 20" value={current.cubage ?? ""} onChange={(e) => updateCurrent((v) => ({ ...v, cubage: e.target.value === "" ? null : Math.max(0, Number(e.target.value)) }))} className="w-full rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[13px] font-semibold text-[var(--navy)] outline-none focus:border-[var(--turquoise)]" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11.5px] font-semibold text-[var(--slate)]">Charge utile maximale (kg)</label>
+                  <input type="number" min={0} step="1" placeholder="Ex : 1200" value={current.chargeUtile ?? ""} onChange={(e) => updateCurrent((v) => ({ ...v, chargeUtile: e.target.value === "" ? null : Math.max(0, Number(e.target.value)) }))} className="w-full rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[13px] font-semibold text-[var(--navy)] outline-none focus:border-[var(--turquoise)]" />
+                  <p className="mt-1 text-[11px] text-[var(--slate)]">C&apos;est le poids maximum qu&apos;on peut charger dans le véhicule (marchandises, sans le poids du véhicule à vide).</p>
+                </div>
+              </div>
+            </div>
           </div>
 
           {(() => {
