@@ -6,8 +6,8 @@ import { CityProvider, useCity } from "@/components/admin/CityContext";
 import { Sidebar } from "@/components/admin/Sidebar";
 import PresenceBar from "@/components/PresenceBar";
 
-// Rôles qui voient (et apparaissent dans) la pastille « qui est connecté » : Superadmin, Comptabilité, Responsable d'antenne
-const PRESENCE_ROLES = ["admin_principal", "comptabilite", "admin_local"];
+// Rôles qui voient la pastille « qui est connecté » : toute l'équipe de la version PC (le logisticien apparaît pour les autres sans voir le bandeau)
+const PRESENCE_ROLES = ["admin_principal", "comptabilite", "admin_local", "resp_distribution", "resp_rh"];
 
 // Pages qui ne s'ouvrent que pour une ville : en vue « Toutes les villes », on propose de choisir la ville au lieu d'une page vide.
 // Le menu, lui, reste identique partout.

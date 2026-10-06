@@ -6,14 +6,14 @@ import { createClient } from "@/lib/supabase/client";
 
 // « Qui est connecté » : pastilles en haut à droite, comme dans Google Drive. Présence temps réel (Supabase Realtime), rien
 // n'est enregistré en base ; les canaux sont privés (migration 063) :
-//   channel="team"    → l'équipe (Superadmin, Comptabilité, Responsable d'antenne)
+//   channel="team"    → toute l'équipe interne (jamais les partenaires, bénéficiaires ni Linkers)
 //   channel="linkers" → les Linkers bénévoles, entre eux (prénom et initiale seulement)
 
 type Who = { id: string; name: string; role: string; page: string; photo: string | null };
 
 const COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#B23B72", "#7C5CD9", "#0e9aa7", "#8a5a2b", "#eda100"];
 const colorOf = (id: string) => COLORS[Array.from(id).reduce((h, c) => (h * 31 + c.charCodeAt(0)) % COLORS.length, 0)];
-const ROLE_LABEL: Record<string, string> = { admin_principal: "Superadmin", comptabilite: "Comptabilité", admin_local: "Responsable d'antenne", logisticien: "Logisticien", linker: "Linker" };
+const ROLE_LABEL: Record<string, string> = { admin_principal: "Superadmin", comptabilite: "Comptabilité", admin_local: "Responsable d'antenne", resp_distribution: "Resp. Distribution", resp_rh: "Responsable RH", logisticien: "Logisticien", linker: "Linker" };
 const PAGES: [string, string][] = [
   ["/dashboard", "le tableau de bord"], ["/partenaires", "Partenaires"], ["/prospection", "Prospection"], ["/village-associatif", "le Village associatif"], ["/planning", "le Planning"],
   ["/calendrier", "Calendrier et actu"], ["/distributions", "Distributions"], ["/stock", "le Stock"], ["/flotte", "la Flotte"], ["/todo", "TODO"], ["/comptabilite", "Cerfa"],
@@ -23,7 +23,8 @@ const PAGES: [string, string][] = [
 const pageLabel = (path: string) => PAGES.find(([p]) => path === p || path.startsWith(p + "/"))?.[1] ?? "la plateforme";
 const initial = (n: string) => (n.trim().charAt(0) || "?").toUpperCase();
 
-export default function PresenceBar({ channel, max = 5, className = "" }: { channel: "team" | "linkers"; max?: number; className?: string }) {
+/** hidden : on apparaît pour les autres sans afficher le bandeau chez soi (appli du logisticien : pas de place perdue). */
+export default function PresenceBar({ channel, max = 5, className = "", hidden = false }: { channel: "team" | "linkers"; max?: number; className?: string; hidden?: boolean }) {
   const supabase = useMemo(() => createClient(), []);
   const pathname = usePathname();
   const [people, setPeople] = useState<Who[]>([]);
@@ -97,7 +98,7 @@ export default function PresenceBar({ channel, max = 5, className = "" }: { chan
     return () => document.removeEventListener("mousedown", close);
   }, [open]);
 
-  if (!meId || people.length === 0) return null;
+  if (hidden || !meId || people.length === 0) return null;
   const ordered = [...people.filter((w) => w.id === meId), ...people.filter((w) => w.id !== meId).sort((a, b) => a.name.localeCompare(b.name))];
   const shown = ordered.slice(0, max);
   const rest = ordered.slice(max);
