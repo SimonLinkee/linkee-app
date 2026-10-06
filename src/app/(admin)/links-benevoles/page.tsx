@@ -14,7 +14,7 @@ import { canAdminCity } from "@/lib/roles";
 const ORANGE = "#eb6834";
 type LinkerRow = { id: string; character: CharKey; level: number; mode: Mode; transport: "pied" | "velo"; radius_km: number; cold_ok: boolean; kg_saved: number; links_done: number; chosen: Record<number, StyleKey>; equipped: Record<number, number | "none">; profiles: { full_name: string | null; email: string | null; phone: string | null } | { full_name: string | null; email: string | null; phone: string | null }[] | null };
 type LinkedProfile = { full_name: string | null; phone: string | null };
-type LinkRow = { id: string; status: string; kg_estime: number; weight_actual: number | null; don_value: number | null; is_fresh: boolean; denree: string | null; window_date: string; window_from: string; window_to: string; is_demo: boolean; partners: { name: string } | { name: string }[] | null; beneficiaries: { name: string } | { name: string }[] | null; linkers: { character: CharKey; level: number; profiles: LinkedProfile | LinkedProfile[] | null } | { character: CharKey; level: number; profiles: LinkedProfile | LinkedProfile[] | null }[] | null };
+type LinkRow = { id: string; status: string; mode_required: string | null; linker_id: string | null; kg_estime: number; weight_actual: number | null; don_value: number | null; is_fresh: boolean; denree: string | null; window_date: string; window_from: string; window_to: string; is_demo: boolean; partners: { name: string } | { name: string }[] | null; beneficiaries: { name: string } | { name: string }[] | null; linkers: { character: CharKey; level: number; profiles: LinkedProfile | LinkedProfile[] | null } | { character: CharKey; level: number; profiles: LinkedProfile | LinkedProfile[] | null }[] | null };
 type Partner = { id: string; name: string; address: string | null; allow_backpack: boolean; allow_car: boolean };
 
 const STATUS_UI: Record<string, { l: string; bg: string; fg: string }> = {
@@ -29,7 +29,8 @@ const fmtDay = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("fr-F
 
 export default function LinksBenevolesAdminPage() {
   const supabase = useMemo(() => createClient(), []);
-  const { cityId, city, isAll } = useCity();
+  const { cityId, city, isAll, role } = useCity();
+  const canAssign = canAdminCity(role);
   const [linkers, setLinkers] = useState<LinkerRow[]>([]);
   const [links, setLinks] = useState<LinkRow[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
@@ -51,7 +52,7 @@ export default function LinksBenevolesAdminPage() {
     setLoading(true);
     const [lk, lnk, pt] = await Promise.all([
       supabase.from("linkers").select("id,character,level,mode,transport,radius_km,cold_ok,kg_saved,links_done,chosen,equipped,profiles(full_name,email,phone)").eq("city_id", cityId).order("level", { ascending: false }),
-      supabase.from("links").select("id,status,kg_estime,weight_actual,don_value,is_fresh,denree,window_date,window_from,window_to,is_demo,partners(name),beneficiaries(name),linkers(character,level,profiles(full_name,phone))").eq("city_id", cityId).order("created_at", { ascending: false }).limit(100),
+      supabase.from("links").select("id,status,mode_required,linker_id,kg_estime,weight_actual,don_value,is_fresh,denree,window_date,window_from,window_to,is_demo,partners(name),beneficiaries(name),linkers(character,level,profiles(full_name,phone))").eq("city_id", cityId).order("created_at", { ascending: false }).limit(100),
       supabase.from("partners").select("id,name,address,allow_backpack,allow_car").eq("city_id", cityId).eq("active", true).is("deleted_at", null).order("name"),
     ]);
     if (lk.error) setMsg(lk.error.message + " (les migrations 019, 020 et 021 sont-elles passées ?)");
@@ -72,6 +73,19 @@ export default function LinksBenevolesAdminPage() {
     if (error) setMsg(error.message);
   }
 
+  // Attribution directe d'un Link proposé à un Linker (migration 062) : il passe à « acceptée », le Linker est prévenu
+  async function assign(linkId: string, linkerId: string) {
+    if (!linkerId) return;
+    const { error } = await supabase.rpc("assign_link", { p_link_id: linkId, p_linker_id: linkerId });
+    if (error) return setMsg("Attribution impossible : " + error.message + " (la migration 062 est-elle passée ?)");
+    await load();
+  }
+  async function unassign(linkId: string) {
+    if (!window.confirm("Retirer l'attribution ? Le Link redevient proposé à tous les Linkers de la ville.")) return;
+    const { error } = await supabase.rpc("unassign_link", { p_link_id: linkId });
+    if (error) return setMsg("Impossible de retirer l'attribution : " + error.message);
+    await load();
+  }
   async function saveDonValue(id: string, raw: string) {
     const v = raw.trim() === "" ? null : Number(raw.replace(",", "."));
     if (v != null && !Number.isFinite(v)) return;
@@ -169,6 +183,32 @@ export default function LinksBenevolesAdminPage() {
                       )}
                       <span className="flex-none rounded-[40px] px-2 py-0.5 text-[10.5px] font-bold" style={{ background: st.bg, color: st.fg }}>{st.l}</span>
                     </div>
+                    {canAssign && l.status === "proposee" && (
+                      <label className="flex flex-wrap items-center gap-1.5 self-start text-[11px] font-semibold text-[var(--slate)]">
+                        Attribuer à un Linker
+                        <select
+                          value=""
+                          onChange={(e) => assign(l.id, e.target.value)}
+                          className="h-7 max-w-[260px] rounded-[8px] border border-[var(--border)] bg-[var(--card)] px-1.5 text-[11.5px] font-bold text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
+                        >
+                          <option value="">{linkers.length ? "Choisir…" : "Aucun Linker dans la ville"}</option>
+                          {[...linkers]
+                            .map((k) => ({ k, ok: !(l.mode_required === "car" && k.mode !== "car") && !(l.is_fresh && !k.cold_ok) }))
+                            .sort((a, b) => Number(b.ok) - Number(a.ok))
+                            .map(({ k, ok }) => {
+                              const p = first(k.profiles);
+                              return (
+                                <option key={k.id} value={k.id}>
+                                  {(p?.full_name || p?.email || "Linker") + " · niv. " + k.level + (ok ? "" : l.mode_required === "car" && k.mode !== "car" ? " · sans voiture" : " · sans sac isotherme")}
+                                </option>
+                              );
+                            })}
+                        </select>
+                      </label>
+                    )}
+                    {canAssign && l.status === "acceptee" && (
+                      <button type="button" onClick={() => unassign(l.id)} className="self-start text-[11px] font-semibold text-[var(--slate)] underline hover:text-[var(--critical)]">Retirer l'attribution</button>
+                    )}
                     <label className="flex items-center gap-1.5 self-start text-[11px] font-semibold text-[var(--slate)]">
                       Valeur du don
                       <input
