@@ -188,7 +188,7 @@ export default function VillagePage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 items-start gap-[18px] xl:grid-cols-[400px_1fr]">
+      <div className="grid grid-cols-1 items-start gap-[18px]">
         {/* ---- listing ---- */}
         <div className="rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-2.5 shadow-[var(--shadow)]" style={{ borderTop: `4px solid ${ORANGE}` }}>
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher (nom, activité, contact…)" className={`${fieldCls} mb-2`} />
@@ -196,152 +196,145 @@ export default function VillagePage() {
             <button type="button" onClick={() => setShowArchived(false)} className={`flex-1 rounded-[40px] px-2 py-1.5 text-[12px] font-semibold ${!showArchived ? "bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "text-[var(--slate)]"}`}>Actives ({nActive})</button>
             <button type="button" onClick={() => setShowArchived(true)} className={`flex-1 rounded-[40px] px-2 py-1.5 text-[12px] font-semibold ${showArchived ? "bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "text-[var(--slate)]"}`}>Archivées ({assocs.length - nActive})</button>
           </div>
-          <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
+          <div>
             {loading && <p className="p-4 text-[13px] text-[var(--slate)]">Chargement…</p>}
             {!loading && list.length === 0 && <p className="p-4 text-[13px] text-[var(--slate)]">{showArchived ? "Aucune association archivée." : "Aucune association. Clique sur « Ajouter une association »."}</p>}
             {list.map((a) => {
               const s = stats.get(a.id);
               const on = a.id === selId;
               return (
-                <button key={a.id} type="button" onClick={() => { setSelId(a.id); window.setTimeout(() => detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60); }} className={`mb-1 flex w-full items-start gap-3 rounded-xl border-[1.5px] px-3 py-2.5 text-left ${on ? "bg-[var(--track)]" : "border-transparent hover:bg-[var(--input-bg)]"}`} style={on ? { borderColor: ORANGE } : undefined}>
-                  <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full font-display text-[15px] font-bold text-white" style={{ background: ORANGE }}>
-                    {a.name.trim().charAt(0).toUpperCase() || "?"}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13.5px] font-semibold text-[var(--navy)]">{a.name}</span>
-                    <span className="block truncate text-[11.5px] text-[var(--slate)]">{a.activity_type || "Activité non précisée"}</span>
-                    <span className="block truncate text-[11.5px] text-[var(--slate)]">Contact : {a.contact_name || "—"}</span>
-                    <span className="mt-0.5 block text-[11px] text-[var(--slate)]">Dernière intervention : <strong className="font-semibold text-[var(--navy)]">{s?.last ? fmtShort(s.last) : "aucune"}</strong></span>
-                  </span>
-                  {s && <span className="flex-none rounded-[40px] px-2 py-0.5 text-[11px] font-bold text-white" style={{ background: ORANGE }} title="Interventions">{s.count}</span>}
-                </button>
+                <div key={a.id} ref={on ? detailRef : undefined} className="scroll-mt-4">
+                  <button type="button" aria-expanded={on} onClick={() => { const opening = !on; setSelId(opening ? a.id : null); if (opening) window.setTimeout(() => detailRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 60); }} className={`mb-1 flex w-full items-start gap-3 rounded-xl border-[1.5px] px-3 py-2.5 text-left ${on ? "bg-[var(--track)]" : "border-transparent hover:bg-[var(--input-bg)]"}`} style={on ? { borderColor: ORANGE } : undefined}>
+                    <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full font-display text-[15px] font-bold text-white" style={{ background: ORANGE }}>
+                      {a.name.trim().charAt(0).toUpperCase() || "?"}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13.5px] font-semibold text-[var(--navy)]">{a.name}</span>
+                      <span className="block truncate text-[11.5px] text-[var(--slate)]">{a.activity_type || "Activité non précisée"}</span>
+                      <span className="block truncate text-[11.5px] text-[var(--slate)]">Contact : {a.contact_name || "—"}</span>
+                      <span className="mt-0.5 block text-[11px] text-[var(--slate)]">Dernière intervention : <strong className="font-semibold text-[var(--navy)]">{s?.last ? fmtShort(s.last) : "aucune"}</strong></span>
+                    </span>
+                    {s && <span className="flex-none rounded-[40px] px-2 py-0.5 text-[11px] font-bold text-white" style={{ background: ORANGE }} title="Interventions">{s.count}</span>}
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" className={`mt-1 h-4 w-4 flex-none text-[var(--slate)] transition-transform ${on ? "rotate-180" : ""}`} aria-hidden="true"><path d="M6 9 L12 15 L18 9" /></svg>
+                  </button>
+                  {on && cur && (
+                    <div className="mb-2 mt-1 pl-1 sm:pl-3">
+                    <div className="flex flex-col gap-4">
+                      <div className="rounded-[20px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]" style={{ borderTop: `4px solid ${ORANGE}` }}>
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <input value={cur.name} onChange={(e) => patch(cur.id, { name: e.target.value })} className="w-full rounded-lg border-b-[1.5px] border-transparent bg-transparent px-1 py-0.5 font-display text-[27px] font-black text-[var(--navy)] outline-none hover:border-b-[#eb6834] focus:border-b-[#eb6834] focus:bg-[var(--input-bg)]" />
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-[var(--slate)]">
+                              {cur.archived && <span className="rounded-[40px] bg-[var(--track)] px-2.5 py-0.5 font-bold">Archivée</span>}
+                              <span>{stats.get(cur.id)?.count ?? 0} intervention{(stats.get(cur.id)?.count ?? 0) > 1 ? "s" : ""}</span>
+                              <span className={`font-semibold text-[var(--good)] transition-opacity ${saved ? "opacity-100" : "opacity-0"}`}>Modifications enregistrées</span>
+                            </div>
+                          </div>
+                          <div className="flex flex-none items-center gap-2">
+                            <button type="button" onClick={() => toggleArchive(cur)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-2 text-[12.5px] font-semibold text-[var(--navy)] hover:border-[#eb6834]">
+                              {cur.archived ? "Restaurer" : "Archiver"}
+                            </button>
+                            <button type="button" onClick={() => deleteAssoc(cur)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-2 text-[12.5px] font-semibold text-[var(--critical)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)]">
+                              Supprimer
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <div>
+                            <label className={labelCls}>Type d&apos;activité</label>
+                            <input list="village-activities" className={fieldCls} value={cur.activity_type ?? ""} onChange={(e) => patch(cur.id, { activity_type: e.target.value })} placeholder="Ex : aide aux étudiants" />
+                            <datalist id="village-activities">{ACTIVITIES.map((x) => <option key={x} value={x} />)}</datalist>
+                          </div>
+                          <div>
+                            <label className={labelCls}>Type de collaboration</label>
+                            <select className={fieldCls} value={cur.collab_type ?? ""} onChange={(e) => patch(cur.id, { collab_type: e.target.value })}>
+                              <option value="">À préciser</option>
+                              {COLLAB.map((x) => <option key={x}>{x}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className={labelCls}>Contact référent</label>
+                            <input className={fieldCls} value={cur.contact_name ?? ""} onChange={(e) => patch(cur.id, { contact_name: e.target.value })} placeholder="Prénom Nom" />
+                          </div>
+                          <div>
+                            <label className={labelCls}>Téléphone</label>
+                            <input className={fieldCls} value={cur.contact_phone ?? ""} onChange={(e) => patch(cur.id, { contact_phone: e.target.value })} />
+                          </div>
+                          <div>
+                            <label className={labelCls}>E-mail</label>
+                            <input type="email" className={fieldCls} value={cur.contact_email ?? ""} onChange={(e) => patch(cur.id, { contact_email: e.target.value })} />
+                          </div>
+                          <div>
+                            <label className={labelCls}>Adresse</label>
+                            <AddressSearch
+                              className={fieldCls}
+                              value={cur.address ?? ""}
+                              onChange={(v) => patch(cur.id, { address: v })}
+                              onPick={(hit) => patch(cur.id, { address: hit.label })}
+                            />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className={labelCls}>Description de l&apos;activité</label>
+                            <textarea className={`${fieldCls} min-h-[84px] resize-y`} value={cur.description ?? ""} onChange={(e) => patch(cur.id, { description: e.target.value })} placeholder="Ce que fait l'association, ce qu'elle apporte aux distributions…" />
+                      </div>
+                    </div>
+                </div>
+
+                {/* exchanges log */}
+                <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4" style={{ borderTop: "4px solid var(--client-req)" }}>
+                  <h3 className="text-[14.5px] font-semibold text-[var(--navy)]">Historique des échanges</h3>
+                  <p className="mb-3 text-[11.5px] text-[var(--slate)]">Garde le fil de la relation : appels, réunions, mails…</p>
+                  <div className="mb-3 grid grid-cols-1 gap-2 rounded-xl bg-[var(--input-bg)] p-3 sm:grid-cols-[150px_140px_1fr_auto]">
+                    <input type="date" className={fieldCls} value={noteDate} onChange={(e) => setNoteDate(e.target.value)} />
+                    <select className={fieldCls} value={noteKind} onChange={(e) => setNoteKind(e.target.value as Note["kind"])}>
+                      {(Object.keys(KIND_LABEL) as Note["kind"][]).map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+                    </select>
+                    <input className={fieldCls} value={noteBody} onChange={(e) => setNoteBody(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addNote()} placeholder="Ex : appelé pour confirmer sa venue du 12" />
+                    <button type="button" onClick={addNote} className="rounded-[40px] px-4 py-2 text-[13px] font-bold text-white" style={{ background: "var(--client-req)" }}>Ajouter</button>
+                  </div>
+                  {notes.length === 0 && <p className="text-[12.5px] text-[var(--slate)]">Aucun échange noté pour l&apos;instant.</p>}
+                  <div className="flex flex-col">
+                    {notes.map((n) => (
+                      <div key={n.id} className="flex items-start gap-3 border-t border-[var(--border)] py-2.5 first:border-t-0">
+                        <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-[var(--client-req-bg)] text-[var(--client-req)]">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">{KIND_ICON[n.kind]}</svg>
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[11.5px] text-[var(--slate)]"><strong className="font-semibold text-[var(--navy)]">{KIND_LABEL[n.kind]}</strong> · {fmtDay(n.note_date)}</div>
+                          <div className="text-[13px] whitespace-pre-wrap text-[var(--navy)]">{n.body}</div>
+                        </div>
+                        <button type="button" onClick={() => delNote(n.id)} title="Supprimer" className="h-7 w-7 flex-none rounded-full text-[var(--slate)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]">×</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* external interventions */}
+                <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4" style={{ borderTop: `4px solid ${ORANGE}` }}>
+                  <h3 className="text-[14.5px] font-semibold text-[var(--navy)]">Interventions externes</h3>
+                  <p className="mb-3 text-[11.5px] text-[var(--slate)]">Toutes les distributions où l&apos;association était présente.</p>
+                  {myInters.length === 0 && <p className="text-[12.5px] text-[var(--slate)]">Aucune intervention enregistrée. Dans une distribution, coche l&apos;association dans « Associations présentes ».</p>}
+                  <div className="flex flex-col gap-3">
+                    {myInters.map((iv, i) => (
+                      <div key={i} className="rounded-xl border border-[var(--border)] bg-[var(--input-bg)] p-3">
+                        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-[13px] font-semibold text-[var(--navy)]">{fmtDay(iv.date)} · {iv.place}</span>
+                          <Link href={`/distributions?b=${iv.b}&date=${iv.date}`} className="text-[12px] font-semibold" style={{ color: ORANGE }}>Ouvrir la distribution →</Link>
+                        </div>
+                        <p className="mb-2 text-[12.5px] whitespace-pre-wrap text-[var(--slate)]">{iv.comment || "Pas de commentaire."}</p>
+                        {iv.photos.length > 0 && <PhotoStrip paths={iv.photos} readOnly size={72} />}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+                  </div>
+                )}
+                </div>
               );
             })}
           </div>
-        </div>
-
-        {/* ---- fiche ---- */}
-        <div ref={detailRef} className="scroll-mt-4 min-w-0">
-          {!cur ? (
-            <div className="flex flex-col items-center gap-3 rounded-[20px] border border-dashed border-[var(--border)] bg-[var(--card)] px-6 py-[70px] text-center text-[var(--slate)]">
-              <span className="flex h-14 w-14 items-center justify-center rounded-2xl text-white" style={{ background: ORANGE }}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="h-8 w-8">{KIND_ICON.reunion}</svg>
-              </span>
-              <p className="text-[15px] font-semibold text-[var(--navy)]">Sélectionne une association</p>
-              <p className="max-w-[380px] text-[13px]">Retrouve sa fiche, l&apos;historique de vos échanges et toutes ses interventions sur les distributions.</p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-4">
-              <div className="rounded-[20px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]" style={{ borderTop: `4px solid ${ORANGE}` }}>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <input value={cur.name} onChange={(e) => patch(cur.id, { name: e.target.value })} className="w-full rounded-lg border-b-[1.5px] border-transparent bg-transparent px-1 py-0.5 font-display text-[27px] font-black text-[var(--navy)] outline-none hover:border-b-[#eb6834] focus:border-b-[#eb6834] focus:bg-[var(--input-bg)]" />
-                    <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-[var(--slate)]">
-                      {cur.archived && <span className="rounded-[40px] bg-[var(--track)] px-2.5 py-0.5 font-bold">Archivée</span>}
-                      <span>{stats.get(cur.id)?.count ?? 0} intervention{(stats.get(cur.id)?.count ?? 0) > 1 ? "s" : ""}</span>
-                      <span className={`font-semibold text-[var(--good)] transition-opacity ${saved ? "opacity-100" : "opacity-0"}`}>Modifications enregistrées</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-none items-center gap-2">
-                    <button type="button" onClick={() => toggleArchive(cur)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-2 text-[12.5px] font-semibold text-[var(--navy)] hover:border-[#eb6834]">
-                      {cur.archived ? "Restaurer" : "Archiver"}
-                    </button>
-                    <button type="button" onClick={() => deleteAssoc(cur)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-2 text-[12.5px] font-semibold text-[var(--critical)] hover:border-[var(--critical)] hover:bg-[var(--critical-bg)]">
-                      Supprimer
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className={labelCls}>Type d&apos;activité</label>
-                    <input list="village-activities" className={fieldCls} value={cur.activity_type ?? ""} onChange={(e) => patch(cur.id, { activity_type: e.target.value })} placeholder="Ex : aide aux étudiants" />
-                    <datalist id="village-activities">{ACTIVITIES.map((x) => <option key={x} value={x} />)}</datalist>
-                  </div>
-                  <div>
-                    <label className={labelCls}>Type de collaboration</label>
-                    <select className={fieldCls} value={cur.collab_type ?? ""} onChange={(e) => patch(cur.id, { collab_type: e.target.value })}>
-                      <option value="">À préciser</option>
-                      {COLLAB.map((x) => <option key={x}>{x}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className={labelCls}>Contact référent</label>
-                    <input className={fieldCls} value={cur.contact_name ?? ""} onChange={(e) => patch(cur.id, { contact_name: e.target.value })} placeholder="Prénom Nom" />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Téléphone</label>
-                    <input className={fieldCls} value={cur.contact_phone ?? ""} onChange={(e) => patch(cur.id, { contact_phone: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className={labelCls}>E-mail</label>
-                    <input type="email" className={fieldCls} value={cur.contact_email ?? ""} onChange={(e) => patch(cur.id, { contact_email: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Adresse</label>
-                    <AddressSearch
-                      className={fieldCls}
-                      value={cur.address ?? ""}
-                      onChange={(v) => patch(cur.id, { address: v })}
-                      onPick={(hit) => patch(cur.id, { address: hit.label })}
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className={labelCls}>Description de l&apos;activité</label>
-                    <textarea className={`${fieldCls} min-h-[84px] resize-y`} value={cur.description ?? ""} onChange={(e) => patch(cur.id, { description: e.target.value })} placeholder="Ce que fait l'association, ce qu'elle apporte aux distributions…" />
-                  </div>
-                </div>
-              </div>
-
-              {/* exchanges log */}
-              <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4" style={{ borderTop: "4px solid var(--client-req)" }}>
-                <h3 className="text-[14.5px] font-semibold text-[var(--navy)]">Historique des échanges</h3>
-                <p className="mb-3 text-[11.5px] text-[var(--slate)]">Garde le fil de la relation : appels, réunions, mails…</p>
-                <div className="mb-3 grid grid-cols-1 gap-2 rounded-xl bg-[var(--input-bg)] p-3 sm:grid-cols-[150px_140px_1fr_auto]">
-                  <input type="date" className={fieldCls} value={noteDate} onChange={(e) => setNoteDate(e.target.value)} />
-                  <select className={fieldCls} value={noteKind} onChange={(e) => setNoteKind(e.target.value as Note["kind"])}>
-                    {(Object.keys(KIND_LABEL) as Note["kind"][]).map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
-                  </select>
-                  <input className={fieldCls} value={noteBody} onChange={(e) => setNoteBody(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addNote()} placeholder="Ex : appelé pour confirmer sa venue du 12" />
-                  <button type="button" onClick={addNote} className="rounded-[40px] px-4 py-2 text-[13px] font-bold text-white" style={{ background: "var(--client-req)" }}>Ajouter</button>
-                </div>
-                {notes.length === 0 && <p className="text-[12.5px] text-[var(--slate)]">Aucun échange noté pour l&apos;instant.</p>}
-                <div className="flex flex-col">
-                  {notes.map((n) => (
-                    <div key={n.id} className="flex items-start gap-3 border-t border-[var(--border)] py-2.5 first:border-t-0">
-                      <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-[var(--client-req-bg)] text-[var(--client-req)]">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">{KIND_ICON[n.kind]}</svg>
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[11.5px] text-[var(--slate)]"><strong className="font-semibold text-[var(--navy)]">{KIND_LABEL[n.kind]}</strong> · {fmtDay(n.note_date)}</div>
-                        <div className="text-[13px] whitespace-pre-wrap text-[var(--navy)]">{n.body}</div>
-                      </div>
-                      <button type="button" onClick={() => delNote(n.id)} title="Supprimer" className="h-7 w-7 flex-none rounded-full text-[var(--slate)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]">×</button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* external interventions */}
-              <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4" style={{ borderTop: `4px solid ${ORANGE}` }}>
-                <h3 className="text-[14.5px] font-semibold text-[var(--navy)]">Interventions externes</h3>
-                <p className="mb-3 text-[11.5px] text-[var(--slate)]">Toutes les distributions où l&apos;association était présente.</p>
-                {myInters.length === 0 && <p className="text-[12.5px] text-[var(--slate)]">Aucune intervention enregistrée. Dans une distribution, coche l&apos;association dans « Associations présentes ».</p>}
-                <div className="flex flex-col gap-3">
-                  {myInters.map((iv, i) => (
-                    <div key={i} className="rounded-xl border border-[var(--border)] bg-[var(--input-bg)] p-3">
-                      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-[13px] font-semibold text-[var(--navy)]">{fmtDay(iv.date)} · {iv.place}</span>
-                        <Link href={`/distributions?b=${iv.b}&date=${iv.date}`} className="text-[12px] font-semibold" style={{ color: ORANGE }}>Ouvrir la distribution →</Link>
-                      </div>
-                      <p className="mb-2 text-[12.5px] whitespace-pre-wrap text-[var(--slate)]">{iv.comment || "Pas de commentaire."}</p>
-                      {iv.photos.length > 0 && <PhotoStrip paths={iv.photos} readOnly size={72} />}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
