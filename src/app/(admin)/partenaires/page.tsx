@@ -15,7 +15,7 @@ import BetaBadge from "@/components/BetaBadge";
 import SirenField from "@/components/partner/SirenField";
 import type { SirenInfo } from "@/lib/siren";
 import { formatCreneaux, type Creneaux, type Slot as CreneauSlot } from "@/lib/creneaux";
-import { CERFA_FREQUENCIES, type CerfaFrequency } from "@/lib/cerfa";
+import { CERFA_FREQUENCIES, CERFA_SEND_DAY_DEFAULT, cerfaAutoSendOf, cerfaRecipients, type CerfaFrequency } from "@/lib/cerfa";
 
 type FicheTab = "fiche" | "documents" | "valorisation" | "collectes";
 
@@ -75,6 +75,9 @@ type PartnerEntity = {
   rythme?: Rythme;
   linkSystematique?: boolean;
   cerfaFrequency?: CerfaFrequency;
+  cerfaAutoSend?: boolean; // envoi automatique du Cerfa par mail à l'échéance (par défaut : oui dès qu'il y a une fréquence)
+  cerfaSendDay?: number; // jour du mois de l'échéance d'envoi
+  cerfaSendTo?: string; // adresse choisie ; vide = contact administratif
   history: HistoryEntry[];
   contacts: Contact[];
   portalEmail?: string;
@@ -893,7 +896,7 @@ export default function PartenairesPage() {
               )}
               {current.kind === "partner" && (
                 <div>
-                  <label className={labelCls}>Fréquence d&apos;émission Cerfa <span className="font-normal text-[var(--muted)]">(sert uniquement aux alertes de retard)</span></label>
+                  <label className={labelCls}>Fréquence d&apos;émission Cerfa <span className="font-normal text-[var(--muted)]">(alertes de retard et échéance d&apos;envoi par mail)</span></label>
                   <select className={inputCls} value={current.cerfaFrequency || "ponctuel"} onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, cerfaFrequency: e.target.value as CerfaFrequency } : entity))}>
                     {CERFA_FREQUENCIES.map((f) => (
                       <option key={f.k} value={f.k}>{f.l}</option>
@@ -901,7 +904,34 @@ export default function PartenairesPage() {
                   </select>
                 </div>
               )}
-              {current.kind === "beneficiaire" && (
+              {current.kind === "partner" && (current.cerfaFrequency || "ponctuel") !== "ponctuel" && (() => {
+                const rec = current as unknown as Record<string, unknown>;
+                const auto = cerfaAutoSendOf(rec);
+                const options = cerfaRecipients(rec);
+                const freq = current.cerfaFrequency || "ponctuel";
+                const when = freq === "mensuel" ? `le ${auto.day} de chaque mois` : freq === "trimestriel" ? `le ${auto.day} de janvier, avril, juillet et octobre` : `le ${auto.day} janvier`;
+                return (
+                  <div className="sm:col-span-2 rounded-xl border border-dashed border-[var(--border)] p-3">
+                    <label className={labelCls}>Envoi automatique des Cerfa par mail</label>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <select className={inputCls} value={auto.enabled ? "oui" : "non"} onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, cerfaAutoSend: e.target.value === "oui" } : entity))}>
+                        <option value="oui">Oui, à l&apos;échéance</option>
+                        <option value="non">Non, à la main</option>
+                      </select>
+                      <input className={inputCls} type="number" min={1} max={28} disabled={!auto.enabled} value={auto.day} title="Jour d'envoi (1 à 28)" onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, cerfaSendDay: Math.min(28, Math.max(1, Number(e.target.value) || CERFA_SEND_DAY_DEFAULT)) } : entity))} />
+                      <select className={inputCls} disabled={!auto.enabled} value={auto.to} onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, cerfaSendTo: e.target.value } : entity))}>
+                        <option value="">Contact administratif (par défaut)</option>
+                        {options.map((o) => <option key={o.email} value={o.email}>{o.label} · {o.email}</option>)}
+                      </select>
+                    </div>
+                    <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">
+                      {auto.enabled
+                        ? `Un Cerfa émis part par mail ${when} (la première échéance après son émission). Pour un envoi urgent, utilise le bouton « Envoyer par mail » sur la ligne du Cerfa.`
+                        : "Aucun envoi automatique : la Comptabilité envoie le Cerfa à la main depuis la ligne du Cerfa."}
+                    </p>
+                  </div>
+                );
+              })()}              {current.kind === "beneficiaire" && (
                 <div>
                   <label className={labelCls}>Téléphone</label>
                   <input className={inputCls} value={current.tel} onChange={(e) => updateEntity((entity) => (entity.kind === "beneficiaire" ? { ...entity, tel: e.target.value } : entity))} />

@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
 import { isSuper } from "@/lib/roles";
 import { openDocument } from "@/lib/documents";
-import { CERFA_STATUS_LABEL, CERFA_STATUS_STYLE, fmtEuro, openCerfa, type CerfaStatus } from "@/lib/cerfa";
+import { CERFA_STATUS_LABEL, CERFA_STATUS_STYLE, cerfaAutoSendOf, cerfaDefaultRecipient, cerfaFrequencyOf, cerfaRecipients, defaultCerfaMessage, fmtEuro, fmtLongDate, isEmail, nextCerfaDue, openCerfa, parisYmd, type CerfaMailRow, type CerfaRecipient, type CerfaStatus } from "@/lib/cerfa";
 
 type Rel<T> = T | T[] | null;
 type Row = {
@@ -19,11 +19,11 @@ type Row = {
   issued_at: string | null;
   cerfa_path: string | null;
   cerfa_name: string | null;
-  partners: Rel<{ name: string }>;
+  partners: Rel<{ name: string; fiche: Record<string, unknown> | null }>;
   cities: Rel<{ name: string }>;
   cerfa_request_documents: { document_id: string; documents: Rel<{ name: string; storage_path: string }> }[] | null;
 };
-const SELECT = "id,partner_id,city_id,total_value,status,refusal_comment,created_at,issued_at,cerfa_path,cerfa_name,partners(name),cities(name),cerfa_request_documents(document_id,documents(name,storage_path))";
+const SELECT = "id,partner_id,city_id,total_value,status,refusal_comment,created_at,issued_at,cerfa_path,cerfa_name,partners(name,fiche),cities(name),cerfa_request_documents(document_id,documents(name,storage_path))";
 
 type Late = { partner_id: string; partner_name: string; city_id: string; frequency: string; period_start: string; period_end: string; due_date: string; doc_count: number };
 
@@ -72,6 +72,8 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
   const [refusing, setRefusing] = useState<{ id: string; comment: string } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [late, setLate] = useState<Late[]>([]);
+  const [mails, setMails] = useState<CerfaMailRow[]>([]);
+  const [mailDlg, setMailDlg] = useState<{ row: Row; to: string; custom: boolean; message: string; options: CerfaRecipient[]; busy: boolean; error: string | null } | null>(null);
   const [cityNames, setCityNames] = useState<Record<string, string>>({});
   const uploadFor = useRef<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -86,6 +88,7 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
   useEffect(() => {
     fetchRows().then(apply);
     supabase.rpc("cerfa_late_partners").then(({ data }) => setLate((data ?? []) as Late[]));
+    loadMails();
     supabase.from("cities").select("id,name").then(({ data }) => setCityNames(Object.fromEntries((data ?? []).map((c) => [c.id as string, c.name as string]))));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -148,6 +151,30 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
     }
     setMsg({ ok: true, text: "Cerfa téléversé : le partenaire le retrouve dans « Mes Cerfa »." });
     apply(await fetchRows());
+  }
+
+  function loadMails() {
+    supabase.from("cerfa_mails").select("id,request_id,to_email,mode,status,error,sent_at").order("sent_at", { ascending: false }).limit(3000).then(({ data }) => setMails((data ?? []) as CerfaMailRow[]));
+  }
+  function openMail(row: Row) {
+    const fiche = first(row.partners)?.fiche ?? null;
+    const options = cerfaRecipients(fiche);
+    const def = cerfaDefaultRecipient(fiche);
+    setMailDlg({ row, to: def?.email ?? "", custom: !def, message: defaultCerfaMessage(row.total_value, row.issued_at), options, busy: false, error: null });
+  }
+  async function sendMail() {
+    if (!mailDlg || !isEmail(mailDlg.to)) return;
+    setMailDlg({ ...mailDlg, busy: true, error: null });
+    try {
+      const res = await fetch("/api/cerfa/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId: mailDlg.row.id, to: mailDlg.to.trim(), message: mailDlg.message }) });
+      const j = (await res.json().catch(() => ({}))) as { error?: string; to?: string };
+      if (!res.ok) return setMailDlg((d) => (d ? { ...d, busy: false, error: j.error ?? "Envoi impossible." } : d));
+      setMailDlg(null);
+      setMsg({ ok: true, text: `Cerfa envoyé par mail à ${j.to ?? mailDlg.to}.` });
+      loadMails();
+    } catch (e) {
+      setMailDlg((d) => (d ? { ...d, busy: false, error: (e as Error).message } : d));
+    }
   }
 
   const fail = (e: unknown) => setMsg({ ok: false, text: (e as Error).message });
@@ -234,6 +261,35 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
         }}
       />
 
+      {mailDlg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(0,10,30,0.45)] p-4" onClick={() => !mailDlg.busy && setMailDlg(null)}>
+          <div role="dialog" aria-modal="true" className="max-h-[92vh] w-full max-w-[540px] overflow-auto rounded-[20px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-display text-[21px] font-black text-[var(--navy)]">Envoyer le Cerfa par mail</h3>
+            <p className="mb-3 text-[12.5px] text-[var(--slate)]">{first(mailDlg.row.partners)?.name ?? "Partenaire"} · {fmtEuro(mailDlg.row.total_value)}{mailDlg.row.issued_at ? ` · émis le ${fmtLongDate(mailDlg.row.issued_at)}` : ""}</p>
+            <label className="mb-1 block text-[11.5px] font-semibold text-[var(--slate)]">Destinataire</label>
+            <select
+              className={selectCls + " w-full"}
+              value={mailDlg.custom ? "__other" : mailDlg.to}
+              onChange={(e) => setMailDlg({ ...mailDlg, custom: e.target.value === "__other", to: e.target.value === "__other" ? "" : e.target.value })}
+            >
+              {mailDlg.options.map((o) => <option key={o.email} value={o.email}>{o.label} · {o.email}</option>)}
+              <option value="__other">Autre adresse…</option>
+            </select>
+            {mailDlg.custom && (
+              <input autoFocus type="email" placeholder="adresse@exemple.fr" value={mailDlg.to} onChange={(e) => setMailDlg({ ...mailDlg, to: e.target.value })} className="mt-2 w-full rounded-[11px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-3 py-2 text-[13px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]" />
+            )}
+            {mailDlg.options.length === 0 && !mailDlg.custom && <p className="mt-1 text-[11.5px] font-semibold text-[var(--critical)]">Aucune adresse e-mail sur la fiche du partenaire : choisis « Autre adresse ».</p>}
+            <label className="mt-3 mb-1 block text-[11.5px] font-semibold text-[var(--slate)]">Message</label>
+            <textarea rows={7} value={mailDlg.message} onChange={(e) => setMailDlg({ ...mailDlg, message: e.target.value })} className="w-full rounded-[13px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-3.5 py-2.5 text-[13px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]" />
+            <p className="mt-2 text-[12px] text-[var(--slate)]">📎 Le Cerfa ({mailDlg.row.cerfa_name ?? "PDF"}) est joint automatiquement.</p>
+            {mailDlg.error && <div className="mt-2 rounded-lg bg-[var(--critical-bg)] px-3 py-2 text-[12.5px] font-semibold text-[var(--critical)]">{mailDlg.error}</div>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" disabled={mailDlg.busy} onClick={() => setMailDlg(null)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-2 font-display text-[12.5px] font-bold text-[var(--slate)]">Annuler</button>
+              <button type="button" disabled={mailDlg.busy || !isEmail(mailDlg.to)} onClick={sendMail} className="rounded-[40px] bg-[var(--navy-deep)] px-4 py-2 font-display text-[12.5px] font-bold text-[var(--panel-fg)] disabled:opacity-50">{mailDlg.busy ? "Envoi…" : "Envoyer"}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {loading ? (
         <p className="py-8 text-center text-[13px] text-[var(--slate)]">Chargement…</p>
       ) : visible.length === 0 ? (
@@ -283,8 +339,48 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
                   {r.status === "emise" && r.cerfa_path && (
                     <button type="button" onClick={() => openCerfa(supabase, r.cerfa_path!).catch(fail)} className="rounded-[40px] border-[1.5px] border-[var(--good)] px-4 py-2 font-display text-[12.5px] font-bold text-[var(--good)] hover:bg-[var(--good-bg)]">Télécharger le Cerfa</button>
                   )}
+                  {r.status === "emise" && r.cerfa_path && canIssue && (
+                    <button type="button" onClick={() => openMail(r)} className="rounded-[40px] bg-[var(--navy-deep)] px-4 py-2 font-display text-[12.5px] font-bold text-[var(--panel-fg)]">
+                      ✉ {mails.some((m) => m.request_id === r.id && m.status === "envoye") ? "Renvoyer par mail" : "Envoyer par mail"}
+                    </button>
+                  )}
                 </div>
 
+
+                {r.status === "emise" && (() => {
+                  const fiche = first(r.partners)?.fiche ?? null;
+                  const ml = mails.filter((m) => m.request_id === r.id);
+                  const lastOk = ml.find((m) => m.status === "envoye");
+                  const lastErr = ml[0]?.status === "erreur" ? ml[0] : null;
+                  const auto = cerfaAutoSendOf(fiche);
+                  const due = !lastOk && auto.enabled && r.issued_at ? nextCerfaDue(parisYmd(r.issued_at), cerfaFrequencyOf(fiche), auto.day) : null;
+                  const dest = cerfaDefaultRecipient(fiche);
+                  const when = (iso: string) => new Date(iso).toLocaleString("fr-FR", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" });
+                  return (
+                    <div className="mt-2.5 text-[12px]">
+                      {lastOk ? (
+                        <span className="inline-block rounded-[40px] bg-[rgba(42,120,214,.14)] px-2.5 py-1 font-semibold text-[#2a78d6]">✉ Envoyé le {when(lastOk.sent_at)} à {lastOk.to_email}{lastOk.mode === "auto" ? " (envoi automatique)" : ""}</span>
+                      ) : due ? (
+                        <span className={dest ? "text-[var(--slate)]" : "font-semibold text-[var(--critical)]"}>
+                          ✉ Envoi automatique prévu le <strong>{fmtLongDate(due)}</strong>{dest ? <> à {dest.email}</> : " — mais aucune adresse e-mail n'est renseignée sur la fiche du partenaire"}.
+                        </span>
+                      ) : (
+                        <span className="text-[var(--slate)]">✉ Pas encore envoyé par mail{cerfaFrequencyOf(fiche) === "ponctuel" ? " (partenaire ponctuel : envoi à la main)" : auto.enabled ? "" : " (envoi automatique désactivé)"}.</span>
+                      )}
+                      {lastErr && <div className="mt-1 font-semibold text-[var(--critical)]">Dernier essai en échec ({when(lastErr.sent_at)}) : {lastErr.error}</div>}
+                      {ml.length > 0 && (
+                        <details className="mt-1.5">
+                          <summary className="cursor-pointer text-[var(--slate)]">Historique des envois ({ml.length})</summary>
+                          <ul className="mt-1 ml-4 list-disc text-[var(--slate)]">
+                            {ml.map((m) => (
+                              <li key={m.id}>{when(m.sent_at)} · {m.mode === "auto" ? "automatique" : "manuel"} · {m.to_email} · {m.status === "envoye" ? "envoyé" : "échec : " + m.error}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                    </div>
+                  );
+                })()}
                 {refusing?.id === r.id && (
                   <div className="mt-3 border-t border-dashed border-[var(--border)] pt-3">
                     <label className="mb-1 block text-[11px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">Motif du refus (obligatoire, visible par le partenaire)</label>
