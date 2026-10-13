@@ -448,6 +448,43 @@ export default function DistributionsPage() {
     await flush();
   }
 
+  /* ---------- suppression définitive (erreur de saisie) ---------- */
+  const [deleting, setDeleting] = useState(false);
+  async function deleteDistribution() {
+    const d0 = draftRef.current ?? draft;
+    if (!d0 || !cityId) return;
+    const place = placeById.get(d0.beneficiaryId)?.name ?? "ce lieu";
+    const lost = [
+      d0.lines.length ? `${d0.lines.length} ligne${d0.lines.length > 1 ? "s" : ""} de produits` : "",
+      d0.interventions.length ? `${d0.interventions.length} intervention${d0.interventions.length > 1 ? "s" : ""} d'associations` : "",
+      d0.registered || d0.baskets ? "les inscrits et les paniers" : "",
+      d0.photoPaths.length + d0.eventPhotos.length ? "les photos" : "",
+    ].filter(Boolean);
+    const msgConfirm =
+      `Supprimer définitivement la distribution du ${fmtDay(d0.date)} à ${place} ?\n\n` +
+      (lost.length ? `Seront perdus : ${lost.join(", ")}.\n` : "") +
+      (d0.status === "distribuee" ? "Elle est clôturée : les chiffres des tableaux de bord seront recalculés sans elle.\n" : "") +
+      "\nSi elle est seulement annulée ou reportée, utilise plutôt « Annuler la distribution ». Cette action est définitive.";
+    if (!window.confirm(msgConfirm)) return;
+    setDeleting(true);
+    // plus aucun enregistrement automatique en attente : on attend celui qui est peut-être en cours, puis on supprime
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = null;
+    dirty.current = false;
+    await lock.current;
+    dirty.current = false;
+    const { data, error } = await supabase.from("distributions").delete().eq("city_id", cityId).eq("beneficiary_id", d0.beneficiaryId).eq("event_date", d0.date).select("id");
+    setDeleting(false);
+    if (error) return setMsg("Suppression impossible : " + error.message);
+    if (!data?.length && d0.id) return setMsg("Suppression refusée par la base (droits insuffisants ?).");
+    const paths = [...d0.photoPaths, ...d0.eventPhotos, ...d0.interventions.flatMap((i) => i.photoPaths)];
+    if (paths.length) void supabase.storage.from("collecte-photos").remove(paths); // photos de cette distribution seulement (au mieux)
+    draftRef.current = null;
+    setDraft(null);
+    setSelKey(null);
+    setSaveState("idle");
+    await load();
+  }
   async function prefillFromDay() {
     if (!draft || !cityId) return;
     const { data } = await supabase
@@ -659,7 +696,13 @@ export default function DistributionsPage() {
                         <button type="button" onClick={openCancel} className="text-[12px] font-semibold text-[var(--critical)] underline">Annuler la distribution</button>
                       </>
                     )}
-                  </div>
+                    {draft.id ? (
+                      <button type="button" disabled={deleting} onClick={deleteDistribution} className="text-[12px] font-semibold text-[var(--slate)] underline hover:text-[var(--critical)] disabled:opacity-50">
+                        {deleting ? "Suppression…" : "Supprimer cette distribution"}
+                      </button>
+                    ) : (
+                      <span className="max-w-[260px] text-right text-[11px] text-[var(--muted)]">Pas encore enregistrée. Si elle vient d&apos;une livraison du Planning, retire-la dans le Planning.</span>
+                    )}                  </div>
                 </div>
                 {cancelled && (
                   <div className="mt-4 rounded-xl border-[1.5px] border-[var(--critical)] bg-[var(--critical-bg)] px-4 py-3 text-[13px] text-[var(--critical)]">
