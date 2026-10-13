@@ -25,21 +25,31 @@ type Mail = { to: string; subject: string; html: string; text: string; filename:
 async function deliver(m: Mail): Promise<{ ok: true; id: string | null } | { ok: false; error: string }> {
   if (smtpConfigured()) {
     const port = Number(process.env.SMTP_PORT) || 465;
-    try {
-      const transport = nodemailer.createTransport({ host: process.env.SMTP_HOST, port, secure: port === 465, auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }, connectionTimeout: 15000, socketTimeout: 30000 });
-      const info = await transport.sendMail({
-        from: process.env.MAIL_FROM || `Linkee <${process.env.SMTP_USER}>`,
-        to: m.to,
-        ...(process.env.MAIL_REPLY_TO ? { replyTo: process.env.MAIL_REPLY_TO } : {}),
-        subject: m.subject,
-        text: m.text,
-        html: m.html,
-        attachments: [{ filename: m.filename, content: Buffer.from(m.contentBase64, "base64"), contentType: "application/pdf" }],
-      });
-      return { ok: true, id: info.messageId ?? null };
-    } catch (e) {
-      return { ok: false, error: "Envoi par la boîte mail refusé : " + (e as Error).message };
+    const transport = nodemailer.createTransport({ host: process.env.SMTP_HOST, port, secure: port === 465, auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }, connectionTimeout: 15000, socketTimeout: 30000 });
+    const message = {
+      from: process.env.MAIL_FROM || `Linkee <${process.env.SMTP_USER}>`,
+      to: m.to,
+      ...(process.env.MAIL_REPLY_TO ? { replyTo: process.env.MAIL_REPLY_TO } : {}),
+      subject: m.subject,
+      text: m.text,
+      html: m.html,
+      attachments: [{ filename: m.filename, content: Buffer.from(m.contentBase64, "base64"), contentType: "application/pdf" }],
+    };
+    // Les erreurs réseau passagères (résolution DNS occupée « EBUSY », « EAI_AGAIN », coupure…) sont réessayées jusqu'à 3 fois ;
+    // une vraie erreur (mauvais mot de passe, adresse refusée) est renvoyée tout de suite.
+    const transient = (e: unknown) => /EBUSY|EAI_AGAIN|ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENOTFOUND|EPIPE|ESOCKET|Greeting never received/i.test(String((e as { code?: string })?.code ?? "") + " " + String((e as Error)?.message ?? ""));
+    let last: unknown = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const info = await transport.sendMail(message);
+        return { ok: true, id: info.messageId ?? null };
+      } catch (e) {
+        last = e;
+        if (!transient(e) || attempt === 3) break;
+        await new Promise((r) => setTimeout(r, 1200 * attempt));
+      }
     }
+    return { ok: false, error: "Envoi par la boîte mail refusé : " + ((last as Error)?.message ?? "erreur inconnue") + (transient(last) ? " (problème réseau passager : réessaie dans un instant)" : "") };
   }
   try {
     const res = await fetch("https://api.resend.com/emails", {
