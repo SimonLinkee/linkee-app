@@ -1,5 +1,6 @@
 import { createClient as createAdminClient, type SupabaseClient } from "@supabase/supabase-js";
 import nodemailer from "nodemailer";
+import { promises as dnsPromises } from "dns";
 import { defaultCerfaMessage, isEmail } from "@/lib/cerfa";
 
 // Envoi d'un Cerfa émis par mail. SERVEUR UNIQUEMENT : utilise la clé de service et les identifiants d'envoi.
@@ -15,6 +16,16 @@ export function adminClient(): SupabaseClient | null {
   return createAdminClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, key, { auth: { autoRefreshToken: false, persistSession: false } });
 }
 
+/** Adresse IP du serveur SMTP, trouvée par le résolveur DNS direct (c-ares) : évite l'erreur « getaddrinfo EBUSY » du résolveur système. */
+async function resolveSmtpHost(host: string): Promise<string> {
+  try {
+    const ips = await dnsPromises.resolve4(host);
+    return ips[Math.floor(Math.random() * ips.length)] ?? host;
+  } catch {
+    return host; // à défaut, on laisse le résolveur système essayer
+  }
+}
+
 const smtpConfigured = () => !!process.env.SMTP_HOST && !!process.env.SMTP_USER && !!process.env.SMTP_PASS;
 const resendConfigured = () => !!process.env.RESEND_API_KEY && !!process.env.MAIL_FROM;
 export const mailConfigured = () => smtpConfigured() || resendConfigured();
@@ -25,7 +36,6 @@ type Mail = { to: string; subject: string; html: string; text: string; filename:
 async function deliver(m: Mail): Promise<{ ok: true; id: string | null } | { ok: false; error: string }> {
   if (smtpConfigured()) {
     const port = Number(process.env.SMTP_PORT) || 465;
-    const transport = nodemailer.createTransport({ host: process.env.SMTP_HOST, port, secure: port === 465, auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }, connectionTimeout: 15000, socketTimeout: 30000 });
     const message = {
       from: process.env.MAIL_FROM || `Linkee <${process.env.SMTP_USER}>`,
       to: m.to,
@@ -41,6 +51,8 @@ async function deliver(m: Mail): Promise<{ ok: true; id: string | null } | { ok:
     let last: unknown = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
+        const host = process.env.SMTP_HOST as string;
+        const transport = nodemailer.createTransport({ host: await resolveSmtpHost(host), port, secure: port === 465, tls: { servername: host }, auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }, connectionTimeout: 15000, socketTimeout: 30000 });
         const info = await transport.sendMail(message);
         return { ok: true, id: info.messageId ?? null };
       } catch (e) {
