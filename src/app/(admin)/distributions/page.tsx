@@ -454,6 +454,10 @@ export default function DistributionsPage() {
     const d0 = draftRef.current ?? draft;
     if (!d0 || !cityId) return;
     const place = placeById.get(d0.beneficiaryId)?.name ?? "ce lieu";
+    /* La ligne peut aussi venir du Planning (livraison prévue) : tant qu'elle existe là-bas, la distribution réapparaît dans la liste. */
+    const dayDrops = drops.filter((c) => c.beneficiary_id === d0.beneficiaryId && c.scheduled_date === d0.date);
+    const dropsTodo = dayDrops.filter((c) => c.status === "todo");
+    const dropsDone = dayDrops.length - dropsTodo.length;
     const lost = [
       d0.lines.length ? `${d0.lines.length} ligne${d0.lines.length > 1 ? "s" : ""} de produits` : "",
       d0.interventions.length ? `${d0.interventions.length} intervention${d0.interventions.length > 1 ? "s" : ""} d'associations` : "",
@@ -464,6 +468,8 @@ export default function DistributionsPage() {
       `Supprimer définitivement la distribution du ${fmtDay(d0.date)} à ${place} ?\n\n` +
       (lost.length ? `Seront perdus : ${lost.join(", ")}.\n` : "") +
       (d0.status === "distribuee" ? "Elle est clôturée : les chiffres des tableaux de bord seront recalculés sans elle.\n" : "") +
+      (dropsTodo.length ? `La livraison prévue au Planning ce jour-là (${dropsTodo.length} arrêt${dropsTodo.length > 1 ? "s" : ""}) sera retirée aussi : le camion ne passera plus.\n` : "") +
+      (dropsDone ? `${dropsDone} livraison${dropsDone > 1 ? "s" : ""} du Planning déjà réalisée${dropsDone > 1 ? "s" : ""} ne sera pas touchée : cette distribution restera alors dans la liste.\n` : "") +
       "\nSi elle est seulement annulée ou reportée, utilise plutôt « Annuler la distribution ». Cette action est définitive.";
     if (!window.confirm(msgConfirm)) return;
     setDeleting(true);
@@ -474,9 +480,19 @@ export default function DistributionsPage() {
     await lock.current;
     dirty.current = false;
     const { data, error } = await supabase.from("distributions").delete().eq("city_id", cityId).eq("beneficiary_id", d0.beneficiaryId).eq("event_date", d0.date).select("id");
+    if (error) {
+      setDeleting(false);
+      return setMsg("Suppression impossible : " + error.message);
+    }
+    if (!data?.length && d0.id) {
+      setDeleting(false);
+      return setMsg("Suppression refusée par la base (droits insuffisants ?).");
+    }
+    if (dropsTodo.length) {
+      const planRes = await supabase.from("collectes").delete().in("id", dropsTodo.map((c) => c.id)).eq("status", "todo").select("id");
+      if (planRes.error || (planRes.data?.length ?? 0) < dropsTodo.length) setMsg("Distribution supprimée, mais la livraison du Planning n'a pas pu être retirée" + (planRes.error ? " (" + planRes.error.message + ")" : "") + " : retire-la dans le Planning.");
+    }
     setDeleting(false);
-    if (error) return setMsg("Suppression impossible : " + error.message);
-    if (!data?.length && d0.id) return setMsg("Suppression refusée par la base (droits insuffisants ?).");
     const paths = [...d0.photoPaths, ...d0.eventPhotos, ...d0.interventions.flatMap((i) => i.photoPaths)];
     if (paths.length) void supabase.storage.from("collecte-photos").remove(paths); // photos de cette distribution seulement (au mieux)
     draftRef.current = null;
@@ -696,12 +712,12 @@ export default function DistributionsPage() {
                         <button type="button" onClick={openCancel} className="text-[12px] font-semibold text-[var(--critical)] underline">Annuler la distribution</button>
                       </>
                     )}
-                    {draft.id ? (
+                    {draft.id || plannedDrops.length > 0 ? (
                       <button type="button" disabled={deleting} onClick={deleteDistribution} className="text-[12px] font-semibold text-[var(--slate)] underline hover:text-[var(--critical)] disabled:opacity-50">
                         {deleting ? "Suppression…" : "Supprimer cette distribution"}
                       </button>
                     ) : (
-                      <span className="max-w-[260px] text-right text-[11px] text-[var(--muted)]">Pas encore enregistrée. Si elle vient d&apos;une livraison du Planning, retire-la dans le Planning.</span>
+                      <span className="max-w-[260px] text-right text-[11px] text-[var(--muted)]">Pas encore enregistrée : rien à supprimer.</span>
                     )}                  </div>
                 </div>
                 {cancelled && (
