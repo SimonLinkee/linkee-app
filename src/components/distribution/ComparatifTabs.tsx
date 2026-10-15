@@ -1,42 +1,33 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { canAdminCity, isSuper } from "@/lib/roles";
 
-// Comparatif « Collecté vs Distribué » d'une distribution (migration 065) : onglets Distribué (tableau existant, inchangé),
-// Collecté (collectes rattachées) et Comparatif (par catégorie), plus 4 chiffres clés en haut.
+// Comparatif « Collecté vs Distribué » d'une distribution : onglets Distribué (tableau existant, inchangé), Collecté et Comparatif,
+// plus 4 chiffres clés en haut.
+// « Collecté » = les collectes DU JOUR de la distribution (Planning). Ce sont les vraies lignes (collecte_items) que le logisticien
+// remplit : les modifier ici les modifie aussi dans le Planning, le tableau de bord et l'appli du logisticien.
 // Lecture : Superadmin, Comptabilité, Responsable d'antenne, Responsable distribution. Modification : tous sauf le Responsable
 // distribution. Les règles sont appliquées par la base (RLS) ; ici on adapte seulement l'affichage.
 
 const CATS = ["F&L", "Boulang", "Sec", "Frais", "Plats préparés", "Hygiène", "Autre"]; // mêmes catégories que la saisie de distribution
 const DENREE_TO_CAT: Record<string, string> = { "Fruits et légumes": "F&L", Boulangerie: "Boulang", Secs: "Sec", "Produits frais": "Frais", "Plats préparés": "Plats préparés" };
+const DENREES = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
 const COLLECT_KINDS = ["partner", "exceptionnel", "demande_client"];
 
 type Rel<T> = T | T[] | null;
 const first = <T,>(v: Rel<T>): T | null => (Array.isArray(v) ? (v[0] ?? null) : v);
-type SrcRow = {
-  id: string;
-  collecte_id: string | null;
-  link_id: string | null;
-  collectes: Rel<{ id: string; scheduled_date: string; partner_id: string | null; partners: Rel<{ name: string }>; collecte_items: { denree: string | null; name: string | null; kg: number | string | null }[] | null }>;
-  links: Rel<{ id: string; window_date: string; weight_actual: number | string | null; kg_estime: number | string | null; denree: string | null; partner_id: string | null; partners: Rel<{ name: string }> }>;
-};
-type Flat = { key: string; srcId: string; lot: string; donor: string; donorId: string; cat: string; product: string; date: string; type: "pro" | "benevole"; kg: number };
-type Cand = { key: string; kind: "collecte" | "link"; id: string; date: string; donor: string; kg: number };
-
-const SRC_SELECT =
-  "id,collecte_id,link_id,collectes(id,scheduled_date,partner_id,partners(name),collecte_items!collecte_id(denree,name,kg)),links(id,window_date,weight_actual,kg_estime,denree,partner_id,partners(name))";
+type Item = { id: string; denree: string | null; name: string | null; kg: number | string | null; quantity: number | string | null; unit: string | null };
+type Col = { id: string; status: string; kind: string; label: string | null; partner_id: string | null; partners: Rel<{ name: string }>; collecte_items: Item[] | null };
+type LinkRow = { id: string; weight_actual: number | string | null; kg_estime: number | string | null; denree: string | null; partner_id: string | null; partners: Rel<{ name: string }> };
+type Flat = { key: string; lot: string; donorId: string; cat: string; kg: number };
 
 const kgNum = (v: unknown) => Number(String(v ?? "").replace(",", ".")) || 0;
 const r1 = (n: number) => Math.round(n * 10) / 10;
 const fmtKg = (n: number) => `${r1(n).toLocaleString("fr-FR")} kg`;
-const fmtD = (iso: string) => new Date(iso + "T00:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
-const addDays = (iso: string, n: number) => {
-  const d = new Date(iso + "T12:00:00");
-  d.setDate(d.getDate() + n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
+const fmtLong = (iso: string) => new Date(iso + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
 
 /** Statut d'une catégorie : OK sous 5 % d'écart, « À vérifier » jusqu'à 20 %, « Alerte » au-delà (écart en valeur absolue, en % du collecté). */
 export function gapStatus(collected: number, distributed: number): { label: "OK" | "À vérifier" | "Alerte"; pct: number | null } {
@@ -49,6 +40,9 @@ const STATUS_UI = {
   "À vérifier": { bg: "var(--warn-bg)", fg: "var(--warn)" },
   Alerte: { bg: "var(--critical-bg)", fg: "var(--critical)" },
 } as const;
+
+const COL_SELECT = "id,status,kind,label,partner_id,partners(name),collecte_items!collecte_id(id,denree,name,kg,quantity,unit)";
+const inputCls = "w-full rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-[12.5px] text-[var(--navy)] hover:border-[var(--border)] focus:border-[var(--turquoise)] focus:bg-[var(--input-bg)] focus:outline-none";
 
 export default function ComparatifTabs({
   distributionId,
@@ -71,69 +65,51 @@ export default function ComparatifTabs({
   const canEdit = canAdminCity(role);
   const supabase = useMemo(() => createClient(), []);
   const [tab, setTab] = useState<"distribue" | "collecte" | "comparatif">("distribue");
-  const [sources, setSources] = useState<SrcRow[]>([]);
+  const [cols, setCols] = useState<Col[]>([]);
+  const [links, setLinks] = useState<LinkRow[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [pick, setPick] = useState<{ cands: Cand[]; sel: Set<string> } | null>(null);
-  const prefillAsked = useRef<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!distributionId) return;
-    const [s, n] = await Promise.all([
-      supabase.from("distribution_sources").select(SRC_SELECT).eq("distribution_id", distributionId).order("created_at"),
-      supabase.from("distribution_gap_notes").select("category,comment").eq("distribution_id", distributionId),
+    if (!cityId) return;
+    const [c, l, n] = await Promise.all([
+      supabase.from("collectes").select(COL_SELECT).eq("city_id", cityId).eq("source", "planning").eq("scheduled_date", date).in("kind", COLLECT_KINDS).neq("status", "annule").order("sort_order"),
+      supabase.from("links").select("id,weight_actual,kg_estime,denree,partner_id,partners(name)").eq("city_id", cityId).eq("status", "livree").eq("window_date", date),
+      distributionId ? supabase.from("distribution_gap_notes").select("category,comment").eq("distribution_id", distributionId) : Promise.resolve({ data: [] as { category: string; comment: string }[], error: null }),
     ]);
-    if (s.error) setErr("Chargement impossible : " + s.error.message + " (la migration 065 est-elle passée ?)");
-    setSources((s.data ?? []) as unknown as SrcRow[]);
+    if (c.error) setErr("Chargement impossible : " + c.error.message);
+    setCols((c.data ?? []) as unknown as Col[]);
+    setLinks((l.data ?? []) as unknown as LinkRow[]);
     setNotes(Object.fromEntries(((n.data ?? []) as { category: string; comment: string }[]).map((x) => [x.category, x.comment])));
     setLoaded(true);
-  }, [supabase, distributionId]);
+  }, [supabase, cityId, date, distributionId]);
 
-  // chargement + pré-remplissage automatique (une fois par distribution, quand le jour J est arrivé)
   useEffect(() => {
-    if (!canRead || !distributionId) return;
-    let off = false;
-    (async () => {
-      if (prefillAsked.current !== distributionId) {
-        prefillAsked.current = distributionId;
-        const { error } = await supabase.rpc("prefill_distribution_sources", { p_distribution: distributionId, p_force: false });
-        if (error && !off) setErr("Rattachement automatique impossible : " + error.message);
-      }
-      if (!off) await load();
-    })();
-    return () => {
-      off = true;
-    };
-  }, [canRead, distributionId, supabase, load]);
+    if (!canRead) return;
+    const t = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(t);
+  }, [canRead, load]);
 
-  // l'onglet Collecté / Comparatif a besoin d'une distribution enregistrée : on la crée si besoin
+  // le commentaire d'écart a besoin d'une distribution enregistrée : on la crée si besoin
   function openTab(t: "distribue" | "collecte" | "comparatif") {
     setTab(t);
-    if (t !== "distribue" && !distributionId) ensureSaved();
+    if (t === "comparatif" && !distributionId) ensureSaved();
   }
 
-  /* ---------- données à plat ---------- */
+  /* ---------- données à plat (seules les collectes réalisées comptent) ---------- */
+  const done = useMemo(() => cols.filter((c) => c.status === "collecte"), [cols]);
   const flat: Flat[] = useMemo(() => {
     const out: Flat[] = [];
-    for (const s of sources) {
-      const c = first(s.collectes);
-      const l = first(s.links);
-      if (c) {
-        const donor = first(c.partners)?.name ?? "Partenaire";
-        const items = (c.collecte_items ?? []).filter((i) => kgNum(i.kg) > 0);
-        for (const [idx, it] of items.entries()) {
-          out.push({ key: `${s.id}:${idx}`, srcId: s.id, lot: s.id, donor, donorId: c.partner_id ?? donor, cat: (it.denree && DENREE_TO_CAT[it.denree]) || "Autre", product: it.name || it.denree || "—", date: c.scheduled_date, type: "pro", kg: kgNum(it.kg) });
-        }
-        if (!items.length) out.push({ key: `${s.id}:0`, srcId: s.id, lot: s.id, donor, donorId: c.partner_id ?? donor, cat: "Autre", product: "(aucun détail saisi)", date: c.scheduled_date, type: "pro", kg: 0 });
-      } else if (l) {
-        const donor = first(l.partners)?.name ?? "Partenaire";
-        out.push({ key: s.id, srcId: s.id, lot: s.id, donor, donorId: l.partner_id ?? donor, cat: (l.denree && DENREE_TO_CAT[l.denree]) || "Autre", product: l.denree || "Link bénévole", date: l.window_date, type: "benevole", kg: kgNum(l.weight_actual ?? l.kg_estime) });
+    for (const c of done) {
+      for (const it of c.collecte_items ?? []) {
+        if (kgNum(it.kg) > 0) out.push({ key: it.id, lot: c.id, donorId: c.partner_id ?? c.id, cat: (it.denree && DENREE_TO_CAT[it.denree]) || "Autre", kg: kgNum(it.kg) });
       }
     }
-    return out.sort((a, b) => b.date.localeCompare(a.date) || a.donor.localeCompare(b.donor));
-  }, [sources]);
+    for (const l of links) out.push({ key: l.id, lot: l.id, donorId: l.partner_id ?? l.id, cat: (l.denree && DENREE_TO_CAT[l.denree]) || "Autre", kg: kgNum(l.weight_actual ?? l.kg_estime) });
+    return out;
+  }, [done, links]);
 
   const collectedBy = useMemo(() => {
     const m: Record<string, number> = {};
@@ -159,48 +135,28 @@ export default function ComparatifTabs({
     return st !== "OK" && !notes[c]?.trim() ? sum + Math.abs((collectedBy[c] ?? 0) - (distributedBy[c] ?? 0)) : sum;
   }, 0);
 
-  /* ---------- actions (Superadmin, Comptabilité, Responsable d'antenne) ---------- */
-  async function removeSource(srcId: string) {
-    if (!window.confirm("Retirer cette collecte de la distribution ? Elle ne sera plus comptée dans le comparatif.")) return;
-    const { error } = await supabase.from("distribution_sources").delete().eq("id", srcId);
-    if (error) return setErr("Retrait impossible : " + error.message);
+  /* ---------- modification des lignes de collecte (Superadmin, Comptabilité, Responsable d'antenne) ---------- */
+  async function saveItem(it: Item, patch: { denree?: string; name?: string | null; kg?: number }) {
+    const upd: Record<string, unknown> = { ...patch };
+    // une quantité saisie en kg suit le poids ; pour une autre unité (pièces, litres…) la quantité reste telle quelle
+    if (patch.kg !== undefined && (it.unit === "kg" || it.unit == null)) upd.quantity = patch.kg;
+    setBusy(true);
+    const { data, error } = await supabase.from("collecte_items").update(upd).eq("id", it.id).select("id");
+    setBusy(false);
+    if (error || !data?.length) return setErr("Modification impossible : " + (error?.message ?? "refusée par la base (droits insuffisants ?)"));
     await load();
   }
-  async function openPicker() {
-    if (!distributionId || !cityId) return;
-    setErr(null);
-    const from = addDays(date, -60);
-    const to = addDays(date, 3);
-    const [cs, ls, used] = await Promise.all([
-      supabase.from("collectes").select("id,scheduled_date,partners(name),collecte_items!collecte_id(kg)").eq("city_id", cityId).eq("source", "planning").eq("status", "collecte").in("kind", COLLECT_KINDS).gte("scheduled_date", from).lte("scheduled_date", to).order("scheduled_date", { ascending: false }).limit(300),
-      supabase.from("links").select("id,window_date,weight_actual,kg_estime,partners(name)").eq("city_id", cityId).eq("status", "livree").gte("window_date", from).lte("window_date", to).order("window_date", { ascending: false }).limit(300),
-      supabase.from("distribution_sources").select("collecte_id,link_id"),
-    ]);
-    const usedC = new Set(((used.data ?? []) as { collecte_id: string | null }[]).map((u) => u.collecte_id).filter(Boolean));
-    const usedL = new Set(((used.data ?? []) as { link_id: string | null }[]).map((u) => u.link_id).filter(Boolean));
-    const cands: Cand[] = [
-      ...((cs.data ?? []) as unknown as { id: string; scheduled_date: string; partners: Rel<{ name: string }>; collecte_items: { kg: number | string | null }[] | null }[]).filter((c) => !usedC.has(c.id)).map((c) => ({ key: "c" + c.id, kind: "collecte" as const, id: c.id, date: c.scheduled_date, donor: first(c.partners)?.name ?? "Partenaire", kg: (c.collecte_items ?? []).reduce((a, i) => a + kgNum(i.kg), 0) })),
-      ...((ls.data ?? []) as unknown as { id: string; window_date: string; weight_actual: number | string | null; kg_estime: number | string | null; partners: Rel<{ name: string }> }[]).filter((l) => !usedL.has(l.id)).map((l) => ({ key: "l" + l.id, kind: "link" as const, id: l.id, date: l.window_date, donor: (first(l.partners)?.name ?? "Partenaire") + " (Link bénévole)", kg: kgNum(l.weight_actual ?? l.kg_estime) })),
-    ].sort((a, b) => b.date.localeCompare(a.date));
-    setPick({ cands, sel: new Set() });
-  }
-  async function attachSelected() {
-    if (!pick || !distributionId || pick.sel.size === 0) return;
+  async function addItem(colId: string) {
     setBusy(true);
-    const rows = pick.cands.filter((c) => pick.sel.has(c.key)).map((c) => ({ distribution_id: distributionId, ...(c.kind === "collecte" ? { collecte_id: c.id } : { link_id: c.id }) }));
-    const { error } = await supabase.from("distribution_sources").insert(rows);
+    const { error } = await supabase.from("collecte_items").insert({ collecte_id: colId, denree: "Secs", kg: 0, quantity: 0, unit: "kg" });
     setBusy(false);
-    if (error) return setErr("Rattachement impossible : " + error.message);
-    setPick(null);
+    if (error) return setErr("Ajout impossible : " + error.message);
     await load();
   }
-  async function refill() {
-    if (!distributionId || !window.confirm("Rattacher les collectes manquantes de la période ?\n\nLes collectes que tu avais retirées à la main seront de nouveau proposées.")) return;
-    setBusy(true);
-    const { data, error } = await supabase.rpc("prefill_distribution_sources", { p_distribution: distributionId, p_force: true });
-    setBusy(false);
-    if (error) return setErr("Rattachement impossible : " + error.message);
-    if (!data) setErr("Aucune collecte supplémentaire à rattacher sur la période.");
+  async function delItem(it: Item) {
+    if (!window.confirm("Supprimer cette ligne ? Elle disparaît aussi du Planning et de la saisie du logisticien.")) return;
+    const { data, error } = await supabase.from("collecte_items").delete().eq("id", it.id).select("id");
+    if (error || !data?.length) return setErr("Suppression impossible : " + (error?.message ?? "refusée par la base"));
     await load();
   }
   async function saveNote(cat: string, text: string) {
@@ -238,7 +194,7 @@ export default function ComparatifTabs({
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {kpi("Distribué", fmtKg(totalDistributed), `${lines.length} ligne${lines.length > 1 ? "s" : ""} de produits`, "#2a78d6")}
         {kpi("Collecté", loaded ? fmtKg(totalCollected) : "…", loaded ? `${nLots} lot${nLots > 1 ? "s" : ""} · ${nDonors} donateur${nDonors > 1 ? "s" : ""}` : undefined, "#eb6834")}
-        {kpi("Taux distribué", taux === null ? "—" : `${taux} %`, taux === null ? "aucune collecte rattachée" : "distribué ÷ collecté", "var(--turquoise)")}
+        {kpi("Taux distribué", taux === null ? "—" : `${taux} %`, taux === null ? "aucune collecte ce jour-là" : "distribué ÷ collecté", "var(--turquoise)")}
         {kpi("Écart à justifier", loaded ? fmtKg(toJustify) : "…", toJustify > 0 ? "catégories hors « OK » sans commentaire" : "rien à justifier", toJustify > 0 ? "var(--warn)" : "var(--good)")}
       </div>
 
@@ -259,72 +215,98 @@ export default function ComparatifTabs({
 
       {tab === "collecte" && (
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4" style={{ borderTop: "4px solid #eb6834" }}>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h3 className="text-[15px] font-semibold text-[var(--navy)]">Collecté pour cette distribution</h3>
-              <p className="text-[11.5px] text-[var(--slate)]">Collectes de l&apos;antenne depuis la distribution précédente jusqu&apos;à ce jour, rattachées automatiquement.{!canEdit && " Lecture seule."}</p>
-            </div>
-            {canEdit && distributionId && (
-              <div className="flex gap-2">
-                <button type="button" disabled={busy} onClick={refill} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--navy)] hover:border-[#eb6834]">Rattacher les manquantes</button>
-                <button type="button" disabled={busy} onClick={openPicker} className="rounded-[40px] bg-[#eb6834] px-3.5 py-2 text-[12.5px] font-semibold text-white">+ Choisir une collecte</button>
-              </div>
-            )}
+          <div className="mb-3">
+            <h3 className="text-[15px] font-semibold text-[var(--navy)]">Collecté le {fmtLong(date)}</h3>
+            <p className="text-[11.5px] text-[var(--slate)]">
+              Les collectes du jour au Planning, avec ce que le logisticien a saisi.{" "}
+              {canEdit ? "Tu peux corriger les lignes : le changement se répercute dans le Planning, le tableau de bord et l'appli du logisticien." : "Lecture seule."}
+            </p>
           </div>
-          {!distributionId ? (
-            <p className="py-6 text-center text-[13px] text-[var(--slate)]">Enregistrement de la distribution…</p>
-          ) : !loaded ? (
+          {!loaded ? (
             <p className="py-6 text-center text-[13px] text-[var(--slate)]">Chargement…</p>
+          ) : cols.length === 0 && links.length === 0 ? (
+            <p className="py-6 text-center text-[13px] text-[var(--slate)]">Aucune collecte au Planning ce jour-là.</p>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
-              <table className="w-full text-left text-[12.5px]">
+              <table className="w-full min-w-[720px] text-left text-[12.5px]">
                 <thead>
                   <tr className="bg-[var(--input-bg)] text-[11px] tracking-[0.03em] text-[var(--slate)] uppercase">
-                    {["Catégorie", "Produit", "Provenance (donateur)", "Date de collecte", "Type", "Quantité (kg)", ""].map((h) => <th key={h} className="px-3 py-2 font-bold whitespace-nowrap">{h}</th>)}
+                    {["Catégorie", "Produit", "Provenance (donateur)", "Type", "Quantité (kg)", ""].map((h) => <th key={h} className="px-3 py-2 font-bold whitespace-nowrap">{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
-                  {flat.length === 0 && (
-                    <tr><td colSpan={7} className="px-3 py-6 text-center text-[var(--slate)]">Aucune collecte rattachée. {date > new Date().toISOString().slice(0, 10) ? "Le rattachement se fait à partir du jour de la distribution." : canEdit ? "Utilise « Rattacher les manquantes » ou « Choisir une collecte »." : ""}</td></tr>
+                  {cols.map((c) => {
+                    const donor = first(c.partners)?.name ?? c.label ?? "Partenaire";
+                    const items = c.collecte_items ?? [];
+                    const isDone = c.status === "collecte";
+                    return [
+                      <tr key={c.id} className="border-t border-[var(--border)] bg-[var(--track)]">
+                        <td colSpan={4} className="px-3 py-1.5 font-semibold text-[var(--navy)]">
+                          {donor}
+                          <span className="ml-2 rounded-[40px] px-2 py-0.5 text-[10.5px] font-bold" style={isDone ? { background: "var(--good-bg)", color: "var(--good)" } : { background: "var(--warn-bg)", color: "var(--warn)" }}>{isDone ? "Collectée" : "À faire — pas encore saisie par le logisticien"}</span>
+                        </td>
+                        <td colSpan={2} className="px-3 py-1.5 text-right">
+                          {isDone && canEdit && <button type="button" disabled={busy} onClick={() => addItem(c.id)} className="text-[12px] font-semibold text-[#eb6834]">+ Ajouter une ligne</button>}
+                          {!isDone && <Link href="/planning" className="text-[12px] font-semibold text-[var(--slate)] underline">Voir au Planning</Link>}
+                        </td>
+                      </tr>,
+                      ...(isDone && items.length === 0
+                        ? [<tr key={c.id + "e"} className="border-t border-[var(--border)]"><td colSpan={6} className="px-3 py-2 text-[var(--slate)]">Aucune ligne saisie pour cette collecte.</td></tr>]
+                        : []),
+                      ...(isDone
+                        ? items.map((it) => (
+                            <tr key={it.id} className="border-t border-[var(--border)]">
+                              <td className="px-3 py-1">
+                                {canEdit ? (
+                                  <select value={it.denree ?? ""} onChange={(e) => void saveItem(it, { denree: e.target.value })} className={inputCls}>
+                                    {Array.from(new Set([...DENREES, it.denree ?? ""])).filter(Boolean).map((d) => <option key={d} value={d}>{DENREE_TO_CAT[d] ?? d}</option>)}
+                                  </select>
+                                ) : (
+                                  <span className="px-2 font-semibold text-[var(--navy)]">{(it.denree && DENREE_TO_CAT[it.denree]) || "Autre"}</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-1">
+                                {canEdit ? (
+                                  <input defaultValue={it.name ?? ""} key={it.id + (it.name ?? "")} placeholder={it.denree ?? "Produit"} onBlur={(e) => e.target.value.trim() !== (it.name ?? "") && void saveItem(it, { name: e.target.value.trim() || null })} className={inputCls} />
+                                ) : (
+                                  <span className="px-2 text-[var(--navy)]">{it.name || it.denree || "—"}</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-1 text-[var(--navy)]">{donor}</td>
+                              <td className="px-3 py-1 whitespace-nowrap"><span className="rounded-[40px] px-2 py-0.5 text-[10.5px] font-bold" style={{ background: "rgba(42,120,214,.14)", color: "#2a78d6" }}>Pro (&gt; 25 kg)</span></td>
+                              <td className="px-3 py-1 text-right">
+                                {canEdit ? (
+                                  <input type="number" min={0} step="0.1" defaultValue={kgNum(it.kg)} key={it.id + String(it.kg)} onBlur={(e) => e.target.value !== "" && Number(e.target.value) !== kgNum(it.kg) && void saveItem(it, { kg: Math.max(0, Number(e.target.value)) })} className={inputCls + " w-24 text-right font-bold tabular-nums"} />
+                                ) : (
+                                  <span className="font-bold tabular-nums text-[var(--navy)]">{r1(kgNum(it.kg)).toLocaleString("fr-FR")}</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-1 text-right">{canEdit && <button type="button" onClick={() => delItem(it)} title="Supprimer cette ligne" className="h-7 w-7 rounded-full text-[var(--slate)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]">×</button>}</td>
+                            </tr>
+                          ))
+                        : []),
+                    ];
+                  })}
+                  {links.length > 0 && (
+                    <tr className="border-t border-[var(--border)] bg-[var(--track)]"><td colSpan={6} className="px-3 py-1.5 font-semibold text-[var(--navy)]">Links bénévoles livrés ce jour-là <span className="ml-2 text-[11px] font-normal text-[var(--slate)]">modifiables depuis la page Link citoyen</span></td></tr>
                   )}
-                  {flat.map((f) => (
-                    <tr key={f.key} className="border-t border-[var(--border)]">
-                      <td className="px-3 py-2 font-semibold text-[var(--navy)]">{f.cat}</td>
-                      <td className="px-3 py-2 text-[var(--navy)]">{f.product}</td>
-                      <td className="px-3 py-2 text-[var(--navy)]">{f.donor}</td>
-                      <td className="px-3 py-2 whitespace-nowrap text-[var(--slate)]">{fmtD(f.date)}</td>
-                      <td className="px-3 py-2 whitespace-nowrap"><span className="rounded-[40px] px-2 py-0.5 text-[10.5px] font-bold" style={f.type === "pro" ? { background: "rgba(42,120,214,.14)", color: "#2a78d6" } : { background: "var(--good-bg)", color: "var(--good)" }}>{f.type === "pro" ? "Pro (> 25 kg)" : "Bénévole (≤ 25 kg)"}</span></td>
-                      <td className="px-3 py-2 text-right font-bold tabular-nums text-[var(--navy)]">{r1(f.kg).toLocaleString("fr-FR")}</td>
-                      <td className="px-3 py-2 text-right">{canEdit && <button type="button" onClick={() => removeSource(f.srcId)} title="Retirer cette collecte" className="h-7 w-7 rounded-full text-[var(--slate)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]">×</button>}</td>
+                  {links.map((l) => (
+                    <tr key={l.id} className="border-t border-[var(--border)]">
+                      <td className="px-3 py-2 font-semibold text-[var(--navy)]">{(l.denree && DENREE_TO_CAT[l.denree]) || "Autre"}</td>
+                      <td className="px-3 py-2 text-[var(--navy)]">{l.denree || "Link bénévole"}</td>
+                      <td className="px-3 py-2 text-[var(--navy)]">{first(l.partners)?.name ?? "Partenaire"}</td>
+                      <td className="px-3 py-2 whitespace-nowrap"><span className="rounded-[40px] px-2 py-0.5 text-[10.5px] font-bold" style={{ background: "var(--good-bg)", color: "var(--good)" }}>Bénévole (≤ 25 kg)</span></td>
+                      <td className="px-3 py-2 text-right font-bold tabular-nums text-[var(--navy)]">{r1(kgNum(l.weight_actual ?? l.kg_estime)).toLocaleString("fr-FR")}</td>
+                      <td />
                     </tr>
                   ))}
                 </tbody>
                 {flat.length > 0 && (
                   <tfoot>
-                    <tr className="border-t-2 border-[var(--border)] bg-[var(--input-bg)] font-bold text-[var(--navy)]"><td className="px-3 py-2" colSpan={5}>Total collecté · {nLots} lot{nLots > 1 ? "s" : ""}, {nDonors} donateur{nDonors > 1 ? "s" : ""}</td><td className="px-3 py-2 text-right tabular-nums">{r1(totalCollected).toLocaleString("fr-FR")}</td><td /></tr>
+                    <tr className="border-t-2 border-[var(--border)] bg-[var(--input-bg)] font-bold text-[var(--navy)]"><td className="px-3 py-2" colSpan={4}>Total collecté · {nLots} lot{nLots > 1 ? "s" : ""}, {nDonors} donateur{nDonors > 1 ? "s" : ""}</td><td className="px-3 py-2 text-right tabular-nums">{r1(totalCollected).toLocaleString("fr-FR")}</td><td /></tr>
                   </tfoot>
                 )}
               </table>
-            </div>
-          )}
-          {pick && (
-            <div className="mt-3 rounded-xl border-[1.5px] border-[#eb6834] bg-[var(--card)] p-3">
-              <p className="mb-2 text-[13px] font-semibold text-[var(--navy)]">Collectes réalisées autour de cette date et pas encore rattachées</p>
-              {pick.cands.length === 0 && <p className="text-[12.5px] text-[var(--slate)]">Aucune collecte disponible sur cette période.</p>}
-              <div className="max-h-[260px] overflow-y-auto">
-                {pick.cands.map((c) => (
-                  <label key={c.key} className="flex cursor-pointer items-center gap-3 border-b border-[var(--border)] px-1 py-2 text-[12.5px] last:border-b-0">
-                    <input type="checkbox" className="accent-[#eb6834]" checked={pick.sel.has(c.key)} onChange={(e) => setPick((p) => { if (!p) return p; const s = new Set(p.sel); if (e.target.checked) s.add(c.key); else s.delete(c.key); return { ...p, sel: s }; })} />
-                    <span className="w-14 flex-none text-[var(--slate)]">{fmtD(c.date)}</span>
-                    <span className="min-w-0 flex-1 truncate font-semibold text-[var(--navy)]">{c.donor}</span>
-                    <span className="flex-none tabular-nums text-[var(--navy)]">{r1(c.kg).toLocaleString("fr-FR")} kg</span>
-                  </label>
-                ))}
-              </div>
-              <div className="mt-2 flex justify-end gap-2">
-                <button type="button" onClick={() => setPick(null)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-1.5 text-[12.5px] font-semibold text-[var(--navy)]">Fermer</button>
-                <button type="button" disabled={busy || pick.sel.size === 0} onClick={attachSelected} className="rounded-[40px] bg-[#eb6834] px-4 py-1.5 text-[12.5px] font-bold text-white disabled:opacity-50">Rattacher ({pick.sel.size})</button>
-              </div>
             </div>
           )}
         </div>
@@ -333,11 +315,11 @@ export default function ComparatifTabs({
       {tab === "comparatif" && (
         <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4" style={{ borderTop: "4px solid var(--turquoise)" }}>
           <h3 className="text-[15px] font-semibold text-[var(--navy)]">Comparatif par catégorie</h3>
-          <p className="mb-3 text-[11.5px] text-[var(--slate)]">Écart = collecté − distribué. Statut selon l&apos;écart en % du collecté : OK sous 5 %, À vérifier jusqu&apos;à 20 %, Alerte au-delà.{!canEdit && " Lecture seule."}</p>
-          {!distributionId || !loaded ? (
+          <p className="mb-3 text-[11.5px] text-[var(--slate)]">Collecté du jour (collectes réalisées) contre distribué. Écart = collecté − distribué. Statut selon l&apos;écart en % du collecté : OK sous 5 %, À vérifier jusqu&apos;à 20 %, Alerte au-delà.{!canEdit && " Lecture seule."}</p>
+          {!loaded ? (
             <p className="py-6 text-center text-[13px] text-[var(--slate)]">Chargement…</p>
           ) : cats.length === 0 ? (
-            <p className="py-6 text-center text-[13px] text-[var(--slate)]">Rien à comparer pour l&apos;instant : ni collecte rattachée, ni produit distribué.</p>
+            <p className="py-6 text-center text-[13px] text-[var(--slate)]">Rien à comparer pour l&apos;instant : ni collecte réalisée ce jour-là, ni produit distribué.</p>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-[var(--border)]">
               <table className="w-full text-left text-[12.5px]">
@@ -362,7 +344,7 @@ export default function ComparatifTabs({
                         <td className="px-3 py-2"><span className="rounded-[40px] px-2.5 py-0.5 text-[11px] font-bold whitespace-nowrap" style={{ background: ui.bg, color: ui.fg }}>{st.label}</span></td>
                         <td className="min-w-[220px] px-3 py-2">
                           {canEdit ? (
-                            <input defaultValue={notes[c] ?? ""} key={c + (notes[c] ?? "")} onBlur={(e) => void saveNote(c, e.target.value)} placeholder={st.label === "OK" ? "" : "Ex : 15 kg de pâtes remis en stock"} className="w-full rounded-lg border border-[var(--border)] bg-[var(--input-bg)] px-2 py-1.5 text-[12.5px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]" />
+                            <input disabled={!distributionId} defaultValue={notes[c] ?? ""} key={c + (notes[c] ?? "")} onBlur={(e) => void saveNote(c, e.target.value)} placeholder={st.label === "OK" ? "" : "Ex : 15 kg de pâtes remis en stock"} className="w-full rounded-lg border border-[var(--border)] bg-[var(--input-bg)] px-2 py-1.5 text-[12.5px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]" />
                           ) : (
                             <span className="text-[var(--navy)]">{notes[c] || <span className="text-[var(--muted)]">—</span>}</span>
                           )}
