@@ -77,7 +77,8 @@ function Sparkline({ evo }: { evo: EvoPoint[] }) {
   );
 }
 
-function EvolutionChart({ evo }: { evo: EvoPoint[] }) {
+/** Deux courbes sur les mêmes jours : volumes « collectés » (planning, bleu) et volumes distribués (distributions clôturées, orange). */
+function EvolutionChart({ evo, evo2 }: { evo: EvoPoint[]; evo2?: EvoPoint[] }) {
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
   const W = 620;
   const H = 220;
@@ -87,22 +88,25 @@ function EvolutionChart({ evo }: { evo: EvoPoint[] }) {
   const padB = 26;
   const plotW = W - padL - padR;
   const plotH = H - padT - padB;
-  const maxV = Math.max(...evo.map((p) => p.v));
+  const second = evo2 && evo2.length === evo.length ? evo2 : null;
+  const maxV = Math.max(...evo.map((p) => p.v), ...(second ?? []).map((p) => p.v));
   const niceMax = Math.ceil(maxV / 100) * 100 || 100;
   const step = plotW / (evo.length - 1 || 1);
+  const ORANGE = "#eb6834";
 
-  const pts = evo.map((p, i) => ({
-    x: padL + i * step,
-    y: padT + plotH - (p.v / niceMax) * plotH,
-    v: p.v,
-    l: p.l,
-  }));
-
-  const linePath = `M ${pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" L ")}`;
+  const place = (arr: EvoPoint[]) => arr.map((p, i) => ({ x: padL + i * step, y: padT + plotH - (p.v / niceMax) * plotH, v: p.v, l: p.l }));
+  const pts = place(evo);
+  const pts2 = second ? place(second) : [];
+  const path = (a: { x: number; y: number }[]) => `M ${a.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" L ")}`;
+  const linePath = path(pts);
   const areaPath = `${linePath} L ${pts[pts.length - 1].x.toFixed(1)},${padT + plotH} L ${pts[0].x.toFixed(1)},${padT + plotH} Z`;
 
   return (
     <div className="relative">
+      <div className="mb-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[12px] font-semibold text-[var(--navy)]">
+        <span className="flex items-center gap-1.5"><span className="h-[3px] w-5 rounded" style={{ background: "var(--seq)" }} />Volumes « collectés » (planning)</span>
+        {second && <span className="flex items-center gap-1.5"><span className="h-[3px] w-5 rounded" style={{ background: ORANGE }} />Volumes distribués (distributions clôturées)</span>}
+      </div>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={220}>
         {[0, 1, 2, 3, 4].map((g) => {
           const gy = padT + plotH - (g / 4) * plotH;
@@ -117,6 +121,7 @@ function EvolutionChart({ evo }: { evo: EvoPoint[] }) {
         })}
         <path d={areaPath} fill="var(--seq-tint)" stroke="none" />
         <path d={linePath} fill="none" stroke="var(--seq)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+        {second && <path d={path(pts2)} fill="none" stroke={ORANGE} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="6 4" />}
         {pts.map((p, i) => {
           const isLast = i === pts.length - 1;
           return (
@@ -128,12 +133,26 @@ function EvolutionChart({ evo }: { evo: EvoPoint[] }) {
                 r={12}
                 fill="transparent"
                 className="cursor-pointer"
-                onMouseEnter={() => setTooltip({ x: (p.x / W) * 100, y: (p.y / H) * 100, text: `${p.l} — ${fmt(p.v)} kg` })}
+                onMouseEnter={() => setTooltip({ x: (p.x / W) * 100, y: (p.y / H) * 100, text: `${p.l} — ${fmt(p.v)} kg collectés (planning)` })}
                 onMouseLeave={() => setTooltip(null)}
               />
             </g>
           );
         })}
+        {pts2.map((p, i) => (
+          <g key={"d" + i}>
+            <circle cx={p.x} cy={p.y} r={3} fill="var(--card)" stroke={ORANGE} strokeWidth={2} />
+            <circle
+              cx={p.x}
+              cy={p.y}
+              r={12}
+              fill="transparent"
+              className="cursor-pointer"
+              onMouseEnter={() => setTooltip({ x: (p.x / W) * 100, y: (p.y / H) * 100, text: `${p.l} — ${fmt(p.v)} kg distribués` })}
+              onMouseLeave={() => setTooltip(null)}
+            />
+          </g>
+        ))}
         {pts.map((p, i) => (
           <text key={i} x={p.x} y={H - 6} fontSize={11} fill="var(--muted)" textAnchor="middle">
             {p.l}
@@ -151,7 +170,6 @@ function EvolutionChart({ evo }: { evo: EvoPoint[] }) {
     </div>
   );
 }
-
 
 type PartnerOpt = { id: string; name: string; cat: string };
 
@@ -184,6 +202,7 @@ export default function DashboardPage() {
   const [cur, setCur] = useState<Summary | null>(null);
   const [prev, setPrev] = useState<Summary | null>(null);
   const [evo, setEvo] = useState<EvoPoint[]>([]);
+  const [evoDist, setEvoDist] = useState<EvoPoint[]>([]); // volumes distribués (distributions clôturées), mêmes jours que la courbe « collectés »
   const [work, setWork] = useState<{ secs: number; days: number }>({ secs: 0, days: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -310,6 +329,31 @@ export default function DashboardPage() {
       cancelled = true;
     };
   }, [supabase, gran, fromKey, toKey, activePartnerId]);
+
+  // courbe « volumes distribués » : poids des produits des distributions clôturées (pas de lien avec un partenaire précis)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (activePartnerId) return setEvoDist([]);
+      const from = new Date(fromKey);
+      const to = new Date(toKey);
+      const evoFrom = new Date(from);
+      if (gran === "jour") evoFrom.setDate(to.getDate() - 6);
+      let dq = supabase.from("distributions").select("event_date,distribution_lines(weight_kg)").eq("status", "distribuee").gte("event_date", isoOf(evoFrom)).lte("event_date", isoOf(to)).limit(5000);
+      if (cityId) dq = dq.eq("city_id", cityId);
+      if (activeBeneficiaryId) dq = dq.eq("beneficiary_id", activeBeneficiaryId);
+      const { data } = await dq;
+      if (cancelled) return;
+      const byDay: Record<string, number> = {};
+      for (const d of (data ?? []) as unknown as { event_date: string; distribution_lines: { weight_kg: number | string | null }[] | null }[]) {
+        byDay[d.event_date] = (byDay[d.event_date] ?? 0) + (d.distribution_lines ?? []).reduce((s, l) => s + (Number(l.weight_kg) || 0), 0);
+      }
+      setEvoDist(buildEvo(byDay, evoFrom, to));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, cityId, gran, fromKey, toKey, activePartnerId, activeBeneficiaryId]);
 
   function shift(dir: 1 | -1) {
     const d = new Date(anchor);
@@ -545,9 +589,9 @@ export default function DashboardPage() {
 
         <section className="mb-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.3fr_1fr]">
           <div className="rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)]">
-            <h3 className="mb-0.5 font-display text-[17px] font-extrabold text-[var(--navy)]">Évolution du volume collecté</h3>
+            <h3 className="mb-0.5 font-display text-[17px] font-extrabold text-[var(--navy)]">Évolution des volumes</h3>
             <p className="mb-4 text-[12.5px] text-[var(--slate)]">{gran === "jour" ? "7 derniers jours jusqu'à la date choisie" : `${dayCount} jour(s) sélectionné(s)`}</p>
-            {evo.length > 0 ? <EvolutionChart evo={evo} /> : <p className="py-10 text-center text-[13px] text-[var(--slate)]">Aucune donnée sur cette période.</p>}
+            {evo.length > 0 ? <EvolutionChart evo={evo} evo2={evoDist} /> : <p className="py-10 text-center text-[13px] text-[var(--slate)]">Aucune donnée sur cette période.</p>}
           </div>
           <div className="rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-6 shadow-[var(--shadow)]">
             <h3 className="mb-0.5 font-display text-[17px] font-extrabold text-[var(--navy)]">Répartition par type de denrée</h3>
