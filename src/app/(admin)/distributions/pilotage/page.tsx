@@ -270,7 +270,7 @@ export default function PilotagePage() {
         <p className="text-[13px] text-[var(--slate)]">Chargement…</p>
       ) : (
         <div className={`flex flex-col gap-4 ${list.length === 0 ? "" : ""}`}>
-          {list.length === 0 && <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card)] px-5 py-8 text-center text-[13px] text-[var(--slate)]">Aucune distribution validée sur cette période. Dans « Distributions », clique sur « Bien réceptionné et distribué » pour qu&apos;elle compte ici.</div>}
+          {list.length === 0 && <div className="rounded-2xl border border-dashed border-[var(--border)] bg-[var(--card)] px-5 py-8 text-center text-[13px] text-[var(--slate)]">Aucune distribution validée sur cette période. Dans « Distributions », clique sur « Clôturer la distribution » pour qu&apos;elle compte ici.</div>}
 
           <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {(

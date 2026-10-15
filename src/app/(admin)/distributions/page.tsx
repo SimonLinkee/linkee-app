@@ -587,7 +587,7 @@ export default function DistributionsPage() {
       {nLate > 0 && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-[1.5px] border-[var(--critical)] bg-[var(--critical-bg)] px-4 py-3">
           <span className="text-[13.5px] font-semibold text-[var(--critical)]">
-            ⚠ {nLate} distribution{nLate > 1 ? "s" : ""} pas encore clôturée{nLate > 1 ? "s" : ""} alors que le jour J est passé. Clique sur « Bien réceptionné et distribué » pour la clôturer.
+            ⚠ {nLate} distribution{nLate > 1 ? "s" : ""} pas encore clôturée{nLate > 1 ? "s" : ""} alors que le jour J est passé. Clique sur « Clôturer la distribution » pour la clôturer.
           </span>
           <button type="button" onClick={() => setFilter("retard")} className="rounded-[40px] bg-[var(--critical)] px-4 py-1.5 text-[12.5px] font-bold text-white">Voir les distributions en retard</button>
         </div>
@@ -701,13 +701,13 @@ export default function DistributionsPage() {
                       </button>
                     ) : done ? (
                       <>
-                        <span className="flex items-center gap-2 rounded-[40px] bg-[var(--good-bg)] px-4 py-2 font-display text-[14px] font-bold text-[var(--good)]">✓ Clôturée — réceptionnée et distribuée</span>
+                        <span className="flex items-center gap-2 rounded-[40px] bg-[var(--good-bg)] px-4 py-2 font-display text-[14px] font-bold text-[var(--good)]">✓ Distribution clôturée</span>
                         <button type="button" onClick={reopen} className="text-[12px] font-semibold text-[var(--slate)] underline">Rouvrir pour corriger</button>
                       </>
                     ) : (
                       <>
                         <button type="button" onClick={validate} className="rounded-[40px] bg-[var(--good)] px-6 py-3 font-display text-[15px] font-bold text-white shadow-[var(--shadow)]">
-                          Bien réceptionné et distribué
+                          Clôturer la distribution
                         </button>
                         <button type="button" onClick={openCancel} className="text-[12px] font-semibold text-[var(--critical)] underline">Annuler la distribution</button>
                       </>

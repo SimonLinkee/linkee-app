@@ -254,7 +254,7 @@ function Page() {
   }
 
   async function closeDistribution() {
-    if (!window.confirm("Clôturer cette distribution : bien réceptionnée et distribuée ?")) return;
+    if (!window.confirm("Clôturer cette distribution ?")) return;
     await flush();
     dirtyKey.current = keyRef.current;
     dirty.current.fields = true;
@@ -402,7 +402,7 @@ function Page() {
             <div className="flex h-14 items-center justify-center rounded-2xl bg-[var(--good-bg)] font-display text-[17px] font-bold text-[var(--good)]">✓ Distribution clôturée</div>
           ) : (
             <button type="button" onClick={closeDistribution} className="h-16 w-full rounded-2xl bg-[var(--navy-deep)] font-display text-[19px] font-bold text-[var(--panel-fg)] shadow-[var(--shadow)]">
-              Bien réceptionné et distribué
+              Clôturer la distribution
             </button>
           )}
         </div>
