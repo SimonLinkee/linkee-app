@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
 import DistribTabs from "@/components/DistribTabs";
 import PhotoStrip from "@/components/PhotoStrip";
+import ComparatifTabs from "@/components/distribution/ComparatifTabs";
 import { STATUS_UI, distribStatus, isoToday } from "@/lib/distributions";
 
 /* ---------------- types ---------------- */
@@ -162,7 +163,7 @@ function dbToDraft(d: DbDist): Draft {
 
 export default function DistributionsPage() {
   const supabase = useMemo(() => createClient(), []);
-  const { cityId, city } = useCity(); // the page remounts when the city changes
+  const { cityId, city, role } = useCity(); // the page remounts when the city changes
   const [places, setPlaces] = useState<Place[]>([]);
   const [assocs, setAssocs] = useState<Assoc[]>([]);
   const [suppliers, setSuppliers] = useState<string[]>([]); // partner names of the city (suppliers are picked, never typed)
@@ -809,7 +810,9 @@ export default function DistributionsPage() {
                 {num(draft.coordinators) > num(draft.volunteers) && <span className="text-[12px] font-semibold text-[var(--critical)]">Les coordinateurs sont comptés dans le total : vérifie les chiffres.</span>}
               </div>
 
-              {/* products */}              <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
+              {/* produits distribués : tableau inchangé, affiché dans l'onglet « Distribué » (onglets Collecté et Comparatif pour les rôles autorisés) */}
+              <ComparatifTabs key={selKey ?? "new"} distributionId={draft.id ?? null} cityId={cityId} date={draft.date} lines={draft.lines} role={role} ensureSaved={() => edit((d) => d)} distribue={
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h3 className="text-[15px] font-semibold text-[var(--navy)]">Produits distribués</h3>
@@ -882,6 +885,7 @@ export default function DistributionsPage() {
                   </table>
                 </div>
               </div>
+              } />
 
               <div className="grid grid-cols-1 gap-3">                <div className="rounded-2xl border-[1.5px] border-[#2a78d6] bg-[var(--card)] p-4">
                   <h3 className="mb-0.5 flex items-center gap-2 text-[14.5px] font-semibold text-[var(--navy)]">
