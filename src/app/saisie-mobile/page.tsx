@@ -27,10 +27,15 @@ type Draft = {
   closed: boolean;
   lineKg: number | null; // total of the lines already stored for this distribution (null = none yet)
 };
+type MLine = { uid: string; id?: string; supplier: string; category: string; kg: string; src?: string }; // une ligne du tableau « Distribué » (id = ligne déjà enregistrée)
 type DayItem = { denree: string | null; name: string | null; kg: number | string };
 type DayCollecte = { id: string; name: string; status: string; items: DayItem[]; kg: number };
 
 const DENREE_TO_CAT: Record<string, string> = { "Fruits et légumes": "F&L", Boulangerie: "Boulang", Secs: "Sec", "Produits frais": "Frais", "Plats préparés": "Plats préparés" };
+const CATS_M = ["F&L", "Boulang", "Sec", "Frais", "Plats préparés", "Hygiène", "Autre"]; // mêmes catégories que le tableau de la version PC
+const OTHER_SRC = "Autre / stock";
+let uidN = 0;
+const newUid = () => "l" + Date.now().toString(36) + (uidN++).toString(36);
 const num = (s: string) => {
   const v = parseFloat(String(s).replace(",", "."));
   return Number.isFinite(v) ? v : 0;
@@ -80,12 +85,16 @@ function Page() {
   const [selKey, setSelKey] = useState("");
   const [d, setD] = useState<Draft>(blank());
   const [day, setDay] = useState<DayCollecte[]>([]);
+  const [mlines, setMlines] = useState<MLine[]>([]); // tableau « Distribué » : provenance, type, poids
+  const mRef = useRef<MLine[]>([]);
+  const removed = useRef<string[]>([]); // lignes enregistrées que l'on a retirées (à supprimer au prochain enregistrement)
+  const [partnerNames, setPartnerNames] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [state, setState] = useState<"idle" | "saving" | "saved">("idle");
   const [msg, setMsg] = useState<string | null>(null);
   const dRef = useRef(d);
   dRef.current = d;
-  const dirty = useRef({ fields: false, inters: false });
+  const dirty = useRef<{ fields: boolean; inters: boolean; lines?: boolean }>({ fields: false, inters: false });
   const timer = useRef<number | null>(null);
   const lock = useRef<Promise<unknown>>(Promise.resolve());
   const keyRef = useRef("");
@@ -105,12 +114,14 @@ function Page() {
       const pl = ((b.data ?? []) as { id: string; name: string; category: string | null; fiche: { pinned?: boolean } | null }[]).filter((x) => x.category === "Distribution Linkee" || x.fiche?.pinned).map((x) => ({ id: x.id, name: x.name }));
       setPlaces(pl);
       const ids = pl.map((p) => p.id);
-      const [ds, cs, as] = await Promise.all([
+      const [ds, cs, as, ps] = await Promise.all([
         supabase.from("distributions").select("beneficiary_id,event_date,status").eq("city_id", cityId).gte("event_date", from).lte("event_date", to),
         ids.length ? supabase.from("collectes").select("beneficiary_id,scheduled_date").eq("city_id", cityId).eq("kind", "dropoff").eq("source", "planning").in("beneficiary_id", ids).gte("scheduled_date", from).lte("scheduled_date", to).neq("status", "annule") : Promise.resolve({ data: [] }),
         supabase.from("associations").select("id,name").eq("city_id", cityId).eq("archived", false).order("name"),
+        supabase.from("partners").select("name").eq("city_id", cityId).eq("active", true).is("deleted_at", null).order("name"),
       ]);
       setAssocs((as.data ?? []) as Assoc[]);
+      setPartnerNames(Array.from(new Set(((ps.data ?? []) as { name: string }[]).map((p) => p.name))));
       const map = new Map<string, Entry>();
       const cancelled = new Set<string>(); // distributions annulées : rien à saisir, on ne les propose pas
       for (const x of (ds.data ?? []) as { beneficiary_id: string; event_date: string; status: string }[]) {
@@ -138,10 +149,10 @@ function Page() {
     dirty.current = { fields: false, inters: false };
     setState("idle");
     const [dq, cq] = await Promise.all([
-      supabase.from("distributions").select("id,registered,baskets,volunteers_total,coordinators,photo_paths,event_photo_paths,status,distribution_lines(weight_kg),distribution_interventions(association_id,comment,photo_paths)").eq("beneficiary_id", benId).eq("event_date", date).maybeSingle(),
+      supabase.from("distributions").select("id,registered,baskets,volunteers_total,coordinators,photo_paths,event_photo_paths,status,distribution_lines(id,supplier,category,weight_kg,sort_order),distribution_interventions(association_id,comment,photo_paths)").eq("beneficiary_id", benId).eq("event_date", date).maybeSingle(),
       supabase.from("collectes").select("id,status,partners(name),collecte_items!collecte_id(denree,name,kg)").eq("city_id", cityId).eq("scheduled_date", date).eq("source", "planning").in("kind", ["partner", "exceptionnel", "demande_client"]).neq("status", "annule").order("sort_order"),
     ]);
-    const row = dq.data as unknown as { id: string; registered: number | null; baskets: number | null; volunteers_total: number | null; coordinators: number | null; photo_paths: string[] | null; event_photo_paths: string[] | null; status: string; distribution_lines: { weight_kg: number | string | null }[] | null; distribution_interventions: { association_id: string; comment: string | null; photo_paths: string[] | null }[] | null } | null;
+    const row = dq.data as unknown as { id: string; registered: number | null; baskets: number | null; volunteers_total: number | null; coordinators: number | null; photo_paths: string[] | null; event_photo_paths: string[] | null; status: string; distribution_lines: { id: string; supplier: string | null; category: string | null; weight_kg: number | string | null; sort_order: number | null }[] | null; distribution_interventions: { association_id: string; comment: string | null; photo_paths: string[] | null }[] | null } | null;
     if (row) {
       const lines = row.distribution_lines ?? [];
       setD({
@@ -156,7 +167,15 @@ function Page() {
         closed: row.status === "distribuee",
         lineKg: lines.length ? r1(lines.reduce((a, l) => a + num(String(l.weight_kg ?? 0)), 0)) : null,
       });
-    } else setD(blank());
+      const loadedLines = [...lines].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).map((l) => ({ uid: l.id, id: l.id, supplier: l.supplier ?? "", category: l.category ?? "Autre", kg: l.weight_kg == null ? "" : String(l.weight_kg) }));
+      mRef.current = loadedLines;
+      setMlines(loadedLines);
+    } else {
+      setD(blank());
+      mRef.current = [];
+      setMlines([]);
+    }
+    removed.current = [];
     setDay(
       ((cq.data ?? []) as unknown as { id: string; status: string; partners: { name: string } | { name: string }[] | null; collecte_items: DayItem[] | null }[]).map((c) => {
         const items = c.collecte_items ?? [];
@@ -182,15 +201,16 @@ function Page() {
   async function flush() {
     if (timer.current) window.clearTimeout(timer.current);
     timer.current = null;
-    if (dirty.current.fields || dirty.current.inters) await save();
+    if (dirty.current.fields || dirty.current.inters || dirty.current.lines) await save();
   }
   function save(extra: Record<string, unknown> = {}): Promise<unknown> {
     lock.current = lock.current.then(async () => {
       const cur = dRef.current;
       const [b, dt] = (dirtyKey.current || keyRef.current).split("|");
       const forced = Object.keys(extra).length > 0;
-      if (!cityId || !b || !dt || (!dirty.current.fields && !dirty.current.inters && !forced)) return;
+      if (!cityId || !b || !dt || (!dirty.current.fields && !dirty.current.inters && !dirty.current.lines && !forced)) return;
       const doInters = dirty.current.inters;
+      const doLines = !!dirty.current.lines;
       dirty.current = { fields: false, inters: false };
       setState("saving");
       const up = await supabase
@@ -214,6 +234,33 @@ function Page() {
           if (ii.error) setMsg("Associations non enregistrées : " + ii.error.message);
         }
       }
+      if (doLines) {
+        // On met à jour ligne par ligne (jamais « tout effacer puis tout recréer ») : les détails saisis sur PC (produit, colis, don…) sont conservés.
+        const dels = removed.current;
+        removed.current = [];
+        if (dels.length) await supabase.from("distribution_lines").delete().in("id", dels);
+        const idByUid = new Map<string, string>();
+        for (const [i, l] of mRef.current.entries()) {
+          const kg = l.kg.trim() === "" ? null : Math.round(num(l.kg) * 100) / 100;
+          if (l.id) {
+            const u = await supabase.from("distribution_lines").update({ supplier: l.supplier || null, category: l.category, weight_kg: kg, sort_order: i }).eq("id", l.id);
+            if (u.error) setMsg("Ligne non enregistrée : " + u.error.message);
+          } else if (kg !== null && kg > 0) {
+            const ins = await supabase
+              .from("distribution_lines")
+              .insert({ distribution_id: id, sort_order: i, supplier: l.supplier || null, category: l.category, weight_kg: kg, ...(l.src ? { source_collecte_id: l.src, don_pct: 100, delivery_mode: "Collecte Log" } : {}) })
+              .select("id")
+              .single();
+            if (ins.error || !ins.data) setMsg("Ligne non enregistrée : " + (ins.error?.message ?? "erreur"));
+            else idByUid.set(l.uid, ins.data.id as string);
+          }
+        }
+        if (idByUid.size) {
+          const withIds = mRef.current.map((l) => (!l.id && idByUid.get(l.uid) ? { ...l, id: idByUid.get(l.uid) } : l));
+          mRef.current = withIds;
+          setMlines(withIds);
+        }
+      }
       if (!cur.id) setD((x) => (x.id ? x : { ...x, id }));
       setState("saved");
     });
@@ -222,37 +269,43 @@ function Page() {
 
   const dayKg = r1(day.filter((c) => c.status === "collecte").reduce((a, c) => a + c.kg, 0));
 
-  /** Confirms the total of the day's collections: stored as product lines, exactly like the PC table ("Ajouter les collectes du jour"). */
-  async function validateTotal() {
-    if (!cityId || !benId || !date) return;
-    const items = day.filter((c) => c.status === "collecte").flatMap((c) => c.items.map((i) => ({ ...i, source: c.id, supplier: c.name })));
-    if (!items.length) return setMsg("Aucune collecte terminée ce jour-là pour l'instant.");
-    await flush();
+  /* ---------- tableau « Distribué » : provenance (partenaires existants), type, poids ---------- */
+  const plannedNames = Array.from(new Set(day.map((c) => c.name)));
+  const otherNames = partnerNames.filter((n) => !plannedNames.includes(n));
+  function changeLines(fn: (l: MLine[]) => MLine[]) {
+    const next = fn(mRef.current);
+    mRef.current = next;
+    setMlines(next);
+    dirty.current.lines = true;
     dirtyKey.current = keyRef.current;
-    dirty.current.fields = true;
-    await save();
-    const { data } = await supabase.from("distributions").select("id").eq("beneficiary_id", benId).eq("event_date", date).single();
-    const id = data?.id as string | undefined;
-    if (!id) return setMsg("Enregistrement impossible.");
-    await supabase.from("distribution_lines").delete().eq("distribution_id", id);
-    const ins = await supabase.from("distribution_lines").insert(
-      items.map((i, idx) => ({
-        distribution_id: id,
-        sort_order: idx,
-        category: (i.denree && DENREE_TO_CAT[i.denree]) || "Autre",
-        product: i.name || i.denree || null,
-        weight_kg: Math.round((Number(i.kg) || 0) * 100) / 100,
-        supplier: i.supplier,
-        don_pct: 100,
-        delivery_mode: "Collecte Log",
-        source_collecte_id: i.source,
-      })),
-    );
-    if (ins.error) return setMsg("Total non enregistré : " + ins.error.message);
-    setD((x) => ({ ...x, id, lineKg: dayKg }));
-    setState("saved");
+    setState("idle");
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => void save(), 900);
   }
-
+  const addLine = () => changeLines((l) => [...l, { uid: newUid(), supplier: plannedNames[0] ?? OTHER_SRC, category: "F&L", kg: "" }]);
+  const setLine = (uid: string, patch: Partial<MLine>) => changeLines((l) => l.map((x) => (x.uid === uid ? { ...x, ...patch } : x)));
+  function removeLine(uid: string) {
+    const gone = mRef.current.find((x) => x.uid === uid);
+    if (gone?.id) removed.current.push(gone.id);
+    changeLines((l) => l.filter((x) => x.uid !== uid));
+  }
+  /** Raccourci : une ligne par collecte réalisée et par catégorie, avec les kilos saisis par le logisticien. */
+  function prefillFromCollected() {
+    const out: MLine[] = [];
+    for (const c of day.filter((x) => x.status === "collecte")) {
+      const byCat = new Map<string, number>();
+      for (const i of c.items) {
+        const cat = (i.denree && DENREE_TO_CAT[i.denree]) || "Autre";
+        byCat.set(cat, (byCat.get(cat) ?? 0) + (Number(i.kg) || 0));
+      }
+      for (const [cat, kg] of byCat) if (kg > 0) out.push({ uid: newUid(), supplier: c.name, category: cat, kg: String(r1(kg)), src: c.id });
+    }
+    if (!out.length) return setMsg("Aucune collecte terminée ce jour-là pour l'instant.");
+    if (mRef.current.length && !window.confirm("Remplacer les lignes actuelles par le collecté du jour ?")) return;
+    for (const l of mRef.current) if (l.id) removed.current.push(l.id);
+    changeLines(() => out);
+  }
+  const distKg = r1(mlines.reduce((a, l) => a + num(l.kg), 0));
   async function closeDistribution() {
     if (!window.confirm("Clôturer cette distribution ?")) return;
     await flush();
@@ -336,7 +389,7 @@ function Page() {
             {num(d.coordinators) > num(d.volunteers) && <p className="mt-2 text-center text-[12.5px] font-semibold text-[var(--critical)]">Les coordinateurs sont compris dans le total des bénévoles.</p>}
           </Step>
 
-          <Step n={2} title="Collectes du jour" sub="Vérifie les kilos puis valide le total.">
+          <Step n={2} title="Collectes du jour" sub="Ce que le logisticien a collecté (lecture seule).">
             {day.length === 0 ? (
               <p className="rounded-xl border border-dashed border-[var(--border)] px-3 py-4 text-center text-[13px] text-[var(--slate)]">Aucune collecte prévue ce jour-là.</p>
             ) : (
@@ -353,26 +406,59 @@ function Page() {
               <span className="text-[14px] font-bold text-[var(--slate)]">Total collecté</span>
               <span className="font-display text-[28px] font-black text-[var(--navy)] tabular-nums">{dayKg} kg</span>
             </div>
-            {d.lineKg != null && d.lineKg === dayKg ? (
-              <div className="mt-3 flex h-14 items-center justify-center rounded-2xl bg-[var(--good-bg)] font-display text-[17px] font-bold text-[var(--good)]">✓ Total validé : {d.lineKg} kg</div>
-            ) : (
-              <>
-                {d.lineKg != null && <p className="mt-2 text-center text-[12.5px] text-[var(--slate)]">Total enregistré : {d.lineKg} kg — les collectes ont changé depuis.</p>}
-                <button type="button" onClick={validateTotal} disabled={dayKg <= 0} className="mt-3 h-14 w-full rounded-2xl bg-[var(--good)] font-display text-[18px] font-bold text-white disabled:opacity-45">
-                  {d.lineKg != null ? `Mettre à jour : ${dayKg} kg` : `Valider le total de ${dayKg} kg`}
-                </button>
-              </>
-            )}
           </Step>
 
-          <Step n={3} title="Photos" sub="Prends une photo avec l'appareil ou choisis-en dans ta galerie.">
+          <Step n={3} title="Distribué" sub="Ce qui est parti aux bénéficiaires : provenance, type et poids.">
+            {mlines.length === 0 && <p className="mb-3 rounded-xl border border-dashed border-[var(--border)] px-3 py-4 text-center text-[13px] text-[var(--slate)]">Aucune ligne pour l&apos;instant.</p>}
+            <div className="flex flex-col gap-3">
+              {mlines.map((l) => (
+                <div key={l.uid} className="rounded-2xl bg-[var(--track)] p-3">
+                  <label className="mb-1 block text-[11px] font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Provenance</label>
+                  <select value={l.supplier} onChange={(e) => setLine(l.uid, { supplier: e.target.value })} className="h-12 w-full rounded-xl border-2 border-[var(--border)] bg-[var(--card)] px-3 text-[15px] font-semibold text-[var(--navy)]">
+                    {plannedNames.length > 0 && (
+                      <optgroup label="Prévus au planning">
+                        {plannedNames.map((n) => <option key={n} value={n}>{n}</option>)}
+                      </optgroup>
+                    )}
+                    {otherNames.length > 0 && (
+                      <optgroup label="Autres partenaires">
+                        {otherNames.map((n) => <option key={n} value={n}>{n}</option>)}
+                      </optgroup>
+                    )}
+                    {l.supplier && l.supplier !== OTHER_SRC && !plannedNames.includes(l.supplier) && !otherNames.includes(l.supplier) && <option value={l.supplier}>{l.supplier}</option>}
+                    <option value={OTHER_SRC}>{OTHER_SRC}</option>
+                  </select>
+                  <div className="mt-2 flex items-end gap-2">
+                    <div className="min-w-0 flex-1">
+                      <label className="mb-1 block text-[11px] font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Type</label>
+                      <select value={l.category} onChange={(e) => setLine(l.uid, { category: e.target.value })} className="h-12 w-full rounded-xl border-2 border-[var(--border)] bg-[var(--card)] px-3 text-[15px] font-semibold text-[var(--navy)]">
+                        {Array.from(new Set([...CATS_M, l.category])).map((c) => <option key={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div className="w-[104px] flex-none">
+                      <label className="mb-1 block text-[11px] font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Poids (kg)</label>
+                      <input type="number" inputMode="decimal" min={0} step="0.1" value={l.kg} onChange={(e) => setLine(l.uid, { kg: e.target.value })} placeholder="0" className="h-12 w-full rounded-xl border-2 border-[var(--good)]/45 bg-[var(--good-bg)] px-2 text-right font-display text-[20px] font-black text-[var(--navy)] outline-none focus:border-[var(--good)]" />
+                    </div>
+                    <button type="button" onClick={() => removeLine(l.uid)} aria-label="Supprimer la ligne" className="flex h-12 w-11 flex-none items-center justify-center rounded-xl bg-[var(--card)] text-[24px] text-[var(--slate)]">×</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button type="button" onClick={addLine} className="mt-3 h-14 w-full rounded-2xl border-2 border-dashed border-[var(--border)] font-display text-[16px] font-bold text-[var(--navy)]">+ Ajouter une ligne</button>
+            <button type="button" onClick={prefillFromCollected} className="mt-1 w-full py-3 text-[14px] font-bold text-[#2a78d6]">Pré-remplir avec le collecté du jour</button>
+            <div className="mt-1 flex items-center justify-between rounded-2xl bg-[var(--track)] px-4 py-3">
+              <span className="text-[14px] font-bold text-[var(--slate)]">Total distribué</span>
+              <span className="font-display text-[28px] font-black text-[var(--navy)] tabular-nums">{distKg} kg</span>
+            </div>
+          </Step>
+          <Step n={4} title="Photos" sub="Prends une photo avec l'appareil ou choisis-en dans ta galerie.">
             <h3 className="mb-2 text-[14px] font-bold text-[var(--navy)]">Photos des colis</h3>
             <PhotoStrip paths={d.photoPaths} folder={folder} onChange={(p) => change((x) => ({ ...x, photoPaths: p }))} accent="var(--cat-4)" size={96} label="Ajouter des photos" />
             <h3 className="mt-5 mb-2 text-[14px] font-bold text-[var(--navy)]">Photos de la distribution</h3>
             <PhotoStrip paths={d.eventPhotos} folder={folder} onChange={(p) => change((x) => ({ ...x, eventPhotos: p }))} accent="#2a78d6" size={96} label="Ajouter des photos" />
           </Step>
 
-          <Step n={4} title="Associations présentes" sub="Choisis dans la liste des associations partenaires.">
+          <Step n={5} title="Associations présentes" sub="Choisis dans la liste des associations partenaires.">
             <select
               value=""
               onChange={(e) => {
