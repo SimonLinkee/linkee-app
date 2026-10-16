@@ -66,28 +66,55 @@ export default function PhotoStrip({ paths, folder, onChange, readOnly = false, 
           </div>
         ))}
         {!readOnly && (
-          <label className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-2 text-center text-[11.5px] font-semibold text-[var(--navy)] ${busy ? "opacity-50" : ""}`} style={{ width: size, height: size, borderColor: accent }}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6" style={{ color: accent }}>
-              <path d="M4 8 L7 4 H17 L20 8" />
-              <rect x="3" y="8" width="18" height="12" rx="2" />
-              <circle cx="12" cy="14" r="3.2" />
-            </svg>
-            {busy ? "Envoi…" : label}
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              hidden
-              disabled={busy}
-              onChange={(e) => {
-                const f = Array.from(e.target.files ?? []);
-                e.target.value = "";
-                if (f.length) void add(f);
-              }}
-            />
-          </label>
-        )}
-        {readOnly && paths.length === 0 && <span className="text-[12px] text-[var(--slate)]">Aucune photo</span>}
+          <>
+            {/* Sur téléphone / tablette : un bouton qui ouvre directement l'appareil photo (Android compris) ; sur ordinateur il n'apparaît pas. */}
+            <label className={`hidden cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-2 text-center text-[11.5px] font-semibold text-[var(--navy)] [@media(pointer:coarse)]:flex ${busy ? "opacity-50" : ""}`} style={{ width: size, height: size, borderColor: accent }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6" style={{ color: accent }}>
+                <path d="M4 8 L7 4 H17 L20 8" />
+                <rect x="3" y="8" width="18" height="12" rx="2" />
+                <circle cx="12" cy="14" r="3.2" />
+              </svg>
+              {busy ? "Envoi…" : "Appareil photo"}
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                hidden
+                disabled={busy}
+                onChange={(e) => {
+                  const f = Array.from(e.target.files ?? []);
+                  e.target.value = "";
+                  if (f.length) void add(f);
+                }}
+              />
+            </label>
+            <label className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-2 text-center text-[11.5px] font-semibold text-[var(--navy)] ${busy ? "opacity-50" : ""}`} style={{ width: size, height: size, borderColor: accent }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6" style={{ color: accent }}>
+                <rect x="3" y="4.5" width="18" height="15" rx="2" />
+                <circle cx="9" cy="10" r="1.8" />
+                <path d="M3.5 17 L9 12.5 L13 16 L16 13.5 L20.5 17.5" />
+              </svg>
+              {busy ? "Envoi…" : (
+                <>
+                  <span className="[@media(pointer:coarse)]:hidden">{label}</span>
+                  <span className="hidden [@media(pointer:coarse)]:inline">Galerie</span>
+                </>
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                disabled={busy}
+                onChange={(e) => {
+                  const f = Array.from(e.target.files ?? []);
+                  e.target.value = "";
+                  if (f.length) void add(f);
+                }}
+              />
+            </label>
+          </>
+        )}        {readOnly && paths.length === 0 && <span className="text-[12px] text-[var(--slate)]">Aucune photo</span>}
       </div>
       {err && <p className="mt-1.5 text-[11.5px] font-semibold text-[var(--critical)]">{err}</p>}
     </div>
