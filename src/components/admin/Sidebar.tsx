@@ -81,6 +81,16 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: "/documents-utiles",
+    label: "Documents utiles",
+    icon: (
+      <>
+        <path d="M3.5 7 A2 2 0 0 1 5.5 5 H10 L12 7.5 H18.5 A2 2 0 0 1 20.5 9.5 V17.5 A2 2 0 0 1 18.5 19.5 H5.5 A2 2 0 0 1 3.5 17.5 Z" />
+        <path d="M3.5 11 H20.5" />
+      </>
+    ),
+  },
+  {
     href: "/prospection",
     label: "Prospection",
     icon: (
@@ -203,7 +213,7 @@ const NAV_ITEMS = [
 ];
 
 // Raccourcis tout en haut (entre le compte et le choix de la ville), qui clignotent quand il y a du nouveau
-const PINNED = ["/calendrier", "/todo"];
+const PINNED = ["/documents-utiles", "/calendrier", "/todo"];
 // Groupes d'onglets, séparés par un trait discret : pilotage · opérations de terrain · réseau de partenaires · équipe
 const NAV_GROUPS: string[][] = [
   ["/dashboard", "/valeur-des-dons"],
@@ -238,7 +248,7 @@ export function Sidebar() {
   // Superadmin: everything · Responsable d'antenne: Distribution, Stock, Planning · Resp. Distribution: Distribution only
   // Superadmin, Comptabilité et Responsable d'antenne (pour sa ville) voient tout le menu ; la section "Superadmin"
   // (Villes & comptes, Historique) ne s'affiche que pour le Superadmin.
-  const rolePaths: string[] | null = me.role === "resp_distribution" ? ["/calendrier", "/distributions", "/village-associatif", "/organigramme", "/profil", "/remontees"] : me.role === "resp_rh" ? ["/calendrier", "/organigramme", "/profil", "/remontees"] : null;
+  const rolePaths: string[] | null = me.role === "resp_distribution" ? ["/calendrier", "/documents-utiles", "/distributions", "/village-associatif", "/organigramme", "/profil", "/remontees"] : me.role === "resp_rh" ? ["/calendrier", "/documents-utiles", "/organigramme", "/profil", "/remontees"] : null;
   // « Remontées » : onglet utilisateur pour tous les rôles sauf le Superadmin, qui a « Remontées APP » à la place
   // Le menu est le même quelle que soit la ville affichée (et en vue « Toutes les villes ») : seules les pages d'une ville demandent d'en choisir une.
   const visibleNav = NAV_ITEMS

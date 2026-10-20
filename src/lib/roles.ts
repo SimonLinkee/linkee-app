@@ -23,13 +23,13 @@ const COMPTA_PATHS = SUPER_ONLY.filter((p) => p !== '/villes-comptes' && p !== '
 // Écrans du Responsable d'antenne (pour sa ville uniquement : règles d'accès de la base, voir migration 047).
 // '/comptabilite' : il y valide / refuse les demandes de Cerfa de son antenne ; l'émission du Cerfa reste réservée à la
 // Comptabilité et au Superadmin, y compris côté base.
-const ANTENNE_PATHS = ['/dashboard', '/calendrier', '/village-associatif', '/prospection', '/partenaires', '/beneficiaires', '/planning', '/distributions', '/stock', '/flotte', '/todo', '/links-benevoles', '/valeur-des-dons', '/comptabilite', '/organigramme', '/profil', '/version', '/saisie-mobile', '/mobile']
+const ANTENNE_PATHS = ['/dashboard', '/calendrier', '/documents-utiles', '/village-associatif', '/prospection', '/partenaires', '/beneficiaires', '/planning', '/distributions', '/stock', '/flotte', '/todo', '/links-benevoles', '/valeur-des-dons', '/comptabilite', '/organigramme', '/profil', '/version', '/saisie-mobile', '/mobile']
 // '/calendrier' : calendrier multi-villes + ACTU (migration 058) — équipe interne : Superadmin, Comptabilité, Resp. d'antenne,
 // Resp. Distribution et Resp. RH. Pas le logisticien, ni les partenaires, bénéficiaires ou Linkers.
 // '/organigramme' : trombinoscope de l'équipe (PC) — équipe interne seulement : le logisticien, les Linkers, partenaires et
 // associations n'y ont pas accès. Le Responsable RH (rôle national à part) n'a, pour l'instant, que l'organigramme et son profil.
-const DISTRIB_PATHS = ['/calendrier', '/distributions', '/village-associatif', '/organigramme', '/profil', '/version', '/saisie-mobile', '/mobile/links', '/mobile/remontees']
-const RH_PATHS = ['/calendrier', '/organigramme', '/profil']
+const DISTRIB_PATHS = ['/calendrier', '/documents-utiles', '/distributions', '/village-associatif', '/organigramme', '/profil', '/version', '/saisie-mobile', '/mobile/links', '/mobile/remontees']
+const RH_PATHS = ['/calendrier', '/documents-utiles', '/organigramme', '/profil']
 const LINKER_PATHS = ['/linker']
 
 export const ROLE_LABEL: Record<string, string> = {
