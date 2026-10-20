@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
 import { isSuper } from "@/lib/roles";
+import { safeLink } from "@/lib/calendarIcons";
 
 // Documents utiles (migration 067) : porte-documents du Superadmin, de la Comptabilité, des Responsables d'antenne,
 // Resp. Distribution et Resp. RH. Deux onglets : « Partagés par Linkee » (publiés par le Superadmin / la Comptabilité, pour toutes les
@@ -22,8 +23,9 @@ type Doc = {
   rubric: string;
   scope: "shared" | "private" | "people";
   city_ids: string[];
-  storage_path: string;
-  file_name: string;
+  storage_path: string | null; // null = document sous forme de lien
+  link_url: string | null; // lien (Google Drive, Docs, Sheets…) à la place d'un fichier
+  file_name: string | null;
   mime: string | null;
   size_bytes: number | null;
   owner_id: string;
@@ -31,7 +33,7 @@ type Doc = {
   created_at: string;
 };
 type Person = { id: string; full_name: string; role: string; city_name: string | null };
-type Form = { id?: string; file: File | null; title: string; description: string; rubric: string; scope: "shared" | "private" | "people"; allCities: boolean; cityIds: Set<string>; people: Set<string> };
+type Form = { id?: string; mode: "file" | "link"; url: string; file: File | null; title: string; description: string; rubric: string; scope: "shared" | "private" | "people"; allCities: boolean; cityIds: Set<string>; people: Set<string> };
 
 const extOf = (n: string) => (n.split(".").pop() ?? "").toLowerCase();
 const kindOf = (n: string): { cls: string; icon: string; label: string } => {
@@ -40,6 +42,23 @@ const kindOf = (n: string): { cls: string; icon: string; label: string } => {
   if (["xls", "xlsx", "csv", "ods"].includes(e)) return { cls: "bg-[var(--good-bg)] text-[var(--good)]", icon: "XLS", label: "Tableur" };
   if (["png", "jpg", "jpeg", "webp"].includes(e)) return { cls: "bg-[var(--warn-bg)] text-[var(--warn)]", icon: "IMG", label: "Image" };
   return { cls: "bg-[rgba(42,120,214,.14)] text-[#2a78d6]", icon: "DOC", label: "Document" };
+};
+/** Un lien : on reconnaît les documents Google pour afficher le bon libellé. */
+const linkKind = (url: string): { cls: string; icon: string; label: string } => {
+  let u: URL | null = null;
+  try {
+    u = new URL(url);
+  } catch {
+    /* lien invalide : libellé générique */
+  }
+  const h = u?.hostname ?? "";
+  const p = u?.pathname ?? "";
+  if (h === "docs.google.com" && p.startsWith("/spreadsheets")) return { cls: "bg-[var(--good-bg)] text-[var(--good)]", icon: "SHEET", label: "Google Sheets" };
+  if (h === "docs.google.com" && p.startsWith("/document")) return { cls: "bg-[rgba(42,120,214,.14)] text-[#2a78d6]", icon: "DOC", label: "Google Docs" };
+  if (h === "docs.google.com" && p.startsWith("/presentation")) return { cls: "bg-[var(--warn-bg)] text-[var(--warn)]", icon: "SLIDE", label: "Google Slides" };
+  if ((h === "docs.google.com" && p.startsWith("/forms")) || h === "forms.gle") return { cls: "bg-[rgba(124,92,217,.14)] text-[#7C5CD9]", icon: "FORM", label: "Google Forms" };
+  if (h.endsWith("drive.google.com")) return { cls: "bg-[var(--critical-bg)] text-[var(--critical)]", icon: "DRIVE", label: "Google Drive" };
+  return { cls: "bg-[var(--track)] text-[var(--slate)]", icon: "LIEN", label: h || "Lien" };
 };
 const fmtSize = (b: number | null) => (b == null ? "" : b < 1024 * 1024 ? `${Math.max(1, Math.round(b / 1024))} Ko` : `${(b / 1024 / 1024).toFixed(1).replace(".", ",")} Mo`);
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
@@ -69,7 +88,7 @@ export default function DocumentsUtilesPage() {
 
   const load = useCallback(async () => {
     const [d, r] = await Promise.all([
-      supabase.from("useful_docs").select("id,title,description,rubric,scope,city_ids,storage_path,file_name,mime,size_bytes,owner_id,owner_name,created_at").order("created_at", { ascending: false }).limit(1000),
+      supabase.from("useful_docs").select("id,title,description,rubric,scope,city_ids,storage_path,link_url,file_name,mime,size_bytes,owner_id,owner_name,created_at").order("created_at", { ascending: false }).limit(1000),
       supabase.from("useful_doc_recipients").select("doc_id,user_id").limit(5000),
     ]);
     if (d.error) setErr("Chargement impossible : " + d.error.message + " (la migration 067 est-elle passée ?)");
@@ -119,9 +138,16 @@ export default function DocumentsUtilesPage() {
   }
 
   const needle = norm(q.trim());
-  const visible = (tab === "shared" ? inShared : inMine).filter((d) => (!rub || d.rubric === rub) && (!needle || norm(d.title + " " + d.description + " " + d.file_name).includes(needle)));
+  const visible = (tab === "shared" ? inShared : inMine).filter((d) => (!rub || d.rubric === rub) && (!needle || norm(d.title + " " + d.description + " " + (d.file_name ?? "") + " " + (d.link_url ?? "")).includes(needle)));
 
   async function openDoc(d: Doc) {
+    if (d.link_url) {
+      const safe = safeLink(d.link_url);
+      if (!safe) return setErr("Ce lien n'est pas valide.");
+      window.open(safe, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (!d.storage_path) return;
     const w = window.open("", "_blank");
     const { data, error } = await supabase.storage.from("useful-docs").createSignedUrl(d.storage_path, 300);
     if (error || !data) {
@@ -133,10 +159,10 @@ export default function DocumentsUtilesPage() {
   }
 
   function openNew() {
-    setForm({ file: null, title: "", description: "", rubric: RUBRICS[0], scope: "private", allCities: true, cityIds: new Set(), people: new Set() });
+    setForm({ mode: "file", url: "", file: null, title: "", description: "", rubric: RUBRICS[0], scope: "private", allCities: true, cityIds: new Set(), people: new Set() });
   }
   function openEdit(d: Doc) {
-    setForm({ id: d.id, file: null, title: d.title, description: d.description, rubric: d.rubric, scope: d.scope, allCities: d.city_ids.length === 0, cityIds: new Set(d.city_ids), people: new Set() });
+    setForm({ id: d.id, mode: d.link_url ? "link" : "file", url: d.link_url ?? "", file: null, title: d.title, description: d.description, rubric: d.rubric, scope: d.scope, allCities: d.city_ids.length === 0, cityIds: new Set(d.city_ids), people: new Set() });
   }
 
   async function save() {
@@ -149,11 +175,33 @@ export default function DocumentsUtilesPage() {
     setBusy(true);
     setErr(null);
     const cityIds = form.scope === "shared" && !form.allCities ? Array.from(form.cityIds) : [];
+    const link = form.mode === "link" ? safeLink(form.url) : null;
+    if (form.mode === "link" && !link) {
+      setBusy(false);
+      return setErr("Colle l'adresse complète du lien (elle commence par https://).");
+    }
     if (form.id) {
-      const { error } = await supabase.from("useful_docs").update({ title, description, rubric: form.rubric, city_ids: form.scope === "shared" ? cityIds : [], updated_at: new Date().toISOString() }).eq("id", form.id);
+      const { error } = await supabase.from("useful_docs").update({ title, description, rubric: form.rubric, city_ids: form.scope === "shared" ? cityIds : [], ...(form.mode === "link" ? { link_url: link } : {}), updated_at: new Date().toISOString() }).eq("id", form.id);
       setBusy(false);
       if (error) return setErr("Modification impossible : " + error.message);
       setForm(null);
+      return load();
+    }
+    if (form.mode === "link") {
+      const { data: prof0 } = await supabase.from("profiles").select("full_name,email").eq("id", meId).maybeSingle();
+      const ownerName0 = (prof0?.full_name as string | null) || (prof0?.email as string | null)?.split("@")[0] || "Équipe Linkee";
+      const insL = await supabase.from("useful_docs").insert({ title, description, rubric: form.rubric, scope: form.scope, city_ids: cityIds, link_url: link, owner_id: meId, owner_name: ownerName0 }).select("id").single();
+      if (insL.error || !insL.data) {
+        setBusy(false);
+        return setErr("Lien non enregistré : " + (insL.error?.message ?? "erreur"));
+      }
+      if (form.scope === "people") {
+        const r = await supabase.from("useful_doc_recipients").insert(Array.from(form.people).map((uid) => ({ doc_id: insL.data!.id as string, user_id: uid })));
+        if (r.error) setErr("Lien enregistré, mais l'envoi aux destinataires a échoué : " + r.error.message);
+      }
+      setBusy(false);
+      setForm(null);
+      setTab(form.scope === "shared" ? "shared" : "mine");
       return load();
     }
     const file = form.file;
@@ -204,7 +252,7 @@ export default function DocumentsUtilesPage() {
     }
     const { data, error } = await supabase.from("useful_docs").delete().eq("id", d.id).select("id");
     if (error || !data?.length) return setErr("Suppression impossible : " + (error?.message ?? "refusée par la base"));
-    await supabase.storage.from("useful-docs").remove([d.storage_path]);
+    if (d.storage_path) await supabase.storage.from("useful-docs").remove([d.storage_path]);
     await load();
   }
 
@@ -262,7 +310,7 @@ export default function DocumentsUtilesPage() {
       )}
       <div className="flex flex-col gap-2">
         {visible.map((d) => {
-          const k = kindOf(d.file_name);
+          const k = d.link_url ? linkKind(d.link_url) : kindOf(d.file_name ?? "");
           const mine = d.owner_id === meId;
           const canEdit = mine || (d.scope === "shared" && isPublisher);
           const sentTo = d.scope === "people" && mine ? recips.filter((r) => r.doc_id === d.id) : [];
@@ -279,12 +327,12 @@ export default function DocumentsUtilesPage() {
                 </div>
                 <div className="mt-0.5 text-[13px] text-[var(--navy)]">{d.description}</div>
                 <div className="mt-0.5 text-[11.5px] text-[var(--slate)]">
-                  {d.file_name}
-                  {d.size_bytes != null ? ` · ${fmtSize(d.size_bytes)}` : ""} · ajouté {d.owner_name && d.scope === "shared" ? `par ${d.owner_name} ` : ""}le {fmtDate(d.created_at)}
+                  {d.link_url ? `Lien · ${k.label}` : d.file_name}
+                  {!d.link_url && d.size_bytes != null ? ` · ${fmtSize(d.size_bytes)}` : ""} · ajouté {d.owner_name && d.scope === "shared" ? `par ${d.owner_name} ` : ""}le {fmtDate(d.created_at)}
                 </div>
               </div>
               <div className="flex flex-none items-center gap-1.5">
-                <button type="button" onClick={() => openDoc(d)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-1.5 text-[12.5px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)]">Ouvrir</button>
+                <button type="button" onClick={() => openDoc(d)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-1.5 text-[12.5px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)]">{d.link_url ? "Ouvrir le lien ↗" : "Ouvrir"}</button>
                 {canEdit && <button type="button" onClick={() => openEdit(d)} title="Modifier le titre et la description" className="h-8 w-8 rounded-full border-[1.5px] border-[var(--border)] text-[var(--slate)] hover:border-[var(--turquoise)]">✎</button>}
                 {(canEdit || (d.scope === "people" && !mine)) && <button type="button" onClick={() => remove(d)} title={canEdit ? "Supprimer" : "Retirer de mon espace"} className="h-8 w-8 rounded-full border-[1.5px] border-[var(--border)] text-[var(--slate)] hover:border-[var(--critical)] hover:text-[var(--critical)]">×</button>}
               </div>
@@ -298,6 +346,20 @@ export default function DocumentsUtilesPage() {
           <div role="dialog" aria-modal="true" className="max-h-[92vh] w-full max-w-[560px] overflow-auto rounded-[20px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-display text-[21px] font-black text-[var(--navy)]">{form.id ? "Modifier le document" : "Ajouter un document"}</h3>
             {!form.id && (
+              <div className="mt-3 inline-flex rounded-[40px] bg-[var(--track)] p-[3px]">
+                {([["file", "Fichier"], ["link", "Lien (Google Drive, Sheets, Docs…)"]] as const).map(([m, l]) => (
+                  <button key={m} type="button" onClick={() => setForm({ ...form, mode: m })} className={`rounded-[40px] px-4 py-1.5 text-[12.5px] font-bold ${form.mode === m ? "bg-[var(--card)] text-[var(--navy)] shadow-[var(--shadow)]" : "text-[var(--slate)]"}`}>{l}</button>
+                ))}
+              </div>
+            )}
+            {form.mode === "link" && (
+              <>
+                <label className={labelCls}>Adresse du lien</label>
+                <input className={fieldCls} inputMode="url" placeholder="https://docs.google.com/spreadsheets/d/…" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} />
+                <p className="mt-1 text-[11.5px] text-[var(--slate)]">Pense à régler le partage dans Google : Linkee n&apos;affiche le lien qu&apos;aux personnes choisies, mais c&apos;est Google qui donne (ou non) l&apos;accès au fichier.</p>
+              </>
+            )}
+            {!form.id && form.mode === "file" && (
               <>
                 <label className={labelCls}>Fichier</label>
                 <button type="button" onClick={() => fileInput.current?.click()} className="w-full rounded-[10px] border-[1.5px] border-dashed border-[var(--border)] px-3 py-4 text-center text-[13px] text-[var(--slate)] hover:border-[var(--turquoise)]">
@@ -371,7 +433,7 @@ export default function DocumentsUtilesPage() {
 
             <div className="mt-5 flex justify-end gap-2">
               <button type="button" disabled={busy} onClick={() => setForm(null)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-2 font-display text-[12.5px] font-bold text-[var(--slate)]">Annuler</button>
-              <button type="button" disabled={busy || !form.title.trim() || !form.description.trim() || (!form.id && !form.file)} onClick={save} className="rounded-[40px] bg-[var(--navy-deep)] px-5 py-2 font-display text-[13px] font-bold text-[var(--panel-fg)] disabled:opacity-50">
+              <button type="button" disabled={busy || !form.title.trim() || !form.description.trim() || (!form.id && form.mode === "file" && !form.file) || (form.mode === "link" && !form.url.trim())} onClick={save} className="rounded-[40px] bg-[var(--navy-deep)] px-5 py-2 font-display text-[13px] font-bold text-[var(--panel-fg)] disabled:opacity-50">
                 {busy ? "Enregistrement…" : form.id ? "Enregistrer" : "Ajouter"}
               </button>
             </div>
