@@ -14,7 +14,6 @@ import { countLateDistributions } from "@/lib/distributions";
 import { useRemonteeAppBadge, useRemonteeBadge } from "@/lib/remontees";
 import { useMyPhoto } from "@/lib/profilePhoto";
 import { useNavActivity } from "@/lib/navActivity";
-import { useNavVersion } from "@/lib/navVersion";
 import { isSuper } from "@/lib/roles";
 
 // Nouveau menu (proposition A) : la barre du haut porte les raccourcis et les outils, le menu de gauche ne garde que le travail
@@ -46,7 +45,6 @@ const isActive = (path: string, href: string) => path === href || path.startsWit
 export function SidebarV2() {
   const pathname = usePathname();
   const { role, city, isAll } = useCity();
-  const [, setNavVersion] = useNavVersion();
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [lateDist, setLateDist] = useState(0);
   const unseenApp = useRemonteeAppBadge(role === "admin_principal");
@@ -128,7 +126,6 @@ export function SidebarV2() {
           </Link>
         )}
       </nav>
-      <button type="button" onClick={() => setNavVersion("v1")} className="mt-3 flex-none rounded-full border border-dashed border-white/30 px-4 py-1.5 text-[12px] font-semibold text-[var(--panel-fg-dim)] hover:text-[var(--panel-fg)]">Revenir à l&apos;ancien menu</button>
     </aside>
   );
 }

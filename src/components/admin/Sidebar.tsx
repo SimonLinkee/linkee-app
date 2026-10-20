@@ -12,7 +12,6 @@ import { countLateDistributions } from "@/lib/distributions";
 import { useRemonteeAppBadge, useRemonteeBadge } from "@/lib/remontees";
 import { useMyPhoto } from "@/lib/profilePhoto";
 import { useNavActivity } from "@/lib/navActivity";
-import { useNavVersion } from "@/lib/navVersion";
 import { isSuper } from "@/lib/roles";
 
 /** readable text colour (white or dark navy) on top of a hex background */
@@ -262,7 +261,6 @@ export function Sidebar() {
     .filter((n) => (me.role ? !rolePaths || rolePaths.includes(n.href) : false))
     .filter((n) => n.href !== "/remontees" || me.role !== "admin_principal");
   const activity = useNavActivity(pathname, city?.id ?? null, isAll, me.role);
-  const [, setNavVersion] = useNavVersion();
   const byHref = new Map<string, NavItem>(visibleNav.map((n) => [n.href, n]));
   const pinnedItems = PINNED.map((h) => byHref.get(h)).filter((x): x is NavItem => !!x);
   const placed = new Set<string>([...PINNED, ...NAV_GROUPS.flat()]);
@@ -517,10 +515,6 @@ export function Sidebar() {
           )}
         </nav>
       </div>
-
-      <button type="button" onClick={() => setNavVersion("v2")} className="mt-2 flex-none rounded-full border border-dashed border-white/30 px-4 py-1.5 text-[12px] font-semibold text-[var(--panel-fg-dim)] hover:text-[var(--panel-fg)]">
-        Essayer le nouveau menu
-      </button>
 
       {/* outils externes : s'ouvrent dans un nouvel onglet (PayFit et Axonaut refusent d'être affichés dans une autre page) */}
       {me.role && (
