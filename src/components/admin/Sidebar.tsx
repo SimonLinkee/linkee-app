@@ -12,6 +12,7 @@ import { countLateDistributions } from "@/lib/distributions";
 import { useRemonteeAppBadge, useRemonteeBadge } from "@/lib/remontees";
 import { useMyPhoto } from "@/lib/profilePhoto";
 import { useNavActivity } from "@/lib/navActivity";
+import { useNavVersion } from "@/lib/navVersion";
 import { isSuper } from "@/lib/roles";
 
 /** readable text colour (white or dark navy) on top of a hex background */
@@ -22,7 +23,7 @@ function textOn(hex: string) {
   return lum > 0.62 ? "#04162e" : "#ffffff";
 }
 
-const NAV_ITEMS = [
+export const NAV_ITEMS = [
   {
     href: "/dashboard",
     label: "Tableau de bord",
@@ -221,9 +222,15 @@ const NAV_GROUPS: string[][] = [
   ["/partenaires", "/prospection", "/village-associatif", "/comptabilite"],
   ["/organigramme", "/remontees", "/profil"],
 ];
-type NavItem = (typeof NAV_ITEMS)[number];
+export type NavItem = (typeof NAV_ITEMS)[number];
 
-const SUPER_ITEM = {
+/** Onglets accessibles selon le rôle (même règle pour l'ancien menu et le nouveau). */
+export function navFor(role: string): NavItem[] {
+  const rolePaths: string[] | null = role === "resp_distribution" ? ["/calendrier", "/documents-utiles", "/distributions", "/village-associatif", "/organigramme", "/profil", "/remontees"] : role === "resp_rh" ? ["/calendrier", "/documents-utiles", "/organigramme", "/profil", "/remontees"] : null;
+  return NAV_ITEMS.filter((n) => (role ? !rolePaths || rolePaths.includes(n.href) : false)).filter((n) => n.href !== "/remontees" || role !== "admin_principal");
+}
+
+export const SUPER_ITEM = {
   href: "/villes-comptes",
   label: "Villes & comptes",
   icon: (
@@ -255,6 +262,7 @@ export function Sidebar() {
     .filter((n) => (me.role ? !rolePaths || rolePaths.includes(n.href) : false))
     .filter((n) => n.href !== "/remontees" || me.role !== "admin_principal");
   const activity = useNavActivity(pathname, city?.id ?? null, isAll, me.role);
+  const [, setNavVersion] = useNavVersion();
   const byHref = new Map<string, NavItem>(visibleNav.map((n) => [n.href, n]));
   const pinnedItems = PINNED.map((h) => byHref.get(h)).filter((x): x is NavItem => !!x);
   const placed = new Set<string>([...PINNED, ...NAV_GROUPS.flat()]);
@@ -509,6 +517,10 @@ export function Sidebar() {
           )}
         </nav>
       </div>
+
+      <button type="button" onClick={() => setNavVersion("v2")} className="mt-2 flex-none rounded-full border border-dashed border-white/30 px-4 py-1.5 text-[12px] font-semibold text-[var(--panel-fg-dim)] hover:text-[var(--panel-fg)]">
+        Essayer le nouveau menu
+      </button>
 
       {/* outils externes : s'ouvrent dans un nouvel onglet (PayFit et Axonaut refusent d'être affichés dans une autre page) */}
       {me.role && (
