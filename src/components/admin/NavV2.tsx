@@ -233,14 +233,7 @@ export function TopBarV2() {
             {n > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#eb6834] px-1.5 text-[11px] font-bold text-white">{n}</span>}
           </Link>
         );
-      })}      <span className="mx-1 h-6 w-px bg-[var(--border)]" aria-hidden="true" />
-      {role && (
-        <a href="https://payfit.com/fr/" target="_blank" rel="noopener noreferrer" title="Ma RH — PayFit (nouvel onglet)" className="flex h-[40px] items-center gap-1.5 rounded-full border-[1.5px] border-dashed border-[var(--navy)]/40 px-4 text-[13.5px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)]">Ma RH <span aria-hidden="true">↗</span></a>
-      )}
-      {isSuper(role) && (
-        <a href="https://axonaut.com/" target="_blank" rel="noopener noreferrer" title="Facturation — Axonaut (nouvel onglet)" className="flex h-[40px] items-center gap-1.5 rounded-full border-[1.5px] border-dashed border-[var(--navy)]/40 px-4 text-[13.5px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)]">Facturation <span aria-hidden="true">↗</span></a>
-      )}
-      <NotificationBell align="right" />
+      })}      <NotificationBell align="right" />
       {PRESENCE_ROLES.includes(role) && <PresenceBar channel="team" />}
       <div ref={box} className="relative">
         <button type="button" aria-expanded={menu} onClick={() => setMenu((v) => !v)} title={me.name || "Mon compte"} className="relative flex h-[44px] items-center gap-2.5 rounded-full border border-[var(--border)] bg-[var(--card)] py-1 pr-3 pl-1 hover:border-[var(--turquoise)]"><span className="flex h-[36px] w-[36px] flex-none items-center justify-center overflow-hidden rounded-full bg-[var(--turquoise)] font-display text-[15px] font-bold text-[#04262e]">
@@ -273,6 +266,23 @@ export function TopBarV2() {
                 {it.href === "/remontees" && remonteeBadge > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#B23B72] px-1.5 text-[11px] font-bold text-white">{remonteeBadge}</span>}
               </Link>
             ))}
+            {role && (
+              <>
+                <div className="my-1 h-px bg-[var(--border)]" />
+                <a href="https://payfit.com/fr/" target="_blank" rel="noopener noreferrer" onClick={() => setMenu(false)} className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13.5px] font-semibold hover:bg-[var(--input-bg)]">
+                  <Svg><circle cx="12" cy="8" r="3.6" /><path d="M4.5 20 C 5.5 15.5, 8.3 13.3, 12 13.3 C 15.7 13.3, 18.5 15.5, 19.5 20" /></Svg>
+                  <span className="flex-1">Ma RH <span className="text-[11.5px] font-normal text-[var(--slate)]">PayFit</span></span>
+                  <span aria-hidden="true" className="text-[var(--slate)]">↗</span>
+                </a>
+                {isSuper(role) && (
+                  <a href="https://axonaut.com/" target="_blank" rel="noopener noreferrer" onClick={() => setMenu(false)} className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13.5px] font-semibold hover:bg-[var(--input-bg)]">
+                    <Svg><path d="M7 3 H14 L19 8 V21 H7 Z" /><path d="M14 3 V8 H19" /><path d="M10 13 H16 M10 17 H14" /></Svg>
+                    <span className="flex-1">Facturation <span className="text-[11.5px] font-normal text-[var(--slate)]">Axonaut</span></span>
+                    <span aria-hidden="true" className="text-[var(--slate)]">↗</span>
+                  </a>
+                )}
+              </>
+            )}
             <div className="my-1 h-px bg-[var(--border)]" />
             <button type="button" onClick={logout} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13.5px] font-semibold hover:bg-[var(--input-bg)]">
               <Svg><path d="M9 4 H6 a1.5 1.5 0 0 0 -1.5 1.5 v13 A1.5 1.5 0 0 0 6 20 h3" /><path d="M15 16 L20 12 L15 8" /><path d="M20 12 H9" /></Svg>
