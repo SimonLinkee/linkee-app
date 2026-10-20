@@ -149,10 +149,15 @@ function CitySwitcher() {
   const fg = isAll ? "#fff" : textOn(city?.color ?? "#4D5C7A");
   return (
     <div ref={box} className="relative">
-      <button type="button" disabled={!canSwitch} onClick={() => setOpen((v) => !v)} className="flex items-center gap-2 rounded-[40px] px-4 py-1.5 text-left font-display text-[14px] font-black disabled:cursor-default" style={{ background: bg, color: fg }} title={canSwitch ? "Changer de ville" : "Ta ville"}>
-        <Svg className="h-4 w-4 flex-none">{isAll ? <><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12 H20.5 M12 3.5 C 8 8, 8 16, 12 20.5 C 16 16, 16 8, 12 3.5" /></> : <><path d="M12 21 C 8 16.5, 5 13, 5 9.5 A7 7 0 0 1 19 9.5 C 19 13, 16 16.5, 12 21 Z" /><circle cx="12" cy="9.5" r="2.3" /></>}</Svg>
-        <span>{isAll ? "Toutes les villes" : (city?.name ?? "—")}</span>
-        {canSwitch && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`}><path d="M6 9 L12 15 L18 9" /></svg>}
+      <button type="button" disabled={!canSwitch} onClick={() => setOpen((v) => !v)} className="flex items-center gap-3 rounded-2xl px-4 py-1.5 text-left shadow-[0_6px_16px_-8px_rgba(0,0,0,0.6)] disabled:cursor-default" style={{ background: bg, color: fg }} title={canSwitch ? "Changer de ville" : "Ta ville"}>
+        <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-white/25">
+          <Svg className="h-[18px] w-[18px] flex-none">{isAll ? <><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12 H20.5 M12 3.5 C 8 8, 8 16, 12 20.5 C 16 16, 16 8, 12 3.5" /></> : <><path d="M12 21 C 8 16.5, 5 13, 5 9.5 A7 7 0 0 1 19 9.5 C 19 13, 16 16.5, 12 21 Z" /><circle cx="12" cy="9.5" r="2.3" /></>}</Svg>
+        </span>
+        <span className="leading-tight">
+          <span className="block text-[9.5px] font-bold tracking-[0.08em] uppercase opacity-80">{isAll ? "Vue nationale" : "Ville affichée"}</span>
+          <span className="block font-display text-[19px] font-black">{isAll ? "Toutes les villes" : (city?.name ?? "—")}</span>
+        </span>
+        {canSwitch && <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" className={`h-4 w-4 flex-none transition-transform ${open ? "rotate-180" : ""}`}><path d="M6 9 L12 15 L18 9" /></svg>}
       </button>
       {open && canSwitch && (
         <div className="absolute top-[calc(100%+8px)] left-0 z-50 w-[250px] overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] text-[var(--navy)] shadow-[0_18px_40px_-12px_rgba(0,0,0,0.5)]">
@@ -215,30 +220,30 @@ export function TopBarV2() {
   const fresh = (h: string) => (h === "/calendrier" ? activity.calendar : h === "/todo" ? activity.todo : 0);
 
   return (
-    <header className="sticky top-0 z-40 flex flex-wrap items-center gap-2.5 border-b border-[var(--border)] bg-[var(--card)] px-[26px] py-2.5">
+    <header className="sticky top-0 z-40 flex flex-wrap items-center gap-2.5 border-b border-[var(--border)] bg-[var(--card)] px-[26px] py-2.5 shadow-[0_6px_16px_-14px_rgba(0,0,0,0.5)]">
       <CitySwitcher />
       <div className="flex-1" />
       {shortcuts.map((it) => {
         const on = isActive(pathname, it.href);
         const n = on ? 0 : fresh(it.href);
         return (
-          <Link key={it.href} href={it.href} title={n > 0 ? `${it.label} — ${n} nouveauté${n > 1 ? "s" : ""}` : it.label} aria-label={it.label} className={`relative flex h-[36px] w-[36px] items-center justify-center rounded-full border ${on ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "border-[var(--border)] text-[var(--navy)] hover:border-[var(--turquoise)]"} ${n > 0 ? "nav-blink" : ""}`}>
+          <Link key={it.href} href={it.href} title={n > 0 ? `${it.label} — ${n} nouveauté${n > 1 ? "s" : ""}` : it.label} className={`relative flex h-[40px] items-center gap-2 rounded-full border px-4 text-[13.5px] font-bold ${on ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "border-[var(--border)] bg-[var(--card)] text-[var(--navy)] hover:border-[var(--turquoise)]"} ${n > 0 ? "nav-blink" : ""}`}>
             <Svg>{it.icon}</Svg>
-            {n > 0 && <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#eb6834] px-1 text-[10px] font-bold text-white">{n}</span>}
+            <span>{it.label}</span>
+            {n > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#eb6834] px-1.5 text-[11px] font-bold text-white">{n}</span>}
           </Link>
         );
-      })}
-      <span className="mx-1 h-6 w-px bg-[var(--border)]" aria-hidden="true" />
+      })}      <span className="mx-1 h-6 w-px bg-[var(--border)]" aria-hidden="true" />
       {role && (
-        <a href="https://payfit.com/fr/" target="_blank" rel="noopener noreferrer" title="Ma RH — PayFit (nouvel onglet)" className="flex items-center gap-1.5 rounded-full border border-[var(--border)] px-3.5 py-1.5 text-[12.5px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)]">Ma RH <span aria-hidden="true">↗</span></a>
+        <a href="https://payfit.com/fr/" target="_blank" rel="noopener noreferrer" title="Ma RH — PayFit (nouvel onglet)" className="flex h-[40px] items-center gap-1.5 rounded-full border-[1.5px] border-dashed border-[var(--navy)]/40 px-4 text-[13.5px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)]">Ma RH <span aria-hidden="true">↗</span></a>
       )}
       {isSuper(role) && (
-        <a href="https://axonaut.com/" target="_blank" rel="noopener noreferrer" title="Facturation — Axonaut (nouvel onglet)" className="flex items-center gap-1.5 rounded-full border border-[var(--border)] px-3.5 py-1.5 text-[12.5px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)]">Facturation <span aria-hidden="true">↗</span></a>
+        <a href="https://axonaut.com/" target="_blank" rel="noopener noreferrer" title="Facturation — Axonaut (nouvel onglet)" className="flex h-[40px] items-center gap-1.5 rounded-full border-[1.5px] border-dashed border-[var(--navy)]/40 px-4 text-[13.5px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)]">Facturation <span aria-hidden="true">↗</span></a>
       )}
       <NotificationBell align="right" />
       {PRESENCE_ROLES.includes(role) && <PresenceBar channel="team" />}
       <div ref={box} className="relative">
-        <button type="button" aria-expanded={menu} onClick={() => setMenu((v) => !v)} title={me.name || "Mon compte"} className="relative flex h-[38px] w-[38px] items-center justify-center overflow-hidden rounded-full bg-[var(--turquoise)] font-display text-[15px] font-bold text-[#04262e]">
+        <button type="button" aria-expanded={menu} onClick={() => setMenu((v) => !v)} title={me.name || "Mon compte"} className="relative flex h-[44px] items-center gap-2.5 rounded-full border border-[var(--border)] bg-[var(--card)] py-1 pr-3 pl-1 hover:border-[var(--turquoise)]"><span className="flex h-[36px] w-[36px] flex-none items-center justify-center overflow-hidden rounded-full bg-[var(--turquoise)] font-display text-[15px] font-bold text-[#04262e]">
           {myPhoto.url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={myPhoto.url} alt="" className="h-full w-full object-cover" />
@@ -246,7 +251,12 @@ export function TopBarV2() {
             <span className="flex h-full w-full" dangerouslySetInnerHTML={{ __html: critterSvg(me.avatar as AvatarKey) }} />
           ) : (
             (me.name || "?").charAt(0).toUpperCase()
-          )}
+          )}</span>
+          <span className="hidden text-left leading-tight 2xl:block">
+            <span className="block max-w-[130px] truncate text-[13px] font-bold text-[var(--navy)]">{me.name || "Mon compte"}</span>
+            <span className="block text-[10.5px] text-[var(--slate)]">{ROLE_SHORT[role] ?? ""}</span>
+          </span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 text-[var(--slate)]" aria-hidden="true"><path d="M6 9 L12 15 L18 9" /></svg>
           {remonteeBadge > 0 && <span className="absolute top-0 right-0 h-2.5 w-2.5 rounded-full bg-[#B23B72] ring-2 ring-[var(--card)]" />}
         </button>
         {menu && (
