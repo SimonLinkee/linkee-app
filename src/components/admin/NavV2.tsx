@@ -26,7 +26,7 @@ const GROUPS: { key: string; label: string; hrefs: string[] }[] = [
   { key: "res", label: "Réseau", hrefs: ["/prospection", "/village-associatif", "/comptabilite"] },
   { key: "pil", label: "Pilotage", hrefs: ["/valeur-des-dons"] },
 ];
-const SHORTCUTS = ["/documents-utiles", "/calendrier", "/todo"]; // icônes de la barre du haut
+const SHORTCUTS = ["/calendrier", "/todo", "/documents-utiles"]; // icônes de la barre du haut
 const NATIONAL_BG = "linear-gradient(120deg,#2a78d6,#7C5CD9 45%,#eb6834)";
 const PRESENCE_ROLES = ["admin_principal", "comptabilite", "admin_local", "resp_distribution", "resp_rh"];
 const ROLE_SHORT: Record<string, string> = { admin_principal: "Superadmin", comptabilite: "Comptabilité", admin_local: "Responsable d'antenne", resp_distribution: "Resp. Distribution", resp_rh: "Responsable RH", logisticien: "Logisticien" };
