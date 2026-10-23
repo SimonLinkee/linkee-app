@@ -315,7 +315,7 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
         const src = stops[p].result!.items![it];
         dropped.push({ denree: src.denree, name: src.name, kg: src.kg, from: stops[p].name, sourceId: stops[p].id });
       });
-      if (dropped.length < 1 || photos < 1) return setErrCollecte("Cochez au moins un produit à laisser ici, et ajoutez une photo.");
+      if (dropped.length < 1 || photos < 1) return setErrCollecte("Touchez au moins un point à laisser ici, et ajoutez une photo.");
       onDone({ items: dropped, totalKg: Math.round(dropped.reduce((sum, it) => sum + it.kg, 0) * 10) / 10, photos, photoPaths }, "collecte");
     } else {
       const missingUnitWeight = rows.find((r) => r.denree && r.kg && subOf(r)?.unit === "unite" && !subOf(r)?.unit_weight_kg);
@@ -354,7 +354,7 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
           <StepBlock
             n={1}
             title={s.kind === "stock" ? "Que prenez-vous au stock ?" : s.kind === "dropoff" ? "Que laissez-vous ici ?" : s.kind === "dechetterie" ? "Passage déchetterie" : "Qu'avez-vous collecté ?"}
-            sub={s.kind === "stock" ? "Indiquez le nombre de colis pour chaque produit." : s.kind === "dropoff" ? "Cochez les produits déposés. Seuls les types acceptés par l'association sont sélectionnables." : s.kind === "dechetterie" ? "Rien à saisir, juste à confirmer avec une photo à l'étape suivante." : "Une carte par type de denrée : choisissez le type, puis le poids."}
+            sub={s.kind === "stock" ? "Indiquez le nombre de colis pour chaque produit." : s.kind === "dropoff" ? "Touchez les points dont vous déposez les produits. Seuls les types acceptés par l'association sont sélectionnables." : s.kind === "dechetterie" ? "Rien à saisir, juste à confirmer avec une photo à l'étape suivante." : "Une carte par type de denrée : choisissez le type, puis le poids."}
           >
           {s.kind === "dechetterie" ? (
             <p className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--input-bg)] px-3.5 py-3 text-[12.5px] leading-[1.5] text-[var(--slate)]">Confirmez simplement que le passage a eu lieu — ajoutez une photo à l&apos;étape 2.</p>
@@ -478,55 +478,68 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
             </p>
           ) : (
             <div>
-              <label className="mb-1.5 block text-xs font-bold text-[var(--navy)]">Points collectés ce matin — cochez ce qui est laissé ici <span className="text-[var(--critical)]">*</span></label>
+              <label className="mb-1.5 block text-xs font-bold text-[var(--navy)]">Points collectés ce matin — touchez ceux que vous laissez ici <span className="text-[var(--critical)]">*</span></label>
               <div className="flex flex-col gap-2">
                 {earlier.map(({ st, idx }, n) => {
                   const pointItems = st.result!.items!;
                   const fromStock = st.kind === "stock"; // goods the admin chose to send here: always accepted
                   const allowedIdx = pointItems.map((it, j) => (fromStock || allowed.includes(it.denree!) ? j : -1)).filter((j) => j >= 0);
-                  const pointChecked = allowedIdx.length > 0 && allowedIdx.every((j) => dropChecked.has(`${idx}:${j}`));
+                  const nChecked = allowedIdx.filter((j) => dropChecked.has(`${idx}:${j}`)).length;
+                  const pointChecked = allowedIdx.length > 0 && nChecked === allowedIdx.length;
+                  const partial = nChecked > 0 && !pointChecked;
+                  const acceptedKg = Math.round(allowedIdx.reduce((sum, j) => sum + pointItems[j].kg, 0) * 10) / 10;
+                  const none = allowedIdx.length === 0;
+                  // one tap on the whole card (re)selects everything accepted at this point
+                  const toggleAll = () =>
+                    setDropChecked((prev) => {
+                      const next = new Set(prev);
+                      allowedIdx.forEach((j) => (pointChecked ? next.delete(`${idx}:${j}`) : next.add(`${idx}:${j}`)));
+                      return next;
+                    });
                   return (
-                    <div key={idx} className="overflow-hidden rounded-xl border-[1.5px] border-[var(--border)] bg-[var(--input-bg)]">
-                      <div className="flex items-center gap-[9px] px-3 py-2.5">
-                        <input
-                          type="checkbox"
-                          checked={pointChecked}
-                          onChange={(e) => {
-                            setDropChecked((prev) => {
-                              const next = new Set(prev);
-                              allowedIdx.forEach((j) => (e.target.checked ? next.add(`${idx}:${j}`) : next.delete(`${idx}:${j}`)));
-                              return next;
-                            });
-                            if (e.target.checked) setExpanded((prev) => new Set(prev).add(idx));
-                          }}
-                          className="h-[19px] w-[19px] accent-[var(--dropoff)]"
-                        />
-                        <span className="min-w-0 flex-1 truncate text-[13px] font-bold text-[var(--navy)]">{st.name}</span>
-                        <span className="flex-none text-[11px] font-semibold text-[var(--slate)]">{st.time}</span>
-                        {n === 0 && <span className="flex-none rounded-[40px] bg-[var(--dropoff-bg)] px-[7px] py-[3px] text-[9.5px] font-bold tracking-[0.03em] text-[var(--dropoff)] uppercase">Suggéré</span>}
-                        <button type="button" onClick={() => setExpanded((prev) => { const nx = new Set(prev); if (nx.has(idx)) nx.delete(idx); else nx.add(idx); return nx; })} className="flex flex-none p-0.5 text-[var(--slate)]">
+                    <div key={idx} className={`overflow-hidden rounded-2xl border-2 ${pointChecked || partial ? "border-[var(--dropoff)] bg-[var(--dropoff-bg)]" : "border-[var(--border)] bg-[var(--input-bg)]"} ${none ? "opacity-60" : ""}`}>
+                      <button type="button" disabled={none} onClick={toggleAll} className="flex min-h-[64px] w-full items-center gap-3 px-3.5 py-3 text-left">
+                        <span className={`flex h-8 w-8 flex-none items-center justify-center rounded-full border-2 ${pointChecked || partial ? "border-[var(--dropoff)] bg-[var(--dropoff)] text-white" : "border-[var(--muted)] bg-[var(--card)] text-transparent"}`}>
+                          <Icon className="h-[18px] w-[18px]" sw={3}>
+                            {partial ? <path d="M6 12 H18" /> : <path d="M5 12.5 L10 17.5 L19 7" />}
+                          </Icon>
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[15px] font-bold text-[var(--navy)]">{st.name}</span>
+                          <span className="block text-[12px] font-semibold text-[var(--slate)]">
+                            {none ? "Rien d'accepté ici" : `${st.time} · ${acceptedKg} kg`}{partial ? ` · ${nChecked}/${allowedIdx.length} produit(s)` : ""}
+                          </span>
+                        </span>
+                        {n === 0 && !none && <span className="flex-none rounded-[40px] bg-[var(--dropoff-bg)] px-2 py-1 text-[10px] font-bold tracking-[0.03em] text-[var(--dropoff)] uppercase">Suggéré</span>}
+                      </button>
+                      {!none && pointItems.length > 1 && (
+                        <button type="button" onClick={() => setExpanded((prev) => { const nx = new Set(prev); if (nx.has(idx)) nx.delete(idx); else nx.add(idx); return nx; })} className="flex min-h-[44px] w-full items-center justify-center gap-1.5 border-t border-[var(--border)] text-[12.5px] font-bold text-[var(--slate)]">
+                          {expanded.has(idx) ? "Masquer le détail" : "Choisir produit par produit"}
                           <Icon className={`h-3.5 w-3.5 transition-transform ${expanded.has(idx) ? "rotate-180" : ""}`} sw={2}>
                             <path d="M6 9 L12 15 L18 9" />
                           </Icon>
                         </button>
-                      </div>
+                      )}
                       {expanded.has(idx) && (
                         <div className="flex flex-col gap-px border-t border-[var(--border)]">
                           {pointItems.map((it, j) => {
                             const ok = fromStock || allowed.includes(it.denree!);
+                            const on = dropChecked.has(`${idx}:${j}`);
                             return (
-                              <label key={j} className={`flex items-center gap-[9px] bg-[var(--card)] py-[9px] pr-3 pl-[34px] text-[12.5px] font-semibold ${ok ? "cursor-pointer text-[var(--navy)]" : "cursor-not-allowed text-[var(--slate)] opacity-65"}`}>
-                                <input
-                                  type="checkbox"
-                                  disabled={!ok}
-                                  checked={dropChecked.has(`${idx}:${j}`)}
-                                  onChange={() => setDropChecked((prev) => { const nx = new Set(prev); const key = `${idx}:${j}`; if (nx.has(key)) nx.delete(key); else nx.add(key); return nx; })}
-                                  className="h-4 w-4 accent-[var(--dropoff)]"
-                                />
-                                <span className="flex-1">{it.name ?? it.denree}</span>
-                                <span className="text-[var(--slate)] tabular-nums">{it.kg} kg</span>
+                              <button
+                                key={j}
+                                type="button"
+                                disabled={!ok}
+                                onClick={() => setDropChecked((prev) => { const nx = new Set(prev); const key = `${idx}:${j}`; if (nx.has(key)) nx.delete(key); else nx.add(key); return nx; })}
+                                className={`flex min-h-[52px] w-full items-center gap-3 bg-[var(--card)] px-3.5 py-2.5 text-left text-[14px] font-semibold ${ok ? "text-[var(--navy)]" : "cursor-not-allowed text-[var(--slate)] opacity-65"}`}
+                              >
+                                <span className={`flex h-7 w-7 flex-none items-center justify-center rounded-lg border-2 ${on ? "border-[var(--dropoff)] bg-[var(--dropoff)] text-white" : "border-[var(--muted)] bg-[var(--card)] text-transparent"}`}>
+                                  <Icon className="h-4 w-4" sw={3}><path d="M5 12.5 L10 17.5 L19 7" /></Icon>
+                                </span>
+                                <span className="min-w-0 flex-1 truncate">{it.name ?? it.denree}</span>
+                                <span className="flex-none text-[var(--slate)] tabular-nums">{it.kg} kg</span>
                                 {!ok && <span className="flex-none text-[10.5px] font-normal italic text-[var(--slate)]">non accepté ici</span>}
-                              </label>
+                              </button>
                             );
                           })}
                         </div>
