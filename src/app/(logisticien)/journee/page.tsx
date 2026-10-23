@@ -290,14 +290,14 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
   // quantities planned by the admin are pre-filled (the logisticien can still adjust them)
   const [stockCounts, setStockCounts] = useState<Record<string, number>>(() => Object.fromEntries((s.planned ?? []).map((p) => [p.id, p.colis])));
   const [dropChecked, setDropChecked] = useState<Set<string>>(new Set());
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [motif, setMotif] = useState("");
   const [errCollecte, setErrCollecte] = useState("");
   const [errAnnule, setErrAnnule] = useState("");
 
   const okLabel = s.kind === "stock" ? "Pris" : s.kind === "dropoff" ? "Déposé" : s.kind === "dechetterie" ? "Confirmé" : "Collecté";
   const earlier = stops.map((st, idx) => ({ st, idx })).filter(({ st, idx }) => idx < index && (st.kind === "partner" || st.kind === "stock") && st.status === "collecte" && st.result?.items?.length);
-  const allowed = s.allowedTypes || [];
+  // an association with no accepted types filled in on its fiche: everything can be dropped
+  const allowed = s.allowedTypes?.length ? s.allowedTypes : null;
 
   function validateCollecte() {
     if (s.kind === "dechetterie") {
@@ -315,7 +315,7 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
         const src = stops[p].result!.items![it];
         dropped.push({ denree: src.denree, name: src.name, kg: src.kg, from: stops[p].name, sourceId: stops[p].id });
       });
-      if (dropped.length < 1 || photos < 1) return setErrCollecte("Touchez au moins un point à laisser ici, et ajoutez une photo.");
+      if (dropped.length < 1) return setErrCollecte("Touchez au moins un produit à laisser ici.");
       onDone({ items: dropped, totalKg: Math.round(dropped.reduce((sum, it) => sum + it.kg, 0) * 10) / 10, photos, photoPaths }, "collecte");
     } else {
       const missingUnitWeight = rows.find((r) => r.denree && r.kg && subOf(r)?.unit === "unite" && !subOf(r)?.unit_weight_kg);
@@ -354,7 +354,7 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
           <StepBlock
             n={1}
             title={s.kind === "stock" ? "Que prenez-vous au stock ?" : s.kind === "dropoff" ? "Que laissez-vous ici ?" : s.kind === "dechetterie" ? "Passage déchetterie" : "Qu'avez-vous collecté ?"}
-            sub={s.kind === "stock" ? "Indiquez le nombre de colis pour chaque produit." : s.kind === "dropoff" ? "Touchez les points dont vous déposez les produits. Seuls les types acceptés par l'association sont sélectionnables." : s.kind === "dechetterie" ? "Rien à saisir, juste à confirmer avec une photo à l'étape suivante." : "Une carte par type de denrée : choisissez le type, puis le poids."}
+            sub={s.kind === "stock" ? "Indiquez le nombre de colis pour chaque produit." : s.kind === "dropoff" ? "Touchez les produits déposés (ou « Tout déposer »). Seuls les types acceptés par l'association sont sélectionnables." : s.kind === "dechetterie" ? "Rien à saisir, juste à confirmer avec une photo à l'étape suivante." : "Une carte par type de denrée : choisissez le type, puis le poids."}
           >
           {s.kind === "dechetterie" ? (
             <p className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--input-bg)] px-3.5 py-3 text-[12.5px] leading-[1.5] text-[var(--slate)]">Confirmez simplement que le passage a eu lieu — ajoutez une photo à l&apos;étape 2.</p>
@@ -478,81 +478,57 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
             </p>
           ) : (
             <div>
-              <label className="mb-1.5 block text-xs font-bold text-[var(--navy)]">Points collectés ce matin — touchez ceux que vous laissez ici <span className="text-[var(--critical)]">*</span></label>
+              <label className="mb-1.5 block text-xs font-bold text-[var(--navy)]">Collecté ce matin — touchez ce que vous laissez ici <span className="text-[var(--critical)]">*</span></label>
               <div className="flex flex-col gap-2">
                 {earlier.map(({ st, idx }, n) => {
                   const pointItems = st.result!.items!;
                   const fromStock = st.kind === "stock"; // goods the admin chose to send here: always accepted
-                  const allowedIdx = pointItems.map((it, j) => (fromStock || allowed.includes(it.denree!) ? j : -1)).filter((j) => j >= 0);
-                  const nChecked = allowedIdx.filter((j) => dropChecked.has(`${idx}:${j}`)).length;
-                  const pointChecked = allowedIdx.length > 0 && nChecked === allowedIdx.length;
-                  const partial = nChecked > 0 && !pointChecked;
-                  const acceptedKg = Math.round(allowedIdx.reduce((sum, j) => sum + pointItems[j].kg, 0) * 10) / 10;
-                  const none = allowedIdx.length === 0;
-                  // one tap on the whole card (re)selects everything accepted at this point
-                  const toggleAll = () =>
+                  const accepted = (it: ResultItem) => fromStock || !allowed || allowed.includes(it.denree!);
+                  const allowedIdx = pointItems.map((it, j) => (accepted(it) ? j : -1)).filter((j) => j >= 0);
+                  const allOn = allowedIdx.length > 0 && allowedIdx.every((j) => dropChecked.has(`${idx}:${j}`));
+                  const toggle = (keys: string[], on: boolean) =>
                     setDropChecked((prev) => {
                       const next = new Set(prev);
-                      allowedIdx.forEach((j) => (pointChecked ? next.delete(`${idx}:${j}`) : next.add(`${idx}:${j}`)));
+                      keys.forEach((k) => (on ? next.add(k) : next.delete(k)));
                       return next;
                     });
+                  const chip = (on: boolean, ok: boolean) =>
+                    `flex min-h-[48px] items-center gap-2 rounded-full border-2 px-4 py-2 text-[14px] font-bold ${!ok ? "cursor-not-allowed border-dashed border-[var(--border)] bg-transparent text-[var(--muted)]" : on ? "border-[var(--dropoff)] bg-[var(--dropoff)] text-white" : "border-[var(--border)] bg-[var(--card)] text-[var(--navy)]"}`;
                   return (
-                    <div key={idx} className={`overflow-hidden rounded-2xl border-2 ${pointChecked || partial ? "border-[var(--dropoff)] bg-[var(--dropoff-bg)]" : "border-[var(--border)] bg-[var(--input-bg)]"} ${none ? "opacity-60" : ""}`}>
-                      <button type="button" disabled={none} onClick={toggleAll} className="flex min-h-[64px] w-full items-center gap-3 px-3.5 py-3 text-left">
-                        <span className={`flex h-8 w-8 flex-none items-center justify-center rounded-full border-2 ${pointChecked || partial ? "border-[var(--dropoff)] bg-[var(--dropoff)] text-white" : "border-[var(--muted)] bg-[var(--card)] text-transparent"}`}>
-                          <Icon className="h-[18px] w-[18px]" sw={3}>
-                            {partial ? <path d="M6 12 H18" /> : <path d="M5 12.5 L10 17.5 L19 7" />}
-                          </Icon>
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[15px] font-bold text-[var(--navy)]">{st.name}</span>
-                          <span className="block text-[12px] font-semibold text-[var(--slate)]">
-                            {none ? "Rien d'accepté ici" : `${st.time} · ${acceptedKg} kg`}{partial ? ` · ${nChecked}/${allowedIdx.length} produit(s)` : ""}
-                          </span>
-                        </span>
-                        {n === 0 && !none && <span className="flex-none rounded-[40px] bg-[var(--dropoff-bg)] px-2 py-1 text-[10px] font-bold tracking-[0.03em] text-[var(--dropoff)] uppercase">Suggéré</span>}
-                      </button>
-                      {!none && pointItems.length > 1 && (
-                        <button type="button" onClick={() => setExpanded((prev) => { const nx = new Set(prev); if (nx.has(idx)) nx.delete(idx); else nx.add(idx); return nx; })} className="flex min-h-[44px] w-full items-center justify-center gap-1.5 border-t border-[var(--border)] text-[12.5px] font-bold text-[var(--slate)]">
-                          {expanded.has(idx) ? "Masquer le détail" : "Choisir produit par produit"}
-                          <Icon className={`h-3.5 w-3.5 transition-transform ${expanded.has(idx) ? "rotate-180" : ""}`} sw={2}>
-                            <path d="M6 9 L12 15 L18 9" />
-                          </Icon>
-                        </button>
-                      )}
-                      {expanded.has(idx) && (
-                        <div className="flex flex-col gap-px border-t border-[var(--border)]">
-                          {pointItems.map((it, j) => {
-                            const ok = fromStock || allowed.includes(it.denree!);
-                            const on = dropChecked.has(`${idx}:${j}`);
-                            return (
-                              <button
-                                key={j}
-                                type="button"
-                                disabled={!ok}
-                                onClick={() => setDropChecked((prev) => { const nx = new Set(prev); const key = `${idx}:${j}`; if (nx.has(key)) nx.delete(key); else nx.add(key); return nx; })}
-                                className={`flex min-h-[52px] w-full items-center gap-3 bg-[var(--card)] px-3.5 py-2.5 text-left text-[14px] font-semibold ${ok ? "text-[var(--navy)]" : "cursor-not-allowed text-[var(--slate)] opacity-65"}`}
-                              >
-                                <span className={`flex h-7 w-7 flex-none items-center justify-center rounded-lg border-2 ${on ? "border-[var(--dropoff)] bg-[var(--dropoff)] text-white" : "border-[var(--muted)] bg-[var(--card)] text-transparent"}`}>
-                                  <Icon className="h-4 w-4" sw={3}><path d="M5 12.5 L10 17.5 L19 7" /></Icon>
-                                </span>
-                                <span className="min-w-0 flex-1 truncate">{it.name ?? it.denree}</span>
-                                <span className="flex-none text-[var(--slate)] tabular-nums">{it.kg} kg</span>
-                                {!ok && <span className="flex-none text-[10.5px] font-normal italic text-[var(--slate)]">non accepté ici</span>}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
+                    <div key={idx} className="rounded-2xl border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] p-3.5">
+                      <div className="mb-2.5 flex items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-[15px] font-bold text-[var(--navy)]">{st.name}</span>
+                        <span className="flex-none text-[12px] font-semibold text-[var(--slate)]">{st.time}</span>
+                        {n === 0 && <span className="flex-none rounded-[40px] bg-[var(--dropoff-bg)] px-2 py-1 text-[10px] font-bold tracking-[0.03em] text-[var(--dropoff)] uppercase">Suggéré</span>}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {pointItems.length > 1 && allowedIdx.length > 1 && (
+                          <button type="button" onClick={() => toggle(allowedIdx.map((j) => `${idx}:${j}`), !allOn)} className={chip(allOn, true)}>
+                            {allOn ? "Tout enlever" : "Tout déposer"}
+                          </button>
+                        )}
+                        {pointItems.map((it, j) => {
+                          const ok = accepted(it);
+                          const on = dropChecked.has(`${idx}:${j}`);
+                          return (
+                            <button key={j} type="button" disabled={!ok} onClick={() => toggle([`${idx}:${j}`], !on)} className={chip(on, ok)}>
+                              {on && <Icon className="h-4 w-4" sw={3}><path d="M5 12.5 L10 17.5 L19 7" /></Icon>}
+                              <span>{it.name ?? it.denree}</span>
+                              <span className="font-semibold opacity-80 tabular-nums">{it.kg} kg</span>
+                              {!ok && <span className="text-[11px] font-normal italic">non accepté</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   );
                 })}
               </div>
-              <p className="mt-2 text-[11.5px] leading-[1.5] text-[var(--slate)]">Sélectionnable uniquement pour : {allowed.join(", ")} (défini par l&apos;admin sur la fiche association). Le reste continue la tournée dans le camion.</p>
+              <p className="mt-2 text-[11.5px] leading-[1.5] text-[var(--slate)]">{allowed ? `Types acceptés par l'association : ${allowed.join(", ")}. Le reste continue la tournée dans le camion.` : "Aucune restriction renseignée sur la fiche de l'association : tout peut être déposé. Ce qui n'est pas touché continue la tournée dans le camion."}</p>
             </div>
           )}
           </StepBlock>
-          <StepBlock n={2} title="Ajoutez une photo" sub={s.kind === "stock" ? "Une photo de ce que vous chargez suffit." : "Une seule photo suffit pour valider, quel que soit le nombre de denrées."}>
+          <StepBlock n={2} title={s.kind === "dropoff" ? "Photo (facultative)" : "Ajoutez une photo"} sub={s.kind === "stock" ? "Une photo de ce que vous chargez suffit." : s.kind === "dropoff" ? "Si vous le souhaitez, une photo de la dépose." : "Une seule photo suffit pour valider, quel que soit le nombre de denrées."}>
             <PhotoField previews={previews} busy={photoBusy} onPick={addPhoto} />
           </StepBlock>
           {errCollecte && <div className="rounded-xl bg-[var(--critical-bg)] px-3.5 py-2.5 text-[12.5px] font-semibold text-[var(--critical)]">{errCollecte}</div>}
