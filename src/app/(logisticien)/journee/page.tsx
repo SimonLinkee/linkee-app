@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { signedUrls, uploadPrivatePhoto } from "@/lib/photos";
@@ -223,8 +223,14 @@ function StepBlock({ n, title, sub, children }: { n: number; title: string; sub?
   );
 }
 
-/** Real camera / gallery picker: thumbnails of the chosen photos + a big "take a photo" button. */
+/** Camera / gallery picker: thumbnails of the chosen photos + two big buttons (take a photo, or pick from the gallery). */
 function PhotoField({ previews, busy, onPick }: { previews: string[]; busy: boolean; onPick: (file: File) => void }) {
+  const tile = `flex min-h-[56px] flex-1 cursor-pointer items-center justify-center gap-2.5 rounded-2xl border-2 border-dashed border-[var(--turquoise)] bg-[var(--input-bg)] px-3 py-3 text-center text-[14px] font-bold text-[var(--navy)] ${busy ? "opacity-50" : ""}`;
+  const pick = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    files.forEach((f) => onPick(f));
+  };
   return (
     <div>
       {previews.length > 0 && (
@@ -235,23 +241,24 @@ function PhotoField({ previews, busy, onPick }: { previews: string[]; busy: bool
           ))}
         </div>
       )}
-      <div>
-        <label className={`flex min-h-[56px] w-full cursor-pointer items-center justify-center gap-2.5 rounded-2xl border-2 border-dashed border-[var(--turquoise)] bg-[var(--input-bg)] px-4 py-3 text-[14px] font-bold text-[var(--navy)] ${busy ? "opacity-50" : ""}`}>
-          {busy ? <span>Envoi de la photo…</span> : (<><CameraIcon className="h-6 w-6 text-[var(--turquoise)]" />{previews.length ? "Ajouter une autre photo" : "Prendre une photo"}</>)}
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            hidden
-            disabled={busy}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              e.target.value = "";
-              if (f) onPick(f);
-            }}
-          />
-        </label>
-      </div>
+      {busy ? (
+        <div className={tile}><span>Envoi de la photo…</span></div>
+      ) : (
+        <div className="flex gap-2.5">
+          <label className={tile}>
+            <CameraIcon className="h-6 w-6 flex-none text-[var(--turquoise)]" />
+            <span>Appareil photo</span>
+            <input type="file" accept="image/*" capture="environment" hidden onChange={pick} />
+          </label>
+          <label className={tile}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6 flex-none text-[var(--turquoise)]" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="9" cy="9" r="1.6" /><path d="m21 15-5-5L5 21" />
+            </svg>
+            <span>Galerie</span>
+            <input type="file" accept="image/*" multiple hidden onChange={pick} />
+          </label>
+        </div>
+      )}
     </div>
   );
 }
@@ -350,7 +357,7 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
             sub={s.kind === "stock" ? "Indiquez le nombre de colis pour chaque produit." : s.kind === "dropoff" ? "Cochez les produits déposés. Seuls les types acceptés par l'association sont sélectionnables." : s.kind === "dechetterie" ? "Rien à saisir, juste à confirmer avec une photo à l'étape suivante." : "Une carte par type de denrée : choisissez le type, puis le poids."}
           >
           {s.kind === "dechetterie" ? (
-            <p className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--input-bg)] px-3.5 py-3 text-[12.5px] leading-[1.5] text-[var(--slate)]">Confirmez simplement que le passage a eu lieu — prenez une photo à l&apos;étape 2.</p>
+            <p className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--input-bg)] px-3.5 py-3 text-[12.5px] leading-[1.5] text-[var(--slate)]">Confirmez simplement que le passage a eu lieu — ajoutez une photo à l&apos;étape 2.</p>
           ) : s.kind === "partner" || s.kind === "exceptionnel" ? (
             <div>
               <div className="flex flex-col gap-3">
@@ -532,7 +539,7 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
             </div>
           )}
           </StepBlock>
-          <StepBlock n={2} title="Prenez une photo" sub={s.kind === "stock" ? "Une photo de ce que vous chargez suffit." : "Une seule photo suffit pour valider, quel que soit le nombre de denrées."}>
+          <StepBlock n={2} title="Ajoutez une photo" sub={s.kind === "stock" ? "Une photo de ce que vous chargez suffit." : "Une seule photo suffit pour valider, quel que soit le nombre de denrées."}>
             <PhotoField previews={previews} busy={photoBusy} onPick={addPhoto} />
           </StepBlock>
           {errCollecte && <div className="rounded-xl bg-[var(--critical-bg)] px-3.5 py-2.5 text-[12.5px] font-semibold text-[var(--critical)]">{errCollecte}</div>}
