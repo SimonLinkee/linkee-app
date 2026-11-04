@@ -16,6 +16,7 @@ export const canAdminCity = (role: string | null | undefined) => isSuper(role) |
 // After sign-in the last two roles land on /version: full PC version or quick mobile entry (/saisie-mobile).
 const SUPER_ONLY = ['/dashboard', '/partenaires', '/beneficiaires', '/flotte', '/todo', '/villes-comptes', '/historique', '/journee', '/espace-partenaire', '/espace-beneficiaire', '/mobile', '/links-benevoles', '/linker', '/valeur-des-dons', '/comptabilite', '/organigramme']
 // « Villes & comptes » et « Historique & sauvegardes » restent réservés au Superadmin.
+// '/projets' : suivi des appels à projets (migration 070) — Superadmin et Comptabilité modifient ; le Responsable d'antenne lit les AAP de sa ville.
 const COMPTA_PATHS = SUPER_ONLY.filter((p) => p !== '/villes-comptes' && p !== '/historique')
 // '/mobile/links' (visibilité des Links Bénévoles) est aussi ouvert au Responsable d'antenne et au Resp.
 // Distribution, alors que le reste de '/mobile' reste réservé au Superadmin — d'où l'ajout explicite ici.
@@ -23,7 +24,7 @@ const COMPTA_PATHS = SUPER_ONLY.filter((p) => p !== '/villes-comptes' && p !== '
 // Écrans du Responsable d'antenne (pour sa ville uniquement : règles d'accès de la base, voir migration 047).
 // '/comptabilite' : il y valide / refuse les demandes de Cerfa de son antenne ; l'émission du Cerfa reste réservée à la
 // Comptabilité et au Superadmin, y compris côté base.
-const ANTENNE_PATHS = ['/dashboard', '/calendrier', '/documents-utiles', '/village-associatif', '/prospection', '/partenaires', '/beneficiaires', '/planning', '/distributions', '/stock', '/flotte', '/todo', '/links-benevoles', '/valeur-des-dons', '/comptabilite', '/organigramme', '/profil', '/version', '/saisie-mobile', '/mobile']
+const ANTENNE_PATHS = ['/dashboard', '/calendrier', '/projets', '/documents-utiles', '/village-associatif', '/prospection', '/partenaires', '/beneficiaires', '/planning', '/distributions', '/stock', '/flotte', '/todo', '/links-benevoles', '/valeur-des-dons', '/comptabilite', '/organigramme', '/profil', '/version', '/saisie-mobile', '/mobile']
 // '/calendrier' : calendrier multi-villes + ACTU (migration 058) — équipe interne : Superadmin, Comptabilité, Resp. d'antenne,
 // Resp. Distribution et Resp. RH. Pas le logisticien, ni les partenaires, bénéficiaires ou Linkers.
 // '/organigramme' : trombinoscope de l'équipe (PC) — équipe interne seulement : le logisticien, les Linkers, partenaires et

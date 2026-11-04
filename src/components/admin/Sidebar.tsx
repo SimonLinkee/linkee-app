@@ -81,6 +81,16 @@ export const NAV_ITEMS = [
     ),
   },
   {
+    href: "/projets",
+    label: "Projets",
+    icon: (
+      <>
+        <path d="M5 21 V4" />
+        <path d="M5 5 H17.5 L15.5 9 L17.5 13 H5" />
+      </>
+    ),
+  },
+  {
     href: "/documents-utiles",
     label: "Documents utiles",
     icon: (
