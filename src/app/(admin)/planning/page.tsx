@@ -37,17 +37,19 @@ type Stop = {
   photoPaths: string[];
   passage?: Passage;
   creneaux?: Creneaux;
+  stockIn?: boolean; // arrêt « Dépôt stock » = dépose au stock (et non prise)
 };
 type StopC = Stop & { coords: Coords };
 type EnrichedStop = StopC & { scheduledTime: string | null; travelFromPrev: number; travelKmFromPrev: number; arrivalMin?: number; waitMin?: number };
 type ChecklistItem = { id: string; label: string };
-type Place = { key: string; kind: "partner" | "dropoff" | "stock" | "dechetterie"; name: string; cat: string; address: string; partnerId: string | null; beneficiaryId: string | null; passage?: Passage; creneaux?: Creneaux; regulier?: boolean; duration?: number };
+type Place = { key: string; kind: "partner" | "dropoff" | "stock" | "dechetterie"; name: string; cat: string; address: string; partnerId: string | null; beneficiaryId: string | null; passage?: Passage; creneaux?: Creneaux; regulier?: boolean; duration?: number; direction?: "entree" };
 // Partenaire régulier passant par un Link bénévole sur chacun de ses créneaux (case « Link bénévole systématique » de la fiche)
 type LinkReminder = { partnerId: string; name: string; creneaux: Creneaux; linked: boolean };
 type DbRel = { name: string; category: string | null; address: string | null; passage?: Passage | null; creneaux?: Creneaux | null };
 type DbCollecte = {
   id: string;
   kind: Kind;
+  stock_direction?: string | null;
   partner_id: string | null;
   beneficiary_id: string | null;
   label: string | null;
@@ -76,6 +78,7 @@ const LUNCH_RESUME_FLOOR = 14 * 60; // la reprise après la pause ne se fait jam
 const LUNCH_DEFAULT_DURATION = 30; // durée mini par défaut à l'ajout, modifiable comme la durée de n'importe quel arrêt
 const HARD_LIMIT = 18 * 60;
 const DEPOT_NAME = "Entrepôt Linkee"; // the depot address depends on the city (cities.depot_address)
+const depotInPlace = (address: string): Place => ({ key: "depot_in", kind: "stock", direction: "entree", name: `${DEPOT_NAME} — dépose`, cat: "Dépôt stock", address, partnerId: null, beneficiaryId: null });
 const depotPlace = (address: string): Place => ({ key: "depot", kind: "stock", name: DEPOT_NAME, cat: "Dépôt stock", address, partnerId: null, beneficiaryId: null });
 
 // Passage déchetterie : un seul lieu fixe, créneau hebdomadaire par défaut (mardi + mercredi) — pas de fiche
@@ -163,6 +166,7 @@ function rowToStop(r: DbCollecte, depotAddress: string): Stop {
     photoPaths: r.photo_paths ?? [],
     passage: p?.passage ?? undefined,
     creneaux: p?.creneaux ?? b?.creneaux ?? (r.kind === "dechetterie" ? DECHETTERIE_CRENEAUX : undefined),
+    stockIn: r.kind === "stock" && r.stock_direction === "entree",
   };
 }
 
@@ -246,7 +250,7 @@ const KIND_BADGE_CLS: Record<string, string> = {
 };
 
 const SELECT_DAY =
-  "id,kind,partner_id,beneficiary_id,label,comment,status,duration_min,photo_paths,scheduled_time,partners(name,category,address,passage:fiche->passage,creneaux:fiche->creneaux),beneficiaries(name,category,address,creneaux:fiche->creneaux)";
+  "id,kind,stock_direction,partner_id,beneficiary_id,label,comment,status,duration_min,photo_paths,scheduled_time,partners(name,category,address,passage:fiche->passage,creneaux:fiche->creneaux),beneficiaries(name,category,address,creneaux:fiche->creneaux)";
 
 export default function PlanningPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -254,6 +258,7 @@ export default function PlanningPage() {
   const ro = !canAdminCity(role); // le Responsable d'antenne modifie le planning de sa ville (migration 047)
   const DEPOT = { name: DEPOT_NAME, address: depotAddress };
   const DEPOT_PLACE = depotPlace(depotAddress);
+  const DEPOT_IN_PLACE = depotInPlace(depotAddress);
   const [places, setPlaces] = useState<Place[]>([depotPlace(depotAddress)]);
   const [view, setView] = useState<"jour" | "semaine">("jour");
   const [currentDate, setCurrentDate] = useState(() => new Date());
@@ -407,6 +412,7 @@ export default function PlanningPage() {
           key: "b:" + b.id, kind: "dropoff" as const, name: b.name, cat: b.category ?? "", address: b.address ?? "", partnerId: null, beneficiaryId: b.id, creneaux: b.creneaux ?? undefined,
         })),
         DEPOT_PLACE,
+        DEPOT_IN_PLACE,
         // la déchetterie (Meyzieu) est celle de Lyon : les autres villes n'ont pas ce passage hebdomadaire
         ...(city?.name === "Lyon" ? [DECHETTERIE_PLACE] : []),
       ];
@@ -630,6 +636,7 @@ export default function PlanningPage() {
       .insert({
         city_id: cityId,
         kind,
+        stock_direction: place.direction ?? "sortie",
         partner_id: place.partnerId,
         beneficiary_id: place.beneficiaryId,
         label: !place.partnerId && !place.beneficiaryId ? place.name : null,
@@ -652,6 +659,7 @@ export default function PlanningPage() {
       photoPaths: [],
       passage: place.passage,
       creneaux: place.creneaux,
+      stockIn: place.direction === "entree",
     };
     editStops((prev) => {
       const next = [...prev];
@@ -751,7 +759,7 @@ export default function PlanningPage() {
     prev.setDate(prev.getDate() - 7);
     const { data, error } = await supabase
       .from("collectes")
-      .select("kind,partner_id,beneficiary_id,label,duration_min,sort_order")
+      .select("kind,stock_direction,partner_id,beneficiary_id,label,duration_min,sort_order")
       .eq("city_id", cityId)
       .eq("source", "planning")
       .eq("scheduled_date", isoDate(prev))
@@ -1179,7 +1187,7 @@ export default function PlanningPage() {
                     </span>
                     <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-full bg-[var(--track)] font-display text-xs font-extrabold text-[var(--navy)]">{i + 1}</span>
                     <span className={`w-[70px] flex-none leading-tight ${cancelled ? "opacity-60" : ""}`}>
-                      <span className="block text-[9.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">{s.kind === "dropoff" ? "Dépose" : s.kind === "stock" ? "Prise stock" : s.kind === "pause" ? "Pause" : s.kind === "dechetterie" ? "Déchetterie" : "Collecte"}</span>
+                      <span className="block text-[9.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">{s.kind === "dropoff" ? "Dépose" : s.kind === "stock" ? (s.stockIn ? "Dépose stock" : "Prise stock") : s.kind === "pause" ? "Pause" : s.kind === "dechetterie" ? "Déchetterie" : "Collecte"}</span>
                       <span className="block font-display text-[18px] font-extrabold text-[var(--navy)]">{s.scheduledTime || "—"}</span>
                       {s.arrivalMin !== undefined && (
                         <span className="block text-[10.5px] text-[var(--slate)]">→ {fmtTime(s.kind === "pause" ? Math.max(LUNCH_RESUME_FLOOR, s.arrivalMin + s.duration) : s.arrivalMin + s.duration)}</span>
@@ -1240,7 +1248,7 @@ export default function PlanningPage() {
                       <small className="text-[11px] text-[var(--slate)]">min</small>
                     </span>
                     <span className="flex flex-none gap-1.5">
-                      {!ro && !(s.kind === "stock" && done) && s.kind !== "pause" && (
+                      {!ro && !(s.kind === "stock" && !s.stockIn && done) && s.kind !== "pause" && (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1323,7 +1331,7 @@ export default function PlanningPage() {
               <select value={addPlaceKey} onChange={(e) => setAddPlaceKey(e.target.value)} className={`${inputCls} !w-auto min-w-[220px] flex-1`}>
                 {places.map((p) => (
                   <option key={p.key} value={p.key}>
-                    {p.name} — {p.kind === "dropoff" ? "dépose" : p.kind === "stock" ? "stock" : "collecte"}
+                    {p.name} — {p.kind === "dropoff" ? "dépose" : p.kind === "stock" ? (p.direction === "entree" ? "dépose au stock" : "prise au stock") : "collecte"}
                     {p.kind === "partner" && formatCreneaux(p.creneaux) ? ` (${formatCreneaux(p.creneaux)})` : ""}
                   </option>
                 ))}
@@ -1430,7 +1438,7 @@ export default function PlanningPage() {
 
       {resultStop && cityId && (
         <AdminStopModal
-          stop={{ id: resultStop.id, name: resultStop.name, kind: resultStop.kind, partnerId: resultStop.partnerId, cat: resultStop.cat }}
+          stop={{ id: resultStop.id, name: resultStop.name, kind: resultStop.kind, partnerId: resultStop.partnerId, cat: resultStop.cat, stockIn: resultStop.stockIn }}
           cityId={cityId}
           date={iso}
           current={resultStop.dbStatus}
