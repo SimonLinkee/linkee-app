@@ -9,6 +9,7 @@ import BetaBadge from "@/components/BetaBadge";
 import { STATUS_UI, distribStatus, isoToday } from "@/lib/distributions";
 import { canAdminCity } from "@/lib/roles";
 import RemonteesLink from "@/components/RemonteesLink";
+import LinkeeLogo from "@/components/LinkeeLogo";
 
 /* ---------------- types & helpers ---------------- */
 type Place = { id: string; name: string };
@@ -323,10 +324,7 @@ function Page() {
     <div className="mx-auto min-h-screen max-w-[520px] px-4 pt-4 pb-24">
       <header className="mb-4 flex items-center justify-between">
         <div className="flex items-end gap-0.5">
-          <span className="font-script text-[26px] text-[var(--navy)]">linkee</span>
-          <svg width="30" height="11" viewBox="0 0 40 14" fill="none" aria-hidden="true" className="mb-1">
-            <path d="M2 3 C 10 13, 30 13, 38 3" stroke="var(--turquoise)" strokeWidth={4} strokeLinecap="round" />
-          </svg>
+          <LinkeeLogo h={32} />
         </div>
         <span className="flex items-center gap-3 text-[12px] font-semibold text-[var(--slate)]">
           {role !== "admin_principal" && <RemonteesLink className="!min-h-[30px] !px-3 !text-[11.5px]" />}

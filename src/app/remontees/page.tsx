@@ -7,6 +7,7 @@ import { AdminShell } from "@/components/admin/AdminShell";
 import RemonteesPanel from "@/components/RemonteesPanel";
 import { homeForRole } from "@/lib/roles";
 import { REMONTEE_COLOR } from "@/lib/remontees";
+import LinkeeLogo from "@/components/LinkeeLogo";
 
 // Rôles qui ont le menu latéral : la page s'affiche dans ce menu ; les autres (logisticien, partenaire, association,
 // mobile) ont une page simple avec un bouton de retour vers leur espace.
@@ -39,7 +40,7 @@ export default function RemonteesRoute() {
   return (
     <div className="min-h-screen">
       <header className="flex items-center gap-4 bg-[var(--navy-deep)] px-5 py-3 text-[var(--panel-fg)]">
-        <span className="font-script text-[22px] leading-none">linkee</span>
+        <LinkeeLogo h={28} light />
         <span className="flex-1" />
         <Link href={homeForRole(role)} className="rounded-[40px] bg-white/12 px-4 py-1.5 text-[12.5px] font-bold">← Retour à mon espace</Link>
       </header>

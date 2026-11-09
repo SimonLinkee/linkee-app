@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import LinkeeLogo from "@/components/LinkeeLogo";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -37,15 +38,7 @@ export default function LoginPage() {
           }}
         >
           <div className="flex items-end justify-center gap-0.5">
-            <span className="font-script text-[32px] leading-none">linkee</span>
-            <svg width="34" height="12" viewBox="0 0 40 14" fill="none" aria-hidden="true">
-              <path
-                d="M2 3 C 10 13, 30 13, 38 3"
-                stroke="var(--turquoise)"
-                strokeWidth={4}
-                strokeLinecap="round"
-              />
-            </svg>
+            <LinkeeLogo h={40} light />
           </div>
           <p className="mt-1.5 font-display text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--panel-fg-dim)]">
             Entraide étudiante

@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import CharSvg from "@/components/linker/CharSvg";
 import BetaBadge from "@/components/BetaBadge";
 import { characterSVG } from "@/lib/linker/characters";
+import LinkeeLogo from "@/components/LinkeeLogo";
 
 /** Public landing page for the Links Bénévoles programme — reachable while signed out (see middleware.ts). */
 export default function LinkerIntroPage() {
@@ -26,10 +27,7 @@ export default function LinkerIntroPage() {
     <div className="min-h-screen bg-[var(--cream)] px-5 py-8">
       <div className="mx-auto max-w-[480px]">
         <div className="mb-6 flex items-end justify-center gap-0.5">
-          <span className="font-script text-[30px] leading-none text-[var(--navy)]">linkee</span>
-          <svg width="34" height="12" viewBox="0 0 40 14" fill="none" aria-hidden="true" className="mb-1">
-            <path d="M2 3 C 10 13, 30 13, 38 3" stroke="var(--turquoise)" strokeWidth={4} strokeLinecap="round" />
-          </svg>
+          <LinkeeLogo h={38} />
         </div>
 
         <div className="mb-4 flex justify-center"><BetaBadge label="Bêta test" /></div>

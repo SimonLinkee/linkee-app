@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import { CityProvider, useCity } from "@/components/admin/CityContext";
 import { canAdminCity } from "@/lib/roles";
+import LinkeeLogo from "@/components/LinkeeLogo";
 
 /** Frame of the Superadmin's mobile app: slim header (home, city), one column, no side menu. */
 function Frame({ children }: { children: ReactNode }) {
@@ -23,10 +24,7 @@ function Frame({ children }: { children: ReactNode }) {
       <header className="mb-4 flex items-center justify-between gap-2">
         {home ? (
           <div className="flex items-end gap-0.5">
-            <span className="font-script text-[28px] text-[var(--navy)]">linkee</span>
-            <svg width="32" height="12" viewBox="0 0 40 14" fill="none" aria-hidden="true" className="mb-1">
-              <path d="M2 3 C 10 13, 30 13, 38 3" stroke="var(--turquoise)" strokeWidth={4} strokeLinecap="round" />
-            </svg>
+            <LinkeeLogo h={35} />
           </div>
         ) : (
           <Link href={homeHref} className="flex h-11 items-center gap-1.5 rounded-full bg-[var(--navy-deep)] px-4 text-[14px] font-bold text-[var(--panel-fg)]">

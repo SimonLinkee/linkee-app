@@ -15,6 +15,7 @@ import PartnerValuation from "@/components/partner/PartnerValuation";
 import PartnerLinks from "@/components/partner/PartnerLinks";
 import { formatCreneaux, type Creneaux } from "@/lib/creneaux";
 import { CERFA_FREQUENCIES, cerfaFrequencyOf, type CerfaFrequency } from "@/lib/cerfa";
+import LinkeeLogo from "@/components/LinkeeLogo";
 
 /* ---------------- types ---------------- */
 type Contact = { type: string; nom: string; tel: string; mail: string };
@@ -149,9 +150,10 @@ const CHAT = <><path d="M4 5.5 A2 2 0 0 1 6 3.5 H18 A2 2 0 0 1 20 5.5 V15 A2 2 0
 const LINKS_ICON = <><circle cx="8" cy="8" r="2.6" /><circle cx="17" cy="9" r="2.2" /><path d="M3 19 C 3.4 15.5 5.4 13.6 8 13.6 C 10.6 13.6 12.6 15.5 13 19" /><path d="M14.2 14.2 C 15.2 13.5 16.1 13.4 17 13.4 C 19 13.4 20.4 15 20.8 18.5" /></>;
 
 function Wordmark({ size = "text-[22px]", color = "text-[var(--panel-fg)]" }: { size?: string; color?: string }) {
+  const px = Number(/\[(\d+)px\]/.exec(size)?.[1] ?? 22);
   return (
     <span className="flex items-end gap-0.5">
-      <span className={`font-script leading-none ${size} ${color}`}>linkee</span>
+      <LinkeeLogo h={Math.round(px * 1.25)} light={color.includes("panel-fg")} />
     </span>
   );
 }
@@ -647,7 +649,7 @@ export default function EspacePartenairePage() {
     return (
       <div className="flex min-h-screen items-center justify-center p-4">
         <div className="w-full max-w-[380px] rounded-[28px] bg-[var(--card)] px-7 py-8 text-center shadow-[var(--shadow)]">
-          <span className="font-script text-[32px] leading-none">linkee</span>
+          <LinkeeLogo h={40} />
           <h1 className="mt-4 font-display text-[22px] font-black">Aucun site rattaché</h1>
           <p className="mt-2 text-[13px] leading-relaxed text-[var(--slate)]">Ce compte n&apos;est relié à aucun partenaire pour l&apos;instant. Contactez votre référent Linkee.</p>
           <button type="button" onClick={logout} className="mt-5 w-full rounded-[40px] bg-[var(--navy-deep)] py-3 font-display text-base font-bold text-[var(--panel-fg)]">Se déconnecter</button>
@@ -1015,7 +1017,7 @@ export default function EspacePartenairePage() {
       {/* ---- RSE print sheet ---- */}
       <div className="hidden bg-[#FBF4EC] p-[26px] text-[#001641] print:block">
         <div className="mb-3.5 flex items-center justify-between">
-          <span className="font-script text-[22px]">linkee</span>
+          <LinkeeLogo h={28} />
           <span className="h-[34px] w-[34px] overflow-hidden rounded-full">{site.logo && <LogoContent logo={site.logo} />}</span>
         </div>
         <h1 className="mb-1.5 font-display text-[26px] font-black uppercase">Bilan d&apos;impact <span className="text-[#4FC1D6]">RSE</span></h1>

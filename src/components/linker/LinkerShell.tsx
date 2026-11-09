@@ -9,6 +9,7 @@ import BetaBadge from "@/components/BetaBadge";
 import BetaNote from "@/components/BetaNote";
 import { useLinker } from "./LinkerContext";
 import { REMONTEE_COLOR, useRemonteeBadge } from "@/lib/remontees";
+import LinkeeLogo from "@/components/LinkeeLogo";
 
 const TABS: { href: string; label: string; icon: ReactNode; accent?: boolean }[] = [
   { href: "/linker/accueil", label: "Accueil", icon: <><path d="M4 11 L12 4 L20 11" /><path d="M6 10 V20 H18 V10" /></> },
@@ -36,10 +37,7 @@ export default function LinkerShell({ children }: { children: ReactNode }) {
       <header className="flex items-center justify-between bg-[var(--navy-deep)] px-4 py-3 text-[var(--panel-fg)]">
         <div className="flex items-center gap-2">
           <Link href="/linker/accueil" className="flex items-end gap-0.5">
-            <span className="font-script text-[22px] leading-none">linkee</span>
-            <svg width="26" height="9" viewBox="0 0 40 14" fill="none" aria-hidden="true" className="mb-0.5">
-              <path d="M2 3 C 10 13, 30 13, 38 3" stroke="var(--turquoise)" strokeWidth={4} strokeLinecap="round" />
-            </svg>
+            <LinkeeLogo h={28} light />
           </Link>
           <BetaBadge onDark label="Bêta test" />
         </div>

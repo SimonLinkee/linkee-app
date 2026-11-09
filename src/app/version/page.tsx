@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { ROLE_LABEL, canAdminCity } from "@/lib/roles";
+import LinkeeLogo from "@/components/LinkeeLogo";
 
 /** Shown right after sign-in to the Responsable d'antenne and the Resp. Distribution: full PC version or quick mobile entry. */
 export default function VersionPage() {
@@ -32,10 +33,7 @@ export default function VersionPage() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center px-5 py-10">
       <div className="mb-2 flex items-end gap-0.5">
-        <span className="font-script text-[34px] text-[var(--navy)]">linkee</span>
-        <svg width="40" height="14" viewBox="0 0 40 14" fill="none" aria-hidden="true" className="mb-1.5">
-          <path d="M2 3 C 10 13, 30 13, 38 3" stroke="var(--turquoise)" strokeWidth={4} strokeLinecap="round" />
-        </svg>
+        <LinkeeLogo h={42} />
       </div>
       <h1 className="font-display text-[30px] leading-tight font-black text-[var(--navy)]">Bonjour{name ? ` ${name}` : ""}</h1>
       <p className="mt-1 mb-7 text-center text-[14px] text-[var(--slate)]">{ROLE_LABEL[role] ? `${ROLE_LABEL[role]} · ` : ""}Quelle version veux-tu utiliser ?</p>

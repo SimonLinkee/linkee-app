@@ -1,3 +1,4 @@
+import LinkeeLogo from "@/components/LinkeeLogo";
 // Page publique, accessible sans connexion (voir middleware + isAllowed). Contenu à faire relire par un
 // professionnel du droit avant usage définitif — ceci est un point de départ raisonnable, pas un avis juridique.
 // ⚠️ Remplace l'adresse ci-dessous par la vraie adresse de contact de l'association pour les demandes RGPD.
@@ -12,7 +13,7 @@ export default function PolitiqueConfidentialitePage() {
   return (
     <div className="min-h-screen bg-[var(--cream)] px-5 py-10">
       <div className="mx-auto max-w-[680px]">
-        <span className="font-script text-[26px] leading-none text-[var(--navy)]">linkee</span>
+        <LinkeeLogo h={32} />
         <h1 className="mt-3 font-display text-[28px] font-black text-[var(--navy)]">Politique de confidentialité</h1>
         <p className="mt-1 mb-8 text-[12.5px] font-semibold text-[var(--muted)]">Dernière mise à jour : 30 septembre 2026</p>
 

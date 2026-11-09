@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
 import { signedUrls, uploadPrivatePhoto } from "@/lib/photos";
 import FleetLiveCard from "@/components/FleetLiveCard";
+import LinkeeLogo from "@/components/LinkeeLogo";
 
 type CheckItem = { key: string; label: string; intervalDays: number; lastDate: string };
 type Invoice = { date: string; fournisseur: string; montant: number; statut: "Payé" | "À payer"; motif: string; kind?: "Devis" | "Facture"; montantHt?: number }; // montant = TTC ; montantHt facultatif (anciennes lignes sans HT)
@@ -794,7 +795,7 @@ export default function FlottePage() {
               </svg>
             </button>
             <div className="mb-5 flex items-end justify-between border-b-2 border-[#001641] pb-3.5">
-              <span className="font-script text-[22px] text-[#001641]">linkee</span>
+              <LinkeeLogo h={28} />
               <span className="font-display text-[13px] font-extrabold tracking-[0.08em] text-[#4D5C7A]">
                 {(docModal.inv.kind ?? (docModal.inv.motif.toLowerCase().includes("devis") ? "Devis" : "Facture")).toUpperCase()}
               </span>

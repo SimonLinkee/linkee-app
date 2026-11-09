@@ -15,6 +15,7 @@ import { useRemonteeAppBadge, useRemonteeBadge } from "@/lib/remontees";
 import { useMyPhoto } from "@/lib/profilePhoto";
 import { useNavActivity } from "@/lib/navActivity";
 import { isSuper } from "@/lib/roles";
+import LinkeeLogo from "@/components/LinkeeLogo";
 
 // Nouveau menu (proposition A) : la barre du haut porte les raccourcis et les outils, le menu de gauche ne garde que le travail
 // (Planning, Distributions, Partenaires en grand, puis des groupes repliables).
@@ -99,8 +100,7 @@ export function SidebarV2() {
   return (
     <aside className="sticky top-0 flex h-screen w-[232px] flex-none flex-col bg-[var(--navy-deep)] px-[14px] py-5 text-[var(--panel-fg)]">
       <div className="flex flex-none items-end gap-0.5 px-2">
-        <span className="font-script text-2xl">linkee</span>
-        <svg width="30" height="11" viewBox="0 0 40 14" fill="none" aria-hidden="true" className="mb-1"><path d="M2 3 C 10 13, 30 13, 38 3" stroke="var(--turquoise)" strokeWidth={4} strokeLinecap="round" /></svg>
+        <LinkeeLogo h={30} light />
       </div>
       <nav className="mt-5 flex min-h-0 flex-1 flex-col gap-[2px] overflow-y-auto">
         {home && row(home.href, home.label, home.icon)}

@@ -9,6 +9,7 @@ import RemonteesPanel from "@/components/RemonteesPanel";
 import { RemonteeBadgePill } from "@/components/RemonteesLink";
 import { CAT_KEYS, CAT_LABELS, buildEvo, isoOf, type CatKey } from "@/lib/stats";
 import { CRENEAUX_DAYS, type Creneaux, type Slot as CreneauSlot } from "@/lib/creneaux";
+import LinkeeLogo from "@/components/LinkeeLogo";
 
 type Contact = { type: string; nom: string; tel: string; mail: string };
 type Hours = { open: string; close: string } | null;
@@ -65,7 +66,7 @@ const PHONE = <><path d="M5 4.5 C5 4.5 7 4 8 6 C8.8 7.7 7.5 8.3 7.2 9 C6.8 10 9 
 const CheckIcon = ({ className = "h-3.5 w-3.5" }: { className?: string }) => <Icon className={className} sw={2.4}><path d="M20 6 L9 17 L4 12" /></Icon>;
 
 function Wordmark() {
-  return <span className="font-script text-[22px] leading-none text-[var(--panel-fg)]">linkee</span>;
+  return <LinkeeLogo h={28} light />;
 }
 
 function Card({ title, icon, note, children }: { title?: string; icon?: ReactNode; note?: string; children: ReactNode }) {
@@ -505,7 +506,7 @@ export default function EspaceBeneficiairePage() {
     return (
       <div className="flex min-h-screen items-center justify-center p-4">
         <div className="w-full max-w-[380px] rounded-[28px] bg-[var(--card)] px-7 py-8 text-center shadow-[var(--shadow)]">
-          <span className="font-script text-[32px] leading-none">linkee</span>
+          <LinkeeLogo h={40} />
           <h1 className="mt-4 font-display text-[22px] font-black">Aucune association rattachée</h1>
           <p className="mt-2 text-[13px] leading-relaxed text-[var(--slate)]">Ce compte n&apos;est relié à aucune association pour l&apos;instant. Contactez votre référent Linkee.</p>
           <button type="button" onClick={logout} className="mt-5 w-full rounded-[40px] bg-[var(--navy-deep)] py-3 font-display text-base font-bold text-[var(--panel-fg)]">Se déconnecter</button>
