@@ -56,7 +56,7 @@ export default function StockPage() {
   const supabase = useMemo(() => createClient(), []);
   const [stock, setStock] = useState<StockItem[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const { cityId, city, depotAddress, role } = useCity(); // the page remounts when the city changes
+  const { cityId, city, stockAddress, role } = useCity(); // the page remounts when the city changes
   const [undoingId, setUndoingId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -319,7 +319,7 @@ export default function StockPage() {
   return (
     <div>
       <h1 className="font-display text-[32px] leading-none font-black">Stock</h1>
-      <p className="mb-[18px] text-[13.5px] text-[var(--slate)]">Entrepôt Linkee {city ? `de ${city.name}` : ""} — {depotAddress}.</p>
+      <p className="mb-[18px] text-[13.5px] text-[var(--slate)]">Entrepôt Linkee {city ? `de ${city.name}` : ""} — {stockAddress}.</p>
 
       <div className="mb-[18px] flex flex-wrap gap-3.5">
         <div className="min-w-[130px] rounded-[14px] border border-[var(--border)] bg-[var(--card)] px-[18px] py-3 shadow-[var(--shadow)]">

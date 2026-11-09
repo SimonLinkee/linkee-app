@@ -765,10 +765,13 @@ export default function JourneePage() {
       const rows = (col.data ?? []) as unknown as DbStop[];
       const presets = ((stock.data ?? []) as { id: string; name: string; category: string | null; colis: number; upc: number; grammage: number | string }[]).map((s) => ({ id: s.id, name: s.name, category: s.category ?? "", colis: s.colis, upc: s.upc, grammage: Number(s.grammage) }));
       // the depot (start of the tour, stock pick-up) is set per city
-      const cityRow = prof.data?.city_id ? await supabase.from("cities").select("depot_address").eq("id", prof.data.city_id).maybeSingle() : null;
-      const depotAddr = (cityRow?.data as { depot_address?: string | null } | null)?.depot_address || DEFAULT_DEPOT_ADDRESS;
+      let cityRow = prof.data?.city_id ? await supabase.from("cities").select("depot_address,stock_address").eq("id", prof.data.city_id).maybeSingle() : null;
+      if (prof.data?.city_id && cityRow?.error) cityRow = await supabase.from("cities").select("depot_address").eq("id", prof.data.city_id).maybeSingle(); // avant la migration 072
+      const cityAddr = cityRow?.data as { depot_address?: string | null; stock_address?: string | null } | null;
+      const depotAddr = cityAddr?.depot_address || DEFAULT_DEPOT_ADDRESS;
+      const stockAddr = cityAddr?.stock_address || depotAddr; // prise / dépose au stock
       setDepotAddr(depotAddr);
-      const builtStops = rows.map((r) => rowToStop(r, rows, depotAddr)).map((s) => (s.kind === "stock" && !s.stockIn ? { ...s, presetItems: presets } : s));
+      const builtStops = rows.map((r) => rowToStop(r, rows, stockAddr)).map((s) => (s.kind === "stock" && !s.stockIn ? { ...s, presetItems: presets } : s));
       setStops(builtStops);
       // sitePhoto stocke un chemin privé (coffre collecte-photos) — on le résout en URL signée pour l'affichage
       const sitePhotoPaths = Array.from(new Set(builtStops.map((s) => s.sitePhoto).filter((p): p is string => !!p)));

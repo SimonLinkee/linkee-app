@@ -254,12 +254,12 @@ const SELECT_DAY =
 
 export default function PlanningPage() {
   const supabase = useMemo(() => createClient(), []);
-  const { cityId, city, depotAddress, role } = useCity(); // the page remounts when the city changes
+  const { cityId, city, depotAddress, stockAddress, role } = useCity(); // the page remounts when the city changes
   const ro = !canAdminCity(role); // le Responsable d'antenne modifie le planning de sa ville (migration 047)
   const DEPOT = { name: DEPOT_NAME, address: depotAddress };
-  const DEPOT_PLACE = depotPlace(depotAddress);
-  const DEPOT_IN_PLACE = depotInPlace(depotAddress);
-  const [places, setPlaces] = useState<Place[]>([depotPlace(depotAddress)]);
+  const DEPOT_PLACE = depotPlace(stockAddress); // prise / dépose au stock : adresse du stock (celle de l'entrepôt si la ville n'en a pas d'autre)
+  const DEPOT_IN_PLACE = depotInPlace(stockAddress);
+  const [places, setPlaces] = useState<Place[]>([depotPlace(stockAddress)]);
   const [view, setView] = useState<"jour" | "semaine">("jour");
   const [currentDate, setCurrentDate] = useState(() => new Date());
   // deep link from the Stock screen: /planning?date=YYYY-MM-DD
@@ -435,7 +435,7 @@ export default function PlanningPage() {
     const { data, error } = await supabase.from("collectes").select(SELECT_DAY).eq("city_id", cityId ?? "").eq("scheduled_date", forIso).eq("source", "planning").order("sort_order");
     if (isoRef.current !== forIso) return; // on a changé de jour entre-temps : ce chargement n'est plus le bon
     if (error) fail("Chargement impossible", error.message);
-    const list = ((data ?? []) as unknown as DbCollecte[]).map((r) => rowToStop(r, depotAddress));
+    const list = ((data ?? []) as unknown as DbCollecte[]).map((r) => rowToStop(r, stockAddress));
     setStops(list);
     setStopsIso(forIso);
     // rows that were never scheduled (fresh copies) get their times written once

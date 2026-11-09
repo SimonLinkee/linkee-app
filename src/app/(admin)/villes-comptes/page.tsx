@@ -22,7 +22,7 @@ function DepotAddressField({ value, onSave }: { value: string; onSave: (v: strin
 }
 
 type Role = "en_attente" | "admin_principal" | "comptabilite" | "admin_local" | "resp_distribution" | "resp_rh" | "logisticien" | "partenaire" | "beneficiaire" | "linker";
-type City = { id: string; name: string; color?: string | null; depot_address?: string | null };
+type City = { id: string; name: string; color?: string | null; depot_address?: string | null; stock_address?: string | null };
 type PartnerLite = { id: string; name: string; city_id: string };
 type BeneficiaryLite = { id: string; name: string; city_id: string };
 type Account = { id: string; name: string; email: string; role: Role; city: string | null; active: boolean; partnerIds: string[]; beneficiaryIds: string[] };
@@ -106,7 +106,7 @@ export default function VillesComptesPage() {
     const { data: auth } = await supabase.auth.getUser();
     setMe(auth.user?.id ?? null);
     const [c, p, b, bu] = await Promise.all([
-      supabase.from("cities").select("id,name,color,depot_address").order("name").then((r) => (r.error ? supabase.from("cities").select("id,name").order("name") : r)), // before migration 011
+      supabase.from("cities").select("id,name,color,depot_address,stock_address").order("name").then((r) => (r.error ? supabase.from("cities").select("id,name,color,depot_address").order("name") : r)).then((r) => (r.error ? supabase.from("cities").select("id,name").order("name") : r)), // before migrations 072 / 011
       supabase.from("partners").select("id,name,city_id").is("deleted_at", null).order("name"),
       supabase.from("beneficiaries").select("id,name,city_id").is("deleted_at", null),
       supabase.from("beneficiary_users").select("profile_id,beneficiary_id"), // absent before migration 030 : tolerated below
@@ -164,7 +164,7 @@ export default function VillesComptesPage() {
 
   const { reloadCities } = useCity();
   const colorOf = (c: City, i: number) => c.color || CITY_PALETTE[i % CITY_PALETTE.length];
-  async function updateCity(id: string, patch: { color?: string; depot_address?: string }) {
+  async function updateCity(id: string, patch: { color?: string; depot_address?: string; stock_address?: string }) {
     setCities((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
     const { error } = await supabase.from("cities").update(patch).eq("id", id);
     if (error) return showToast("Ville non modifiée : " + error.message + " (la migration 011 est-elle passée ?)");
@@ -409,6 +409,11 @@ export default function VillesComptesPage() {
                 <DepotAddressField
                   value={c.depot_address ?? (c.name === "Lyon" ? DEFAULT_DEPOT : "")}
                   onSave={(v) => updateCity(c.id, { depot_address: v })}
+                />
+                <div className="mt-2.5 mb-1 text-[10.5px] font-bold tracking-[0.04em] text-[var(--slate)] uppercase">Adresse du stock (si différente de l&apos;entrepôt)</div>
+                <DepotAddressField
+                  value={c.stock_address ?? ""}
+                  onSave={(v) => updateCity(c.id, { stock_address: v })}
                 />
               </div>
             </div>

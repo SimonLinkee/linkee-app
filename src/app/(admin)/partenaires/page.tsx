@@ -731,7 +731,7 @@ export default function PartenairesPage() {
                   className="cursor-pointer rounded-[40px] border border-[var(--border)] bg-[var(--input-bg)] px-3 py-[5px] text-[12.5px] font-semibold text-[var(--slate)]"
                 >
                   {(current.kind === "partner"
-                    ? ["Boulangerie", "Supermarché", "Traiteur", "Hôtel", "Restauration rapide", "Restauration collective", "Restauration collective Standard", "Traiteur, hôtel et restauration rapide", "Industriel", "Grossiste", "Association", "Evenementiel", "Non alimentaire"]
+                    ? ["Boulangerie", "Supermarché", "Traiteur", "Hôtel", "Restauration rapide", "Restauration collective", "Restauration collective Standard", "Traiteur, hôtel et restauration rapide", "Industriel", "Grossiste", "Producteur", "Association", "Evenementiel", "Non alimentaire"]
                     : ["Distribution Linkee", "Association partenaire"]
                   ).map((c) => (
                     <option key={c}>{c}</option>

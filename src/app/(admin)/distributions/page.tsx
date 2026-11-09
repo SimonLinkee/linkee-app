@@ -502,18 +502,22 @@ export default function DistributionsPage() {
     setSaveState("idle");
     await load();
   }
-  async function prefillFromDay() {
+  // Reprend les collectes réalisées au Planning le jour de la distribution, ou la veille (dayOffset = -1) : les quantités arrivent
+  // dans le tableau et le responsable les ajuste à la main aux quantités réellement distribuées.
+  async function prefillFromDay(dayOffset = 0) {
     if (!draft || !cityId) return;
+    const target = new Date(draft.date + "T12:00:00");
+    target.setDate(target.getDate() + dayOffset);
     const { data } = await supabase
       .from("collectes")
       .select("id,collecte_items!collecte_id(denree,name,kg)")
       .eq("city_id", cityId)
-      .eq("scheduled_date", draft.date)
+      .eq("scheduled_date", isoOf(target))
       .eq("status", "collecte")
       .eq("source", "planning")
       .in("kind", ["partner", "exceptionnel", "demande_client"]);
     const items = ((data ?? []) as unknown as { id: string; collecte_items: { denree: string | null; name: string | null; kg: number | string }[] | null }[]).flatMap((c) => (c.collecte_items ?? []).map((i) => ({ ...i, source_collecte_id: c.id })));
-    if (!items.length) return setMsg("Aucune collecte réalisée ce jour-là pour l'instant.");
+    if (!items.length) return setMsg(dayOffset === 0 ? "Aucune collecte réalisée ce jour-là pour l'instant." : "Aucune collecte réalisée la veille.");
     const lines = await linesFromItems(items);
     edit((d) => ({ ...d, lines: [...d.lines, ...lines] }));
   }
@@ -819,7 +823,10 @@ export default function DistributionsPage() {
                     <p className="text-[11.5px] text-[var(--slate)]">Pré-rempli avec ce qui est livré au planning ce jour-là. Poids = nb colis × poids d&apos;un colis.</p>
                   </div>
                   <div className="flex gap-2">
-                    <button type="button" onClick={prefillFromDay} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--navy)] hover:border-[#2a78d6]">
+                    <button type="button" onClick={() => prefillFromDay(-1)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--navy)] hover:border-[#2a78d6]">
+                      Ajouter les collectes de la veille
+                    </button>
+                    <button type="button" onClick={() => prefillFromDay(0)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--navy)] hover:border-[#2a78d6]">
                       Ajouter les collectes du jour
                     </button>
                     <button type="button" onClick={() => edit((d) => ({ ...d, lines: [...d.lines, blankLine()] }))} className="rounded-[40px] bg-[#2a78d6] px-3.5 py-2 text-[12.5px] font-bold text-white">
@@ -840,7 +847,7 @@ export default function DistributionsPage() {
                     <tbody>
                       {draft.lines.length === 0 && (
                         <tr>
-                          <td colSpan={COLS.length + 1} className="px-4 py-6 text-center text-[12.5px] text-[var(--slate)]">Aucun produit pour l&apos;instant. Ajoute une ligne, ou récupère les collectes du jour.</td>
+                          <td colSpan={COLS.length + 1} className="px-4 py-6 text-center text-[12.5px] text-[var(--slate)]">Aucun produit pour l&apos;instant. Ajoute une ligne, ou récupère les collectes du jour ou de la veille.</td>
                         </tr>
                       )}
                       {draft.lines.map((l, i) => (
