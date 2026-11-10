@@ -17,31 +17,13 @@ const day = (iso: string) => {
 const sum = (items: Item[] | null) => Math.round((items ?? []).reduce((s, i) => s + (Number(i.kg) || 0), 0) * 10) / 10;
 const denrees = (items: Item[] | null) => Array.from(new Set((items ?? []).map((i) => i.denree).filter(Boolean))).join(", ");
 
-/** Photos (vignettes, clic = ouvrir) et fichiers (clic = ouvrir) d'une collecte. */
-function Media({ photos, files }: { photos: string[]; files: TeamFile[] }) {
+/** Liste des fichiers d'une collecte (clic = ouvrir). */
+function FileList({ files }: { files: TeamFile[] }) {
   const supabase = useMemo(() => createClient(), []);
-  const [urls, setUrls] = useState<string[]>([]);
-  useEffect(() => {
-    let live = true;
-    signedUrls(supabase, photos).then((u) => {
-      if (live) setUrls(u);
-    });
-    return () => {
-      live = false;
-    };
-  }, [supabase, photos]);
   return (
     <div className="mt-2 ml-[64px] flex flex-wrap items-start gap-2">
-      {photos.map((p, i) => (
-        <a key={p} href={urls[i] || undefined} target="_blank" rel="noopener noreferrer" title="Ouvrir la photo" className="h-[76px] w-[76px] overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--track)]">
-          {urls[i] && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={urls[i]} alt="Photo de la collecte" className="h-full w-full object-cover" />
-          )}
-        </a>
-      ))}
       {files.map((f) => (
-        <button key={f.path} type="button" onClick={() => void openPrivateFile(supabase, f.path)} title={`Ouvrir ${f.name}`} className="flex max-w-[240px] items-center gap-1 rounded-[10px] border border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[11.5px] font-semibold text-[var(--navy)] hover:border-[var(--turquoise)]">
+        <button key={f.path} type="button" onClick={() => void openPrivateFile(supabase, f.path)} title={`Ouvrir ${f.name}`} className="flex max-w-[260px] items-center gap-1 rounded-[10px] border border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[11.5px] font-semibold text-[var(--navy)] hover:border-[var(--turquoise)]">
           📎 <span className="truncate">{f.name}</span>
         </button>
       ))}
@@ -49,7 +31,70 @@ function Media({ photos, files }: { photos: string[]; files: TeamFile[] }) {
   );
 }
 
-function Line({ r, past, today, files, open, onToggle }: { r: Row; past: boolean; today: string; files: TeamFile[]; open: boolean; onToggle: () => void }) {
+/** Visionneuse de photos : grande photo, précédente / suivante, ouverture dans un nouvel onglet. */
+function PhotoViewer({ title, paths, onClose }: { title: string; paths: string[]; onClose: () => void }) {
+  const supabase = useMemo(() => createClient(), []);
+  const [urls, setUrls] = useState<string[]>([]);
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    let live = true;
+    signedUrls(supabase, paths).then((u) => {
+      if (live) setUrls(u);
+    });
+    return () => {
+      live = false;
+    };
+  }, [supabase, paths]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowRight") setI((x) => Math.min(paths.length - 1, x + 1));
+      if (e.key === "ArrowLeft") setI((x) => Math.max(0, x - 1));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [paths.length, onClose]);
+  const url = urls[i];
+  return (
+    <div className="fixed inset-0 z-[200] flex flex-col bg-black/85 p-4" onClick={onClose} role="dialog" aria-label="Photos de la collecte">
+      <div className="mb-3 flex items-center gap-3 text-white" onClick={(e) => e.stopPropagation()}>
+        <div className="min-w-0 flex-1 truncate text-[14px] font-bold capitalize">
+          {title} · photo {i + 1} / {paths.length}
+        </div>
+        {url && (
+          <a href={url} target="_blank" rel="noopener noreferrer" className="rounded-[40px] border border-white/40 px-3.5 py-1.5 text-[12.5px] font-bold hover:bg-white/10">
+            Ouvrir dans un onglet
+          </a>
+        )}
+        <button type="button" onClick={onClose} className="rounded-[40px] bg-white px-4 py-1.5 text-[12.5px] font-bold text-black">
+          Fermer
+        </button>
+      </div>
+      <div className="relative flex min-h-0 flex-1 items-center justify-center" onClick={(e) => e.stopPropagation()}>
+        {url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={url} alt="Photo de la collecte" className="max-h-full max-w-full rounded-lg object-contain" />
+        ) : (
+          <span className="text-[13px] text-white/80">Chargement…</span>
+        )}
+        {i > 0 && (
+          <button type="button" onClick={() => setI(i - 1)} aria-label="Photo précédente" className="absolute left-0 flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-[22px] text-black">
+            ‹
+          </button>
+        )}
+        {i < paths.length - 1 && (
+          <button type="button" onClick={() => setI(i + 1)} aria-label="Photo suivante" className="absolute right-0 flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-[22px] text-black">
+            ›
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type LineProps = { files: TeamFile[]; open: boolean; onToggle: () => void; onPhotos: () => void; onFile: (f: TeamFile) => void };
+
+function Line({ r, past, today, files, open, onToggle, onPhotos, onFile }: { r: Row; past: boolean; today: string } & LineProps) {
   const d = day(r.scheduled_date);
   const photos = r.photo_paths ?? [];
   let badge = "À venir";
@@ -76,10 +121,10 @@ function Line({ r, past, today, files, open, onToggle }: { r: Row; past: boolean
   } else if (r.scheduled_date === today) {
     badge = "Aujourd'hui";
   }
-  const hasMedia = photos.length > 0 || files.length > 0;
+  const btn = "flex-none rounded-[40px] border-[1.5px] border-[var(--turquoise)] px-3 py-[3px] text-[11.5px] font-bold whitespace-nowrap text-[var(--navy)] hover:brightness-95";
   return (
     <div className="border-b border-[var(--border)] py-2.5 last:border-b-0">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <span className="w-[52px] flex-none text-center">
           <span className="block text-[10px] font-bold text-[var(--slate)] uppercase">{d.dow}</span>
           <span className="block font-display text-[20px] leading-none font-black text-[var(--navy)]">{d.dom}</span>
@@ -88,32 +133,35 @@ function Line({ r, past, today, files, open, onToggle }: { r: Row; past: boolean
             {d.year !== new Date().getFullYear() ? ` ${d.year}` : ""}
           </span>
         </span>
-        <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--slate)]" title={note}>
+        <span className="min-w-[120px] flex-1 truncate text-[12.5px] text-[var(--slate)]" title={note}>
           {note}
         </span>
-        {hasMedia && (
+        {photos.length > 0 && (
+          <button type="button" onClick={onPhotos} title="Consulter les photos de cette collecte" className={`${btn} bg-[var(--input-bg)]`}>
+            📷 Photo{photos.length > 1 ? `s (${photos.length})` : ""}
+          </button>
+        )}
+        {files.length > 0 && (
           <button
             type="button"
-            onClick={onToggle}
-            title="Voir les photos et fichiers de cette collecte"
-            className={`flex-none rounded-[40px] border-[1.5px] px-2.5 py-[3px] text-[11px] font-bold whitespace-nowrap text-[var(--navy)] ${open ? "border-[var(--turquoise)] bg-[var(--input-bg)]" : "border-[var(--border)] hover:border-[var(--turquoise)]"}`}
+            onClick={() => (files.length === 1 ? onFile(files[0]) : onToggle())}
+            title={files.length === 1 ? `Ouvrir ${files[0].name}` : "Voir les fichiers de cette collecte"}
+            className={`${btn} ${open ? "bg-[var(--track)]" : "bg-[var(--input-bg)]"}`}
           >
-            {photos.length > 0 && <>📷 {photos.length}</>}
-            {photos.length > 0 && files.length > 0 && " · "}
-            {files.length > 0 && <>📎 {files.length}</>}
+            📎 Fichier{files.length > 1 ? `s (${files.length})` : ""}
           </button>
         )}
         <span className="flex-none rounded-[40px] px-2.5 py-[5px] text-[10px] font-bold whitespace-nowrap uppercase" style={{ background: bg, color: fg }}>
           {badge}
         </span>
       </div>
-      {open && hasMedia && <Media photos={photos} files={files} />}
+      {open && files.length > 1 && <FileList files={files} />}
     </div>
   );
 }
 
 /** Pilotage (Superadmin, Comptabilité) : quand le tableau de bord est isolé sur un partenaire ou un lieu de dépose,
- * son historique (poids saisi total, photos et fichiers de chaque collecte) passe en tête de page, avec en dessous
+ * son historique (poids saisi total, boutons Photo / Fichier sur chaque collecte) passe en tête de page, avec en dessous
  * ses prochaines collectes / livraisons. Indépendant de la période du tableau de bord : toujours les plus récentes. */
 export default function EntityActivity({ kind, id }: { kind: "partner" | "beneficiary"; id: string }) {
   const supabase = useMemo(() => createClient(), []);
@@ -122,6 +170,7 @@ export default function EntityActivity({ kind, id }: { kind: "partner" | "benefi
   const [all, setAll] = useState(false);
   const [filesBy, setFilesBy] = useState<Record<string, TeamFile[]>>({});
   const [openId, setOpenId] = useState<string | null>(null);
+  const [viewer, setViewer] = useState<{ title: string; paths: string[] } | null>(null);
   const today = isoOf(new Date());
   const isPartner = kind === "partner";
 
@@ -161,16 +210,23 @@ export default function EntityActivity({ kind, id }: { kind: "partner" | "benefi
   const totalKg = Math.round(done.reduce((t, r) => t + sum(r.collecte_items), 0) * 10) / 10;
   const nbPhotos = done.reduce((t, r) => t + (r.photo_paths?.length ?? 0), 0);
   const nbFiles = done.reduce((t, r) => t + (filesBy[r.id]?.length ?? 0), 0);
-  const toggle = (rid: string) => setOpenId((cur) => (cur === rid ? null : rid));
+  const lineProps = (r: Row): LineProps => ({
+    files: filesBy[r.id] ?? [],
+    open: openId === r.id,
+    onToggle: () => setOpenId((cur) => (cur === r.id ? null : r.id)),
+    onPhotos: () => setViewer({ title: new Date(r.scheduled_date + "T00:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }), paths: r.photo_paths ?? [] }),
+    onFile: (f) => void openPrivateFile(supabase, f.path),
+  });
 
   const card = "rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]";
   return (
     <section className="mb-[22px] flex flex-col gap-4">
       {error && <div className="rounded-xl bg-[var(--critical-bg)] px-4 py-3 text-[13px] font-semibold text-[var(--critical)]">Chargement impossible : {error}</div>}
+      {viewer && <PhotoViewer title={viewer.title} paths={viewer.paths} onClose={() => setViewer(null)} />}
 
       <div className={card}>
         <h3 className="mb-0.5 font-display text-[17px] font-extrabold text-[var(--navy)]">Historique des {noun}</h3>
-        <p className="mb-3 text-[11.5px] text-[var(--slate)]">Les plus récentes d&apos;abord · cliquez sur 📷 / 📎 pour voir les photos et fichiers rattachés à chaque {one}</p>
+        <p className="mb-3 text-[11.5px] text-[var(--slate)]">Les plus récentes d&apos;abord · boutons Photo / Fichier sur chaque {one} qui en a</p>
         {rows !== null && done.length > 0 && (
           <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
             {[
@@ -191,7 +247,7 @@ export default function EntityActivity({ kind, id }: { kind: "partner" | "benefi
         ) : history.length === 0 ? (
           <p className="text-[12px] text-[var(--slate)]">Aucun historique pour l&apos;instant.</p>
         ) : (
-          history.slice(0, cap).map((r) => <Line key={r.id} r={r} past today={today} files={filesBy[r.id] ?? []} open={openId === r.id} onToggle={() => toggle(r.id)} />)
+          history.slice(0, cap).map((r) => <Line key={r.id} r={r} past today={today} {...lineProps(r)} />)
         )}
         {history.length > SHOWN && (
           <button type="button" onClick={() => setAll((v) => !v)} className="mt-2 text-[12.5px] font-bold text-[var(--turquoise)]">
@@ -208,7 +264,7 @@ export default function EntityActivity({ kind, id }: { kind: "partner" | "benefi
         ) : upcoming.length === 0 ? (
           <p className="text-[12px] text-[var(--slate)]">Aucune {isPartner ? "collecte planifiée" : "livraison planifiée"} pour l&apos;instant.</p>
         ) : (
-          upcoming.slice(0, SHOWN_ALL).map((r) => <Line key={r.id} r={r} past={false} today={today} files={filesBy[r.id] ?? []} open={openId === r.id} onToggle={() => toggle(r.id)} />)
+          upcoming.slice(0, SHOWN_ALL).map((r) => <Line key={r.id} r={r} past={false} today={today} {...lineProps(r)} />)
         )}
       </div>
     </section>
