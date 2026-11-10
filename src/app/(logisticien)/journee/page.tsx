@@ -1243,6 +1243,9 @@ export default function JourneePage() {
                           <span>{s.name}</span>
                           <PassageBadges passage={s.passage} size={22} />
                         </div>
+                        {!isPause && s.teamNote && (
+                          <div className="mt-1 inline-block max-w-full rounded-lg border border-[#e2b93b] bg-[#fff4c9] px-2.5 py-1.5 text-[13.5px] leading-[1.3] font-semibold text-[#5b4300]">💬 {s.teamNote}</div>
+                        )}
                         <div className="text-[12px] text-[var(--slate)]">{s.cat}</div>
                         {!isPause && !done && dayState === "running" && openIdx !== i && <div className="mt-1 text-[11.5px] font-bold text-[var(--turquoise)]">Touchez pour saisir cet arrêt</div>}
                       </span>
@@ -1252,13 +1255,6 @@ export default function JourneePage() {
                       )}
                     </div>
 
-                    {!isPause && s.teamNote && (
-                      <div className="mt-3 rounded-xl border-[1.5px] border-[#e2b93b] bg-[#fff4c9] px-3 py-2.5 text-[#5b4300]">
-                        <div className="text-[10.5px] font-bold tracking-[0.04em] uppercase">💬 Message de l&apos;équipe</div>
-                        <div className="mt-0.5 text-[14px] leading-[1.35] font-semibold">{s.teamNote}</div>
-                        {s.teamNoteAt && <div className="mt-0.5 text-[11px] opacity-80">ajouté à {new Date(s.teamNoteAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</div>}
-                      </div>
-                    )}
                     {!isPause && (
                     <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--input-bg)] p-2.5">
                       <span className="flex min-w-0 flex-1 items-start gap-2 text-[12.5px] leading-[1.35] font-semibold text-[var(--navy)]">

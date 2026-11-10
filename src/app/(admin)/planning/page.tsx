@@ -1235,6 +1235,14 @@ export default function PlanningPage() {
                           </button>
                         )}
                       </div>
+                      {s.teamNote && noteEdit?.id !== s.id && (
+                        <div
+                          className="mt-1 inline-block max-w-full rounded-lg border border-[#e2b93b] bg-[#fff4c9] px-2 py-1 text-[12px] leading-[1.3] font-semibold text-[#5b4300]"
+                          title={`Visible par le logisticien${s.teamNoteAt ? ` · ajouté à ${new Date(s.teamNoteAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}` : ""}`}
+                        >
+                          💬 {s.teamNote}
+                        </div>
+                      )}
                       <div className="text-[11.5px] text-[var(--slate)]">{s.cat}</div>
                       {(s.kind === "partner" || s.kind === "dropoff" || s.kind === "dechetterie") && s.creneaux && (() => {
                         const todaySlots = slotsForDate(s.creneaux, iso);
@@ -1343,15 +1351,6 @@ export default function PlanningPage() {
                       )}
                     </span>
                   </div>
-                  {s.teamNote && noteEdit?.id !== s.id && (
-                    <div className="mt-1.5 flex items-start gap-2 rounded-xl border border-[#e2b93b] bg-[#fff4c9] px-3 py-2 text-[12.5px] text-[#5b4300]">
-                      <span className="flex-none">💬</span>
-                      <span className="min-w-0 flex-1">
-                        {s.teamNote}
-                        <span className="block text-[11px] opacity-75">Visible par le logisticien{s.teamNoteAt ? ` · ajouté à ${new Date(s.teamNoteAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
-                      </span>
-                    </div>
-                  )}
                   {!ro && noteEdit?.id === s.id && (
                     <div className="mt-1.5 rounded-xl border-[1.5px] border-[#e2b93b] bg-[var(--input-bg)] p-3">
                       <textarea
