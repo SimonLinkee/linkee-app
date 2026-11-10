@@ -828,8 +828,8 @@ export default function EspacePartenairePage() {
                 </div>
                 {site.adminInfo.comment && <div className="mt-3.5 rounded-xl border border-dashed border-[var(--border)] bg-[var(--input-bg)] px-[13px] py-[11px] text-xs leading-[1.5] text-[var(--slate)]">{site.adminInfo.comment}</div>}
               </Card>
-              <Card title="Prochaines collectes" icon={CAL} note="Planifiées par Linkee selon votre créneau habituel.">
-                <UpcomingList site={site} siteKey={siteKey} requests={requests} />
+              <Card title="Demande exceptionnelle" icon={CAL} note="Un volume en plus, hors de votre créneau habituel ? Demandez-le ici. Vos prochaines collectes sont dans « Mon activité » ci-dessous.">
+                {requests.filter((r) => r.site === siteKey).map((r, i) => <CollectRow key={"r" + i} req date={r.date} time={r.time} note={`${r.denree} · ${r.volume || "?"} kg estimés`} badge="Demande client" />)}
                 <ExcForm key={siteKey} siteName={site.name} onSubmit={addRequest} pro={site.benevoleOnly} />
                 {site.benevoleOnly && <AntenneContactNote cityId={site.cityId} />}
               </Card>
