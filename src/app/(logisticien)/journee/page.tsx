@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { signedUrls, uploadPrivatePhoto } from "@/lib/photos";
+import { openPrivateFile, signedUrls, uploadPrivatePhoto, type TeamFile } from "@/lib/photos";
 import { geocode } from "@/lib/geocode";
 import { BAREME_SELECT, SUBCAT_SELECT, UNIT_LABEL, isBaremSub, itemValue, kgFromQuantity, mergeBareme, subMap, type Bareme, type SubCat } from "@/lib/stats";
 import NotificationBell from "@/components/NotificationBell";
@@ -63,6 +63,7 @@ type Stop = {
   stockIn?: boolean; // arrêt « Dépôt stock » = dépose au stock (les denrées déposées créent des lignes de stock)
   teamNote?: string | null; // commentaire d'équipe « à la volée » écrit depuis le Planning (migration 073)
   teamNoteAt?: string | null;
+  teamFiles?: TeamFile[]; // fichiers joints par l'équipe depuis le Planning (migration 074)
   passage?: Passage; // partner's "Checklist de passage" (key, isothermal boxes, containers rotation)
   phones: StopPhone[]; // numéros à appeler pour cet arrêt (contacts de la fiche) : un bouton « appeler » chacun
   result?: StopResult;
@@ -921,9 +922,15 @@ export default function JourneePage() {
     const ids = stopIdsKey.split(",");
     const refresh = async () => {
       const { data, error } = await supabase.from("collectes").select("id,team_note,team_note_at").in("id", ids);
-      if (error || !data) return; // sans la migration 073, pas de commentaires
-      const m = new Map((data as { id: string; team_note: string | null; team_note_at: string | null }[]).map((r) => [r.id, r]));
-      setStops((prev) => (prev.some((s) => (m.get(s.id)?.team_note ?? null) !== (s.teamNote ?? null)) ? prev.map((s) => { const r = m.get(s.id); return r ? { ...s, teamNote: r.team_note, teamNoteAt: r.team_note_at } : s; }) : prev));
+      if (!error && data) { // sans la migration 073, pas de commentaires
+        const m = new Map((data as { id: string; team_note: string | null; team_note_at: string | null }[]).map((r) => [r.id, r]));
+        setStops((prev) => (prev.some((s) => (m.get(s.id)?.team_note ?? null) !== (s.teamNote ?? null)) ? prev.map((s) => { const r = m.get(s.id); return r ? { ...s, teamNote: r.team_note, teamNoteAt: r.team_note_at } : s; }) : prev));
+      }
+      const fr = await supabase.from("collectes").select("id,team_files").in("id", ids);
+      if (!fr.error && fr.data) { // sans la migration 074, pas de fichiers
+        const fm = new Map((fr.data as { id: string; team_files: TeamFile[] | null }[]).map((r) => [r.id, r.team_files ?? []]));
+        setStops((prev) => (prev.some((s) => (fm.get(s.id) ?? []).length !== (s.teamFiles ?? []).length) ? prev.map((s) => ({ ...s, teamFiles: fm.get(s.id) ?? s.teamFiles ?? [] })) : prev));
+      }
     };
     void refresh();
     const t = window.setInterval(refresh, 30000);
@@ -1245,6 +1252,24 @@ export default function JourneePage() {
                         </div>
                         {!isPause && s.teamNote && (
                           <div className="mt-1 inline-block max-w-full rounded-lg border border-[#e2b93b] bg-[#fff4c9] px-2.5 py-1.5 text-[13.5px] leading-[1.3] font-semibold text-[#5b4300]">💬 {s.teamNote}</div>
+                        )}
+                        {!isPause && (s.teamFiles ?? []).length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            {(s.teamFiles ?? []).map((f) => (
+                              <button
+                                key={f.path}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void openPrivateFile(supabase, f.path).then((err) => err && showToast("Ouverture impossible : " + err));
+                                }}
+                                className="flex max-w-full min-h-[40px] items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-1.5 text-left text-[13px] font-semibold text-[var(--navy)]"
+                              >
+                                <span>📎</span>
+                                <span className="truncate">{f.name}</span>
+                              </button>
+                            ))}
+                          </div>
                         )}
                         <div className="text-[12px] text-[var(--slate)]">{s.cat}</div>
                         {!isPause && !done && dayState === "running" && openIdx !== i && <div className="mt-1 text-[11.5px] font-bold text-[var(--turquoise)]">Touchez pour saisir cet arrêt</div>}

@@ -31,3 +31,29 @@ export async function signedUrls(supabase: SupabaseClient, paths: string[]): Pro
   const { data } = await supabase.storage.from("collecte-photos").createSignedUrls(paths, 3600);
   return paths.map((_, i) => data?.[i]?.signedUrl ?? ""); // same order as `paths`, "" when a link could not be made
 }
+
+export type TeamFile = { path: string; name: string; size: number; mime: string; at: string };
+export const MAX_TEAM_FILE_BYTES = 20 * 1024 * 1024;
+
+/** Uploads any file (PDF, Word, Excel, image…) as is to the private "collecte-photos" bucket. Returns its description, or throws. */
+export async function uploadPrivateFile(supabase: SupabaseClient, folder: string, file: File): Promise<TeamFile> {
+  if (file.size > MAX_TEAM_FILE_BYTES) throw new Error(`« ${file.name} » dépasse 20 Mo.`);
+  const safe = file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w.\-]+/g, "_").slice(-80);
+  const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${safe}`;
+  const { error } = await supabase.storage.from("collecte-photos").upload(path, file, { contentType: file.type || undefined });
+  if (error) throw new Error(error.message);
+  return { path, name: file.name, size: file.size, mime: file.type || "", at: new Date().toISOString() };
+}
+
+/** Opens a private file in a new tab (temporary link, 5 min). Returns an error message, or null. */
+export async function openPrivateFile(supabase: SupabaseClient, path: string): Promise<string | null> {
+  const w = window.open("", "_blank");
+  const { data, error } = await supabase.storage.from("collecte-photos").createSignedUrl(path, 300);
+  if (error || !data) {
+    w?.close();
+    return error?.message ?? "fichier introuvable";
+  }
+  if (w) w.location.assign(data.signedUrl);
+  else window.open(data.signedUrl, "_blank");
+  return null;
+}

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { geocode, toKm, type LatLng } from "@/lib/geocode";
-import { signedUrls } from "@/lib/photos";
+import { openPrivateFile, uploadPrivateFile, type TeamFile, signedUrls } from "@/lib/photos";
 import { useCity } from "@/components/admin/CityContext";
 import { PassageBadges, type Passage } from "@/components/PassageIcons";
 import AdminStopModal from "@/components/planning/AdminStopModal";
@@ -40,6 +40,7 @@ type Stop = {
   stockIn?: boolean; // arrêt « Dépôt stock » = dépose au stock (et non prise)
   teamNote?: string | null; // commentaire d'équipe « à la volée », visible tout de suite par le logisticien (migration 073)
   teamNoteAt?: string | null;
+  teamFiles?: TeamFile[]; // fichiers joints à l'arrêt par l'équipe (migration 074)
 };
 type StopC = Stop & { coords: Coords };
 type EnrichedStop = StopC & { scheduledTime: string | null; travelFromPrev: number; travelKmFromPrev: number; arrivalMin?: number; waitMin?: number };
@@ -441,6 +442,7 @@ export default function PlanningPage() {
     setStops(list);
     setStopsIso(forIso);
     void loadTeamNotes(forIso);
+    void loadTeamFiles(forIso);
     // rows that were never scheduled (fresh copies) get their times written once
     if ((data ?? []).some((r) => (r as { scheduled_time: string | null }).scheduled_time === null && (r as { status: string }).status !== "annule")) dirty.current = true;
     setLoadingDay(false);
@@ -452,6 +454,48 @@ export default function PlanningPage() {
     if (error || !data || isoRef.current !== forIso) return; // sans la migration 073, pas de commentaires : le planning fonctionne comme avant
     const m = new Map((data as { id: string; team_note: string | null; team_note_at: string | null }[]).map((r) => [r.id, r]));
     setStops((prev) => prev.map((s) => (m.has(s.id) ? { ...s, teamNote: m.get(s.id)!.team_note, teamNoteAt: m.get(s.id)!.team_note_at } : s)));
+  }
+  const [fileEdit, setFileEdit] = useState<string | null>(null);
+  const [fileBusy, setFileBusy] = useState(false);
+  const fmtFileSize = (b: number) => (b > 1048576 ? `${(b / 1048576).toFixed(1).replace(".", ",")} Mo` : `${Math.max(1, Math.round(b / 1024))} Ko`);
+  async function loadTeamFiles(forIso: string) {
+    const { data, error } = await supabase.from("collectes").select("id,team_files").eq("city_id", cityId ?? "").eq("scheduled_date", forIso).eq("source", "planning").neq("team_files", "[]");
+    if (error || !data || isoRef.current !== forIso) return; // sans la migration 074, pas de fichiers : le planning fonctionne comme avant
+    const m = new Map((data as { id: string; team_files: TeamFile[] | null }[]).map((r) => [r.id, r.team_files ?? []]));
+    setStops((prev) => prev.map((s) => (m.has(s.id) ? { ...s, teamFiles: m.get(s.id) } : s)));
+  }
+  async function saveTeamFiles(id: string, files: TeamFile[]) {
+    const { error } = await supabase.from("collectes").update({ team_files: files }).eq("id", id);
+    if (error) {
+      fail("Fichier non enregistré", error.message + (error.message.includes("team_files") ? " (la migration 074 est-elle passée ?)" : ""));
+      return false;
+    }
+    setStops((prev) => prev.map((s) => (s.id === id ? { ...s, teamFiles: files } : s))); // pas d'editStops : rien à réécrire dans la tournée
+    return true;
+  }
+  async function addTeamFiles(stop: Stop, list: FileList | null) {
+    if (!list?.length || !cityId) return;
+    const current = stop.teamFiles ?? [];
+    if (current.length + list.length > 10) return showToast("10 fichiers maximum par arrêt.");
+    setFileBusy(true);
+    const added: TeamFile[] = [];
+    for (const f of Array.from(list)) {
+      try {
+        added.push(await uploadPrivateFile(supabase, `${cityId}/${stop.id}/files`, f));
+      } catch (e) {
+        fail("Fichier non envoyé", (e as Error).message);
+      }
+    }
+    if (added.length && (await saveTeamFiles(stop.id, [...current, ...added]))) showToast(added.length > 1 ? "Fichiers ajoutés : le logisticien les voit sur son arrêt." : "Fichier ajouté : le logisticien le voit sur son arrêt.");
+    setFileBusy(false);
+  }
+  async function removeTeamFile(stop: Stop, f: TeamFile) {
+    if (!window.confirm(`Retirer le fichier « ${f.name} » de cet arrêt ?`)) return;
+    if (await saveTeamFiles(stop.id, (stop.teamFiles ?? []).filter((x) => x.path !== f.path))) await supabase.storage.from("collecte-photos").remove([f.path]);
+  }
+  async function openTeamFile(path: string) {
+    const err = await openPrivateFile(supabase, path);
+    if (err) fail("Ouverture impossible", err);
   }
   async function saveTeamNote(id: string, text: string) {
     const v = text.trim().slice(0, 200);
@@ -1243,6 +1287,16 @@ export default function PlanningPage() {
                           💬 {s.teamNote}
                         </div>
                       )}
+                      {(s.teamFiles ?? []).length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {(s.teamFiles ?? []).map((f) => (
+                            <button key={f.path} type="button" onClick={(e) => { e.stopPropagation(); void openTeamFile(f.path); }} title={`Ouvrir ${f.name}`} className="flex max-w-[220px] items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--input-bg)] px-2 py-1 text-[11.5px] font-semibold text-[var(--navy)] hover:border-[var(--turquoise)]">
+                              <span>📎</span>
+                              <span className="truncate">{f.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <div className="text-[11.5px] text-[var(--slate)]">{s.cat}</div>
                       {(s.kind === "partner" || s.kind === "dropoff" || s.kind === "dechetterie") && s.creneaux && (() => {
                         const todaySlots = slotsForDate(s.creneaux, iso);
@@ -1286,6 +1340,19 @@ export default function PlanningPage() {
                           className={`flex h-[28px] flex-none items-center gap-1 rounded-full border-[1.5px] px-3 text-[11.5px] font-bold whitespace-nowrap hover:brightness-95 ${s.teamNote ? "border-[#e2b93b] bg-[#fff4c9] text-[#5b4300]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--navy)]"}`}
                         >
                           💬 {s.teamNote ? "Modifier" : "Commentaire"}
+                        </button>
+                      )}
+                      {!ro && s.kind !== "pause" && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFileEdit(fileEdit === s.id ? null : s.id);
+                          }}
+                          title="Joindre un fichier (PDF, Word, Excel, image…) : le logisticien le voit sur son arrêt"
+                          className={`flex h-[28px] flex-none items-center gap-1 rounded-full border-[1.5px] px-3 text-[11.5px] font-bold whitespace-nowrap hover:brightness-95 ${(s.teamFiles ?? []).length ? "border-[var(--turquoise)] bg-[var(--input-bg)] text-[var(--navy)]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--navy)]"}`}
+                        >
+                          📎 {(s.teamFiles ?? []).length ? `Fichiers (${(s.teamFiles ?? []).length})` : "Fichier"}
                         </button>
                       )}
                       {!ro && !(s.kind === "stock" && !s.stockIn && done) && s.kind !== "pause" && (
@@ -1373,6 +1440,27 @@ export default function PlanningPage() {
                         <span className="ml-auto text-[11.5px] text-[var(--muted)]">{noteEdit.text.length} / 200</span>
                       </div>
                       <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">Rattaché à cet arrêt de ce jour uniquement : il reste affiché au logisticien tant que tu ne le retires pas.</p>
+                    </div>
+                  )}
+                  {!ro && fileEdit === s.id && (
+                    <div className="mt-1.5 rounded-xl border-[1.5px] border-[var(--turquoise)] bg-[var(--input-bg)] p-3">
+                      <div className="mb-2 text-[12.5px] font-bold text-[var(--navy)]">Fichiers de cet arrêt</div>
+                      {(s.teamFiles ?? []).length === 0 && <p className="mb-2 text-[12px] text-[var(--slate)]">Aucun fichier joint pour l&apos;instant.</p>}
+                      {(s.teamFiles ?? []).map((f) => (
+                        <div key={f.path} className="flex items-center gap-2 border-t border-[var(--border)] py-1.5 first:border-t-0">
+                          <button type="button" onClick={() => void openTeamFile(f.path)} className="min-w-0 flex-1 text-left">
+                            <span className="block truncate text-[12.5px] font-semibold text-[var(--navy)] hover:text-[var(--turquoise)]">📎 {f.name}</span>
+                            <span className="block text-[11px] text-[var(--slate)]">{fmtFileSize(f.size)}</span>
+                          </button>
+                          <button type="button" onClick={() => void removeTeamFile(s, f)} title="Retirer ce fichier" className="h-7 w-7 flex-none rounded-full text-[var(--slate)] hover:bg-[var(--critical-bg)] hover:text-[var(--critical)]">×</button>
+                        </div>
+                      ))}
+                      <label className={`mt-2 inline-flex cursor-pointer items-center gap-1.5 rounded-[40px] bg-[var(--navy-deep)] px-4 py-1.5 text-[12.5px] font-bold text-[var(--panel-fg)] ${fileBusy ? "opacity-60" : ""}`}>
+                        {fileBusy ? "Envoi…" : "+ Ajouter un fichier"}
+                        <input type="file" multiple hidden disabled={fileBusy} onChange={(e) => { const list = e.target.files; void addTeamFiles(s, list).then(() => { e.target.value = ""; }); }} />
+                      </label>
+                      <button type="button" onClick={() => setFileEdit(null)} className="ml-2 rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-1.5 text-[12.5px] font-semibold text-[var(--slate)]">Fermer</button>
+                      <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">PDF, Word, Excel, image… 20 Mo maximum par fichier, 10 par arrêt. Le logisticien les ouvre depuis son arrêt.</p>
                     </div>
                   )}
                 </div>
