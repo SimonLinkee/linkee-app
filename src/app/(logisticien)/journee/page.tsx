@@ -61,6 +61,8 @@ type Stop = {
   presetItems?: { id: string; name: string; category: string; colis: number; upc: number; grammage: number }[];
   planned?: { id: string; name: string; colis: number }[]; // stock outflow planned by the admin (pick-up stop)
   stockIn?: boolean; // arrêt « Dépôt stock » = dépose au stock (les denrées déposées créent des lignes de stock)
+  teamNote?: string | null; // commentaire d'équipe « à la volée » écrit depuis le Planning (migration 073)
+  teamNoteAt?: string | null;
   passage?: Passage; // partner's "Checklist de passage" (key, isothermal boxes, containers rotation)
   phones: StopPhone[]; // numéros à appeler pour cet arrêt (contacts de la fiche) : un bouton « appeler » chacun
   result?: StopResult;
@@ -913,6 +915,26 @@ export default function JourneePage() {
     if (error) showToast("Montant non enregistré : " + error.message);
   }
 
+  const stopIdsKey = stops.map((s) => s.id).join(",");
+  useEffect(() => {
+    if (!stopIdsKey) return;
+    const ids = stopIdsKey.split(",");
+    const refresh = async () => {
+      const { data, error } = await supabase.from("collectes").select("id,team_note,team_note_at").in("id", ids);
+      if (error || !data) return; // sans la migration 073, pas de commentaires
+      const m = new Map((data as { id: string; team_note: string | null; team_note_at: string | null }[]).map((r) => [r.id, r]));
+      setStops((prev) => (prev.some((s) => (m.get(s.id)?.team_note ?? null) !== (s.teamNote ?? null)) ? prev.map((s) => { const r = m.get(s.id); return r ? { ...s, teamNote: r.team_note, teamNoteAt: r.team_note_at } : s; }) : prev));
+    };
+    void refresh();
+    const t = window.setInterval(refresh, 30000);
+    const onVisible = () => document.visibilityState === "visible" && void refresh();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [stopIdsKey, supabase]);
+
   async function finishStop(i: number, result: StopResult, status: "collecte" | "annule") {
     const s = stops[i];
     let movementId: string | null = null;
@@ -1230,6 +1252,13 @@ export default function JourneePage() {
                       )}
                     </div>
 
+                    {!isPause && s.teamNote && (
+                      <div className="mt-3 rounded-xl border-[1.5px] border-[#e2b93b] bg-[#fff4c9] px-3 py-2.5 text-[#5b4300]">
+                        <div className="text-[10.5px] font-bold tracking-[0.04em] uppercase">💬 Message de l&apos;équipe</div>
+                        <div className="mt-0.5 text-[14px] leading-[1.35] font-semibold">{s.teamNote}</div>
+                        {s.teamNoteAt && <div className="mt-0.5 text-[11px] opacity-80">ajouté à {new Date(s.teamNoteAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</div>}
+                      </div>
+                    )}
                     {!isPause && (
                     <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--input-bg)] p-2.5">
                       <span className="flex min-w-0 flex-1 items-start gap-2 text-[12.5px] leading-[1.35] font-semibold text-[var(--navy)]">

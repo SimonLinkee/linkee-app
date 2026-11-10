@@ -38,6 +38,8 @@ type Stop = {
   passage?: Passage;
   creneaux?: Creneaux;
   stockIn?: boolean; // arrêt « Dépôt stock » = dépose au stock (et non prise)
+  teamNote?: string | null; // commentaire d'équipe « à la volée », visible tout de suite par le logisticien (migration 073)
+  teamNoteAt?: string | null;
 };
 type StopC = Stop & { coords: Coords };
 type EnrichedStop = StopC & { scheduledTime: string | null; travelFromPrev: number; travelKmFromPrev: number; arrivalMin?: number; waitMin?: number };
@@ -438,9 +440,26 @@ export default function PlanningPage() {
     const list = ((data ?? []) as unknown as DbCollecte[]).map((r) => rowToStop(r, stockAddress));
     setStops(list);
     setStopsIso(forIso);
+    void loadTeamNotes(forIso);
     // rows that were never scheduled (fresh copies) get their times written once
     if ((data ?? []).some((r) => (r as { scheduled_time: string | null }).scheduled_time === null && (r as { status: string }).status !== "annule")) dirty.current = true;
     setLoadingDay(false);
+  }
+  const NOTE_SUGGESTIONS = ["Appeler avant d'arriver", "Prévoir plus de caisses", "Passer après 11h", "Se garer côté quai", "Le contact a changé"];
+  const [noteEdit, setNoteEdit] = useState<{ id: string; text: string } | null>(null);
+  async function loadTeamNotes(forIso: string) {
+    const { data, error } = await supabase.from("collectes").select("id,team_note,team_note_at").eq("city_id", cityId ?? "").eq("scheduled_date", forIso).eq("source", "planning").not("team_note", "is", null);
+    if (error || !data || isoRef.current !== forIso) return; // sans la migration 073, pas de commentaires : le planning fonctionne comme avant
+    const m = new Map((data as { id: string; team_note: string | null; team_note_at: string | null }[]).map((r) => [r.id, r]));
+    setStops((prev) => prev.map((s) => (m.has(s.id) ? { ...s, teamNote: m.get(s.id)!.team_note, teamNoteAt: m.get(s.id)!.team_note_at } : s)));
+  }
+  async function saveTeamNote(id: string, text: string) {
+    const v = text.trim().slice(0, 200);
+    const { error } = await supabase.from("collectes").update({ team_note: v || null }).eq("id", id);
+    if (error) return fail("Commentaire non enregistré", error.message + (error.message.includes("team_note") ? " (la migration 073 est-elle passée ?)" : ""));
+    setStops((prev) => prev.map((s) => (s.id === id ? { ...s, teamNote: v || null, teamNoteAt: v ? new Date().toISOString() : null } : s))); // pas d'editStops : rien à réécrire dans la tournée
+    setNoteEdit(null);
+    showToast(v ? "Commentaire envoyé : le logisticien le voit sur son arrêt." : "Commentaire retiré.");
   }
   async function loadRequests() {
     const { data } = await supabase
@@ -1248,6 +1267,19 @@ export default function PlanningPage() {
                       <small className="text-[11px] text-[var(--slate)]">min</small>
                     </span>
                     <span className="flex flex-none gap-1.5">
+                      {!ro && s.kind !== "pause" && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setNoteEdit(noteEdit?.id === s.id ? null : { id: s.id, text: s.teamNote ?? "" });
+                          }}
+                          title="Écrire un commentaire : le logisticien le voit tout de suite sur son arrêt"
+                          className={`flex h-[28px] flex-none items-center gap-1 rounded-full border-[1.5px] px-3 text-[11.5px] font-bold whitespace-nowrap hover:brightness-95 ${s.teamNote ? "border-[#e2b93b] bg-[#fff4c9] text-[#5b4300]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--navy)]"}`}
+                        >
+                          💬 {s.teamNote ? "Modifier" : "Commentaire"}
+                        </button>
+                      )}
                       {!ro && !(s.kind === "stock" && !s.stockIn && done) && s.kind !== "pause" && (
                         <button
                           type="button"
@@ -1311,6 +1343,39 @@ export default function PlanningPage() {
                       )}
                     </span>
                   </div>
+                  {s.teamNote && noteEdit?.id !== s.id && (
+                    <div className="mt-1.5 flex items-start gap-2 rounded-xl border border-[#e2b93b] bg-[#fff4c9] px-3 py-2 text-[12.5px] text-[#5b4300]">
+                      <span className="flex-none">💬</span>
+                      <span className="min-w-0 flex-1">
+                        {s.teamNote}
+                        <span className="block text-[11px] opacity-75">Visible par le logisticien{s.teamNoteAt ? ` · ajouté à ${new Date(s.teamNoteAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
+                      </span>
+                    </div>
+                  )}
+                  {!ro && noteEdit?.id === s.id && (
+                    <div className="mt-1.5 rounded-xl border-[1.5px] border-[#e2b93b] bg-[var(--input-bg)] p-3">
+                      <textarea
+                        autoFocus
+                        maxLength={200}
+                        value={noteEdit.text}
+                        onChange={(e) => setNoteEdit({ id: s.id, text: e.target.value })}
+                        placeholder="Ex : appeler Maryse avant d'arriver, elle prépare 3 caisses de plus"
+                        className="min-h-[62px] w-full resize-y rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--card)] px-2.5 py-2 text-[13px] font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
+                      />
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {NOTE_SUGGESTIONS.map((x) => (
+                          <button key={x} type="button" onClick={() => setNoteEdit({ id: s.id, text: noteEdit.text.trim() ? `${noteEdit.text.trim()} · ${x}` : x })} className="rounded-full border border-[var(--border)] bg-[var(--card)] px-2.5 py-1 text-[11.5px] font-semibold text-[var(--slate)] hover:border-[var(--turquoise)]">{x}</button>
+                        ))}
+                      </div>
+                      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                        <button type="button" onClick={() => saveTeamNote(s.id, noteEdit.text)} className="rounded-[40px] bg-[var(--navy-deep)] px-4 py-1.5 text-[12.5px] font-bold text-[var(--panel-fg)]">Envoyer au logisticien</button>
+                        {s.teamNote && <button type="button" onClick={() => saveTeamNote(s.id, "")} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-1.5 text-[12.5px] font-semibold text-[var(--critical)]">Retirer</button>}
+                        <button type="button" onClick={() => setNoteEdit(null)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-1.5 text-[12.5px] font-semibold text-[var(--slate)]">Fermer</button>
+                        <span className="ml-auto text-[11.5px] text-[var(--muted)]">{noteEdit.text.length} / 200</span>
+                      </div>
+                      <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">Rattaché à cet arrêt de ce jour uniquement : il reste affiché au logisticien tant que tu ne le retires pas.</p>
+                    </div>
+                  )}
                 </div>
               );
             })}
