@@ -833,7 +833,7 @@ export default function EspacePartenairePage() {
                 <ExcForm key={siteKey} siteName={site.name} onSubmit={addRequest} pro={site.benevoleOnly} />
                 {site.benevoleOnly && <AntenneContactNote cityId={site.cityId} />}
               </Card>
-              {siteKey && <EntityActivity key={siteKey} kind="partner" id={siteKey} media="none" />}
+              {siteKey && <EntityActivity key={siteKey} kind="partner" id={siteKey} />}
               <div className="mt-8 mb-3.5 flex items-center gap-3.5">
                 <h2 className="font-display text-[20px] font-black whitespace-nowrap text-[var(--navy)]">Tableau de bord</h2>
                 <span className="h-px flex-1 bg-[var(--border)]" />

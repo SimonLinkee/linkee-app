@@ -523,7 +523,7 @@ export default function EspaceBeneficiairePage() {
       <div className="mx-auto max-w-[720px] px-4 pt-[18px] pb-16 sm:px-6">
         {tab === "livraisons" && (
           <>
-            <EntityActivity key={currentId} kind="beneficiary" id={currentId} media="photos" />
+            <EntityActivity key={currentId} kind="beneficiary" id={currentId} />
 
             <div className="mt-8 mb-3.5 flex items-center gap-3.5">
               <h2 className="font-display text-[20px] font-black whitespace-nowrap text-[var(--navy)]">Tableau de bord</h2>

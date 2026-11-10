@@ -163,7 +163,7 @@ function Line({ r, past, today, media, files, open, onToggle, onPhotos, onFile }
 /** Pilotage (Superadmin, Comptabilité) : quand le tableau de bord est isolé sur un partenaire ou un lieu de dépose,
  * son historique (poids saisi total, boutons Photo / Fichier sur chaque collecte) passe en tête de page, avec en dessous
  * ses prochaines collectes / livraisons. Indépendant de la période du tableau de bord : toujours les plus récentes. */
-/** `media` : "all" (équipe : photos + fichiers), "photos" (espace bénéficiaire : photos seulement), "none" (espace partenaire). */
+/** `media` : "all" (défaut : boutons Photo et Fichier), "photos" (photos seulement), "none" (aucun bouton). Les droits de lecture des fichiers sont réglés par la base (migrations 039 et 076). */
 export default function EntityActivity({ kind, id, media = "all" }: { kind: "partner" | "beneficiary"; id: string; media?: "all" | "photos" | "none" }) {
   const supabase = useMemo(() => createClient(), []);
   const [rows, setRows] = useState<Row[] | null>(null);
