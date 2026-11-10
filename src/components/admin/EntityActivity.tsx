@@ -206,8 +206,10 @@ export default function EntityActivity({ kind, id }: { kind: "partner" | "benefi
 
   const done = history.filter((r) => r.status === "collecte");
   const totalKg = Math.round(done.reduce((t, r) => t + sum(r.collecte_items), 0) * 10) / 10;
-  const nbPhotos = done.reduce((t, r) => t + (r.photo_paths?.length ?? 0), 0);
-  const nbFiles = done.reduce((t, r) => t + (filesBy[r.id]?.length ?? 0), 0);
+  const failed = history.filter((r) => r.status === "annule").length;
+  const next = upcoming[0];
+  const daysTo = next ? Math.round((new Date(next.scheduled_date + "T00:00:00").getTime() - new Date(today + "T00:00:00").getTime()) / 86400000) : 0;
+  const nd = next ? day(next.scheduled_date) : null;
   const lineProps = (r: Row): LineProps => ({
     files: filesBy[r.id] ?? [],
     open: openId === r.id,
@@ -218,24 +220,23 @@ export default function EntityActivity({ kind, id }: { kind: "partner" | "benefi
 
   const card = "rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]";
   return (
-    <section className="mb-[22px] flex flex-col gap-4">
-      {error && <div className="rounded-xl bg-[var(--critical-bg)] px-4 py-3 text-[13px] font-semibold text-[var(--critical)]">Chargement impossible : {error}</div>}
+    <section className="mb-[22px] grid grid-cols-1 gap-4 lg:grid-cols-4">
+      {error && <div className="rounded-xl bg-[var(--critical-bg)] px-4 py-3 text-[13px] font-semibold text-[var(--critical)] lg:col-span-4">Chargement impossible : {error}</div>}
       {viewer && <PhotoViewer title={viewer.title} paths={viewer.paths} onClose={() => setViewer(null)} />}
 
-      <div className={card}>
+      <div className={`${card} lg:col-span-3`}>
         <h3 className="mb-0.5 font-display text-[17px] font-extrabold text-[var(--navy)]">Historique des {noun}</h3>
         <p className="mb-3 text-[11.5px] text-[var(--slate)]">Les 2 plus récentes · boutons Photo / Fichier sur chaque {one} qui en a</p>
         {rows !== null && done.length > 0 && (
-          <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          <div className="mb-3 grid grid-cols-3 gap-2.5">
             {[
-              [isPartner ? "Collectes réalisées" : "Livraisons réalisées", String(done.length)],
-              ["Poids saisi (total)", `${totalKg.toLocaleString("fr-FR")} kg`],
-              ["Photos", String(nbPhotos)],
-              ["Fichiers", String(nbFiles)],
-            ].map(([l, v]) => (
+              [isPartner ? "Collectes réalisées" : "Livraisons réalisées", String(done.length), "var(--navy)"],
+              ["Poids total saisi", `${totalKg.toLocaleString("fr-FR")} kg`, "var(--navy)"],
+              ["Échecs (annulations)", String(failed), failed > 0 ? "var(--critical)" : "var(--navy)"],
+            ].map(([l, v, c]) => (
               <div key={l} className="rounded-xl bg-[var(--track)] px-3.5 py-2.5">
                 <div className="text-[10.5px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">{l}</div>
-                <div className="font-display text-[19px] font-black text-[var(--navy)]">{v}</div>
+                <div className="font-display text-[19px] font-black" style={{ color: c }}>{v}</div>
               </div>
             ))}
           </div>
@@ -256,21 +257,27 @@ export default function EntityActivity({ kind, id }: { kind: "partner" | "benefi
         )}
       </div>
 
-      <div className={card}>
-        <h3 className="mb-0.5 font-display text-[17px] font-extrabold text-[var(--navy)]">Prochaines {noun}</h3>
-        <p className="mb-2 text-[11.5px] text-[var(--slate)]">La prochaine {one} planifiée{upcoming.length > 1 ? ` · ${upcoming.length} au total` : ""}</p>
-        {rows === null ? (
-          <p className="text-[12px] text-[var(--slate)]">Chargement…</p>
-        ) : upcoming.length === 0 ? (
-          <p className="text-[12px] text-[var(--slate)]">Aucune {isPartner ? "collecte planifiée" : "livraison planifiée"} pour l&apos;instant.</p>
+      <div className={`${card} flex flex-col items-center justify-center text-center`}>
+        <div className="text-[10.5px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">Prochaine {one}</div>
+        {!next || !nd ? (
+          rows === null ? (
+            <p className="mt-2 text-[12px] text-[var(--slate)]">Chargement…</p>
+          ) : (
+            <p className="mt-2 text-[12.5px] text-[var(--slate)]">Aucune {one} planifiée pour l&apos;instant.</p>
+          )
         ) : (
           <>
-            <div className="overflow-y-auto overscroll-contain" style={{ maxHeight: LINE_H }} tabIndex={0} aria-label={`Prochaines ${noun}`}>
-              {upcoming.slice(0, MAX_LINES).map((r) => (
-                <Line key={r.id} r={r} past={false} today={today} {...lineProps(r)} />
-              ))}
+            <div className="mt-1 text-[12px] font-bold text-[var(--slate)] uppercase">{nd.dow}</div>
+            <div className="font-display text-[44px] leading-none font-black text-[var(--navy)]">{nd.dom}</div>
+            <div className="text-[13px] font-bold text-[var(--navy)]">
+              {nd.month}
+              {nd.year !== new Date().getFullYear() ? ` ${nd.year}` : ""}
             </div>
-            {upcoming.length > 1 && <p className="mt-1.5 text-[11px] text-[var(--muted)]">↕ Faites défiler dans le cadre pour voir les {upcoming.length - 1} suivantes</p>}
+            <span className="mt-2 rounded-[40px] px-2.5 py-[4px] text-[10px] font-bold whitespace-nowrap uppercase" style={{ background: "var(--client-req-bg)", color: "var(--client-req)" }}>
+              {next.status === "en_attente" ? "Demande client" : daysTo <= 0 ? "Aujourd'hui" : daysTo === 1 ? "Demain" : `Dans ${daysTo} jours`}
+            </span>
+            {next.scheduled_time && <div className="mt-1.5 text-[11.5px] text-[var(--slate)]">{next.scheduled_time.slice(0, 5)}</div>}
+            {upcoming.length > 1 && <div className="mt-1 text-[11px] text-[var(--muted)]">puis {upcoming.length - 1} autre{upcoming.length > 2 ? "s" : ""} planifiée{upcoming.length > 2 ? "s" : ""}</div>}
           </>
         )}
       </div>
