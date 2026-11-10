@@ -100,7 +100,7 @@ export default function PartnerCollectes({ partnerId, cityId, category, readOnly
       kgByCat[cat] = (kgByCat[cat] ?? 0) + k;
       value += itemValue(it, subsById).value;
     }
-    return { r, kgByCat, value, kg, docs: docs.filter((d) => d.collecte_id === r.id) };
+    return { r, kgByCat, value, kg, docs: docs.filter((d) => d.collecte_id === r.id && !d.category) };
   });
   const done = enriched.filter((e) => e.r.status === "collecte");
   const totalKg = done.reduce((s, e) => s + e.kg, 0);

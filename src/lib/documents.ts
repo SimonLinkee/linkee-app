@@ -8,8 +8,8 @@ export const DOC_MAX_BYTES = 15 * 1024 * 1024;
 const ALLOWED_EXT = ["pdf", "xls", "xlsx", "csv", "png", "jpg", "jpeg", "gif", "webp"];
 export const isAllowedDoc = (name: string) => ALLOWED_EXT.includes((name.split(".").pop() || "").toLowerCase());
 
-export type DocRow = { id: string; partner_id: string | null; beneficiary_id: string | null; name: string; storage_path: string; size_bytes: number | null; created_at: string; source: "admin" | "partenaire" | "beneficiaire"; collecte_id: string | null };
-export const DOC_SELECT = "id,partner_id,beneficiary_id,name,storage_path,size_bytes,created_at,source,collecte_id";
+export type DocRow = { id: string; partner_id: string | null; beneficiary_id: string | null; name: string; storage_path: string; size_bytes: number | null; created_at: string; source: "admin" | "partenaire" | "beneficiaire"; collecte_id: string | null; category: "photo_collecte" | "fichier_arret" | null; team_only: boolean; bucket: string; doc_date: string | null };
+export const DOC_SELECT = "*" // toutes les colonnes : fonctionne aussi tant que la migration 075 (category, team_only, bucket, doc_date) n'est pas passée;
 
 export const fmtSize = (b: number | null) => (b == null ? "" : b < 1024 ? `${b} o` : b < 1024 * 1024 ? `${Math.round(b / 1024)} Ko` : `${(b / 1024 / 1024).toFixed(1)} Mo`);
 
@@ -37,8 +37,9 @@ export async function uploadDocument(
   return data as DocRow;
 }
 
-export async function openDocument(supabase: SupabaseClient, path: string) {
-  const { data, error } = await supabase.storage.from("documents").createSignedUrl(path, 120);
+/** `bucket` : "documents" par défaut ; les photos de collecte et fichiers d'arrêt rangés dans les documents restent dans "collecte-photos". */
+export async function openDocument(supabase: SupabaseClient, path: string, bucket = "documents") {
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 120);
   if (error || !data) throw new Error(error?.message ?? "Ouverture impossible");
   window.open(data.signedUrl, "_blank", "noopener");
 }
