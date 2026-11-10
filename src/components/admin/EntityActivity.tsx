@@ -8,8 +8,8 @@ import { openPrivateFile, signedUrls, type TeamFile } from "@/lib/photos";
 type Item = { denree: string | null; kg: number | string | null };
 type Row = { id: string; scheduled_date: string; scheduled_time: string | null; kind: string; status: string; motif: string | null; source: string | null; photo_paths: string[] | null; collecte_items: Item[] | null };
 
-const SHOWN = 6;
-const SHOWN_ALL = 60;
+const MAX_LINES = 200; // au-delà, on ne charge pas plus : le cadre défile
+const LINE_H = 66; // hauteur approximative d'une ligne (px) : le cadre en montre 2 pour l'historique, 1 pour la prochaine collecte
 const day = (iso: string) => {
   const d = new Date(iso + "T00:00:00");
   return { dow: d.toLocaleDateString("fr-FR", { weekday: "short" }), dom: d.getDate(), month: d.toLocaleDateString("fr-FR", { month: "short" }), year: d.getFullYear() };
@@ -167,7 +167,6 @@ export default function EntityActivity({ kind, id }: { kind: "partner" | "benefi
   const supabase = useMemo(() => createClient(), []);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [all, setAll] = useState(false);
   const [filesBy, setFilesBy] = useState<Record<string, TeamFile[]>>({});
   const [openId, setOpenId] = useState<string | null>(null);
   const [viewer, setViewer] = useState<{ title: string; paths: string[] } | null>(null);
@@ -202,7 +201,6 @@ export default function EntityActivity({ kind, id }: { kind: "partner" | "benefi
   const list = rows ?? [];
   const upcoming = list.filter((r) => (r.status === "todo" || r.status === "en_attente") && r.scheduled_date >= today).sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date) || (a.scheduled_time ?? "").localeCompare(b.scheduled_time ?? ""));
   const history = list.filter((r) => r.status === "collecte" || r.status === "annule" || (r.status === "todo" && r.scheduled_date < today)); // déjà triées du plus récent au plus ancien
-  const cap = all ? SHOWN_ALL : SHOWN;
   const noun = isPartner ? "collectes" : "livraisons";
   const one = isPartner ? "collecte" : "livraison";
 
@@ -226,7 +224,7 @@ export default function EntityActivity({ kind, id }: { kind: "partner" | "benefi
 
       <div className={card}>
         <h3 className="mb-0.5 font-display text-[17px] font-extrabold text-[var(--navy)]">Historique des {noun}</h3>
-        <p className="mb-3 text-[11.5px] text-[var(--slate)]">Les plus récentes d&apos;abord · boutons Photo / Fichier sur chaque {one} qui en a</p>
+        <p className="mb-3 text-[11.5px] text-[var(--slate)]">Les 2 plus récentes · boutons Photo / Fichier sur chaque {one} qui en a</p>
         {rows !== null && done.length > 0 && (
           <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
             {[
@@ -247,24 +245,33 @@ export default function EntityActivity({ kind, id }: { kind: "partner" | "benefi
         ) : history.length === 0 ? (
           <p className="text-[12px] text-[var(--slate)]">Aucun historique pour l&apos;instant.</p>
         ) : (
-          history.slice(0, cap).map((r) => <Line key={r.id} r={r} past today={today} {...lineProps(r)} />)
-        )}
-        {history.length > SHOWN && (
-          <button type="button" onClick={() => setAll((v) => !v)} className="mt-2 text-[12.5px] font-bold text-[var(--turquoise)]">
-            {all ? "Réduire" : `Tout afficher (${Math.min(history.length, SHOWN_ALL)})`}
-          </button>
+          <>
+            <div className="overflow-y-auto overscroll-contain" style={{ maxHeight: LINE_H * 2 }} tabIndex={0} aria-label={`Historique des ${noun}`}>
+              {history.slice(0, MAX_LINES).map((r) => (
+                <Line key={r.id} r={r} past today={today} {...lineProps(r)} />
+              ))}
+            </div>
+            {history.length > 2 && <p className="mt-1.5 text-[11px] text-[var(--muted)]">↕ Faites défiler dans le cadre pour voir les {history.length - 2} autres</p>}
+          </>
         )}
       </div>
 
       <div className={card}>
         <h3 className="mb-0.5 font-display text-[17px] font-extrabold text-[var(--navy)]">Prochaines {noun}</h3>
-        <p className="mb-2 text-[11.5px] text-[var(--slate)]">Planifiées à partir d&apos;aujourd&apos;hui{upcoming.length ? ` · ${upcoming.length}` : ""}</p>
+        <p className="mb-2 text-[11.5px] text-[var(--slate)]">La prochaine {one} planifiée{upcoming.length > 1 ? ` · ${upcoming.length} au total` : ""}</p>
         {rows === null ? (
           <p className="text-[12px] text-[var(--slate)]">Chargement…</p>
         ) : upcoming.length === 0 ? (
           <p className="text-[12px] text-[var(--slate)]">Aucune {isPartner ? "collecte planifiée" : "livraison planifiée"} pour l&apos;instant.</p>
         ) : (
-          upcoming.slice(0, SHOWN_ALL).map((r) => <Line key={r.id} r={r} past={false} today={today} {...lineProps(r)} />)
+          <>
+            <div className="overflow-y-auto overscroll-contain" style={{ maxHeight: LINE_H }} tabIndex={0} aria-label={`Prochaines ${noun}`}>
+              {upcoming.slice(0, MAX_LINES).map((r) => (
+                <Line key={r.id} r={r} past={false} today={today} {...lineProps(r)} />
+              ))}
+            </div>
+            {upcoming.length > 1 && <p className="mt-1.5 text-[11px] text-[var(--muted)]">↕ Faites défiler dans le cadre pour voir les {upcoming.length - 1} suivantes</p>}
+          </>
         )}
       </div>
     </section>
