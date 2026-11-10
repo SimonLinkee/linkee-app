@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import EntityActivity from "@/components/admin/EntityActivity";
 import PartnerDocuments from "@/components/partner/PartnerDocuments";
-import { signedUrls } from "@/lib/photos";
 import RemonteesPanel from "@/components/RemonteesPanel";
 import { RemonteeBadgePill } from "@/components/RemonteesLink";
 import { CAT_KEYS, CAT_LABELS, buildEvo, isoOf, type CatKey } from "@/lib/stats";
@@ -38,17 +38,6 @@ const ACCESS_OPTIONS = [
 ];
 const DENREE_OPTIONS = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie", "Produits surgelés", "Boissons", "Non alimentaire"];
 
-function fmtDateShort(iso: string) {
-  const d = new Date(iso + "T00:00:00");
-  return { dow: d.toLocaleDateString("fr-FR", { weekday: "short" }), dom: d.getDate() };
-}
-function summarizeItems(items: { denree: string | null; kg: number | string | null }[] | null) {
-  const arr = items ?? [];
-  const denree = Array.from(new Set(arr.map((i) => i.denree).filter(Boolean))).join(", ") || "—";
-  const kg = Math.round(arr.reduce((s, i) => s + (Number(i.kg) || 0), 0) * 10) / 10;
-  return { denree, kg };
-}
-
 function Icon({ children, className = "h-4 w-4", sw = 1.8 }: { children: ReactNode; className?: string; sw?: number }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -80,33 +69,6 @@ function Card({ title, icon, note, children }: { title?: string; icon?: ReactNod
       )}
       {note && <p className="mb-3.5 text-[11.5px] text-[var(--slate)]">{note}</p>}
       {children}
-    </div>
-  );
-}
-
-function CollectRow({ date, note, badge, badgeCls, photos }: { date: string; note: string; badge: string; badgeCls?: string; photos?: string[] }) {
-  const d = fmtDateShort(date);
-  return (
-    <div className="flex items-center gap-3.5 border-b border-[var(--border)] py-3 last:border-b-0">
-      <span className="w-16 flex-none text-center">
-        <span className="block text-[10px] font-bold text-[var(--slate)] uppercase">{d.dow}</span>
-        <span className="block font-display text-[22px] font-black">{d.dom}</span>
-      </span>
-      <span className="min-w-0 flex-1">
-        <div className="text-[12.5px] text-[var(--slate)]">{note}</div>
-      </span>
-      {photos && photos.length > 0 && (
-        <span className="flex flex-none -space-x-2">
-          {photos.slice(0, 3).map((url, i) =>
-            url ? (
-              <a key={i} href={url} target="_blank" rel="noreferrer" className="block h-9 w-9 overflow-hidden rounded-[10px] border-2 border-[var(--card)] shadow-[var(--shadow)]">
-                <img src={url} alt="Photo de la dépose" className="h-full w-full object-cover" />
-              </a>
-            ) : null
-          )}
-        </span>
-      )}
-      <span className={`flex-none rounded-[40px] px-2.5 py-[5px] text-[10px] font-bold whitespace-nowrap uppercase ${badgeCls ?? "bg-[var(--track)] text-[var(--slate)]"}`}>{badge}</span>
     </div>
   );
 }
@@ -354,7 +316,6 @@ export default function EspaceBeneficiairePage() {
   const [sendingReq, setSendingReq] = useState(false);
   const [reqSent, setReqSent] = useState(false);
   const [gran, setGran] = useState<"semaine" | "mois" | "tout">("semaine");
-  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
   const ficheT = useRef<number | null>(null);
   const savedT = useRef<number | null>(null);
@@ -382,11 +343,6 @@ export default function EspaceBeneficiairePage() {
       if (list[0]) setCurrentId(list[0].id);
       const cRows = (c.data ?? []) as unknown as CollecteRow[];
       setColRows(cRows);
-      const allPaths = Array.from(new Set(cRows.flatMap((r) => r.photo_paths ?? [])));
-      if (allPaths.length) {
-        const urls = await signedUrls(supabase, allPaths);
-        setPhotoUrls(Object.fromEntries(allPaths.map((p, i) => [p, urls[i]])));
-      }
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -394,10 +350,7 @@ export default function EspaceBeneficiairePage() {
 
   const current = rows.find((r) => r.id === currentId);
   const fiche = (current?.fiche ?? {}) as Fiche;
-  const todayIso = new Date().toISOString().slice(0, 10);
   const myCollectes = colRows.filter((r) => r.beneficiary_id === currentId);
-  const upcoming = myCollectes.filter((r) => r.status === "todo" && r.scheduled_date >= todayIso).sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date));
-  const history = myCollectes.filter((r) => r.status === "collecte").slice(0, 20);
 
   function periodStats(g: "semaine" | "mois" | "tout") {
     const now = new Date();
@@ -516,7 +469,7 @@ export default function EspaceBeneficiairePage() {
   }
 
   const tabs: { k: Tab; l: string; icon: ReactNode }[] = [
-    { k: "livraisons", l: "Mes livraisons", icon: CAL },
+    { k: "livraisons", l: "Mon activité", icon: CAL },
     { k: "fiche", l: "Ma fiche", icon: STORE },
     { k: "documents", l: "Mes documents", icon: DOC },
     { k: "contact", l: "Nous contacter", icon: PHONE },
@@ -570,27 +523,7 @@ export default function EspaceBeneficiairePage() {
       <div className="mx-auto max-w-[720px] px-4 pt-[18px] pb-16 sm:px-6">
         {tab === "livraisons" && (
           <>
-            <Card title="Prochaines livraisons" icon={CAL}>
-              {upcoming.length ? (
-                upcoming.map((r) => {
-                  const s = summarizeItems(r.collecte_items);
-                  return <CollectRow key={r.id} date={r.scheduled_date} note={`${r.scheduled_time ? r.scheduled_time.slice(0, 5) + " · " : ""}${s.denree}`} badge="À venir" badgeCls="bg-[var(--client-req-bg)] text-[var(--client-req)]" />;
-                })
-              ) : (
-                <p className="text-[11.5px] text-[var(--slate)]">Aucune livraison planifiée pour l&apos;instant.</p>
-              )}
-            </Card>
-            <Card title="Historique des livraisons" icon={CLOCK} note="Quantités reçues lors de vos dernières livraisons Linkee, avec la photo prise par le logisticien.">
-              {history.length ? (
-                history.map((r) => {
-                  const s = summarizeItems(r.collecte_items);
-                  const photos = (r.photo_paths ?? []).map((p) => photoUrls[p]).filter(Boolean);
-                  return <CollectRow key={r.id} date={r.scheduled_date} note={s.denree} badge={`${s.kg} kg`} badgeCls="bg-[var(--good-bg)] text-[var(--good)]" photos={photos} />;
-                })
-              ) : (
-                <p className="text-[11.5px] text-[var(--slate)]">Aucun historique pour l&apos;instant.</p>
-              )}
-            </Card>
+            <EntityActivity key={currentId} kind="beneficiary" id={currentId} media="photos" />
 
             <div className="mt-8 mb-3.5 flex items-center gap-3.5">
               <h2 className="font-display text-[20px] font-black whitespace-nowrap text-[var(--navy)]">Tableau de bord</h2>

@@ -92,11 +92,11 @@ function PhotoViewer({ title, paths, onClose }: { title: string; paths: string[]
   );
 }
 
-type LineProps = { files: TeamFile[]; open: boolean; onToggle: () => void; onPhotos: () => void; onFile: (f: TeamFile) => void };
+type LineProps = { media: "all" | "photos" | "none"; files: TeamFile[]; open: boolean; onToggle: () => void; onPhotos: () => void; onFile: (f: TeamFile) => void };
 
-function Line({ r, past, today, files, open, onToggle, onPhotos, onFile }: { r: Row; past: boolean; today: string } & LineProps) {
+function Line({ r, past, today, media, files, open, onToggle, onPhotos, onFile }: { r: Row; past: boolean; today: string } & LineProps) {
   const d = day(r.scheduled_date);
-  const photos = r.photo_paths ?? [];
+  const photos = media === "none" ? [] : r.photo_paths ?? [];
   let badge = "À venir";
   let bg = "var(--client-req-bg)";
   let fg = "var(--client-req)";
@@ -163,7 +163,8 @@ function Line({ r, past, today, files, open, onToggle, onPhotos, onFile }: { r: 
 /** Pilotage (Superadmin, Comptabilité) : quand le tableau de bord est isolé sur un partenaire ou un lieu de dépose,
  * son historique (poids saisi total, boutons Photo / Fichier sur chaque collecte) passe en tête de page, avec en dessous
  * ses prochaines collectes / livraisons. Indépendant de la période du tableau de bord : toujours les plus récentes. */
-export default function EntityActivity({ kind, id }: { kind: "partner" | "beneficiary"; id: string }) {
+/** `media` : "all" (équipe : photos + fichiers), "photos" (espace bénéficiaire : photos seulement), "none" (espace partenaire). */
+export default function EntityActivity({ kind, id, media = "all" }: { kind: "partner" | "beneficiary"; id: string; media?: "all" | "photos" | "none" }) {
   const supabase = useMemo(() => createClient(), []);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -187,7 +188,7 @@ export default function EntityActivity({ kind, id }: { kind: "partner" | "benefi
         setRows(list.filter((r) => (isPartner ? isCollectKind(r.kind) : r.kind === "dropoff")));
       });
     // fichiers joints par l'équipe (migration 074) : requête à part, sans conséquence si la migration n'est pas passée
-    supabase
+    if (media === "all") supabase
       .from("collectes")
       .select("id,team_files")
       .eq(col, id)
@@ -196,7 +197,7 @@ export default function EntityActivity({ kind, id }: { kind: "partner" | "benefi
         if (err || !data) return;
         setFilesBy(Object.fromEntries((data as { id: string; team_files: TeamFile[] | null }[]).map((r) => [r.id, r.team_files ?? []])));
       });
-  }, [supabase, id, isPartner]);
+  }, [supabase, id, isPartner, media]);
 
   const list = rows ?? [];
   const upcoming = list.filter((r) => (r.status === "todo" || r.status === "en_attente") && r.scheduled_date >= today).sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date) || (a.scheduled_time ?? "").localeCompare(b.scheduled_time ?? ""));
@@ -211,7 +212,8 @@ export default function EntityActivity({ kind, id }: { kind: "partner" | "benefi
   const daysTo = next ? Math.round((new Date(next.scheduled_date + "T00:00:00").getTime() - new Date(today + "T00:00:00").getTime()) / 86400000) : 0;
   const nd = next ? day(next.scheduled_date) : null;
   const lineProps = (r: Row): LineProps => ({
-    files: filesBy[r.id] ?? [],
+    media,
+    files: media === "all" ? filesBy[r.id] ?? [] : [],
     open: openId === r.id,
     onToggle: () => setOpenId((cur) => (cur === r.id ? null : r.id)),
     onPhotos: () => setViewer({ title: new Date(r.scheduled_date + "T00:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }), paths: r.photo_paths ?? [] }),
@@ -226,7 +228,7 @@ export default function EntityActivity({ kind, id }: { kind: "partner" | "benefi
 
       <div className={`${card} lg:col-span-3`}>
         <h3 className="mb-0.5 font-display text-[17px] font-extrabold text-[var(--navy)]">Historique des {noun}</h3>
-        <p className="mb-3 text-[11.5px] text-[var(--slate)]">Les 2 plus récentes · boutons Photo / Fichier sur chaque {one} qui en a</p>
+        <p className="mb-3 text-[11.5px] text-[var(--slate)]">Les 2 plus récentes{media === "none" ? "" : ` · boutons Photo${media === "all" ? " / Fichier" : ""} sur chaque ${one} qui en a`}</p>
         {rows !== null && done.length > 0 && (
           <div className="mb-3 grid grid-cols-3 gap-2.5">
             {[

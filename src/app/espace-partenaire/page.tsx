@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { compressImage, signedUrls } from "@/lib/photos";
 import { CAT_LABELS, CO2_SOURCE, DEFAULT_EUR_PER_KG, SUBCAT_SELECT, buildEvo, isCollectKind, isoOf, rse, subMap, summarize, type CatKey, type StatRow, type SubCat } from "@/lib/stats";
 import PartnerCerfa from "@/components/partner/PartnerCerfa";
+import EntityActivity from "@/components/admin/EntityActivity";
 import NotificationBell from "@/components/NotificationBell";
 import RemonteesPanel from "@/components/RemonteesPanel";
 import BetaBadge from "@/components/BetaBadge";
@@ -395,7 +396,7 @@ function EvoChart({ data }: { data: { l: string; v: number }[] }) {
 
 /* ---------------- page ---------------- */
 type Mode = "choice" | "desktop" | "mobile";
-type Tab = "activite" | "fiche" | "dashboard" | "documents" | "valorisation" | "links" | "remontees";
+type Tab = "activite" | "fiche" | "documents" | "valorisation" | "links" | "remontees";
 
 export default function EspacePartenairePage() {
   const router = useRouter();
@@ -768,7 +769,6 @@ export default function EspacePartenairePage() {
   const tabs: { k: Tab; l: string; icon: ReactNode }[] = [
     { k: "activite", l: "Mon activité", icon: CAL },
     { k: "fiche", l: "Ma fiche", icon: STORE },
-    { k: "dashboard", l: "Tableau de bord", icon: GRID },
     { k: "documents", l: "Mes documents", icon: DOC },
     { k: "valorisation", l: "Valorisation RSE", icon: GRID },
     { k: "links", l: "Links Bénévoles", icon: LINKS_ICON },
@@ -812,7 +812,7 @@ export default function EspacePartenairePage() {
         <div className="mx-auto max-w-[1080px] px-4 pt-[26px] pb-[60px] sm:px-6">
           {tab === "activite" && (
             <div>
-              <PanelHead title="Mon activité" sub="Vos prochaines collectes et vos demandes exceptionnelles." />
+              <PanelHead title="Mon activité" sub="Vos prochaines collectes, votre historique et votre tableau de bord." />
               <Card locked title="Informations de collecte" icon={LOCK} tag="Défini par Linkee" note="Ces informations sont renseignées par votre référent Linkee — contactez-le pour toute mise à jour.">
                 <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
                   <Info label="Créneau habituel" value={site.adminInfo.slot} />
@@ -832,6 +832,61 @@ export default function EspacePartenairePage() {
                 <UpcomingList site={site} siteKey={siteKey} requests={requests} />
                 <ExcForm key={siteKey} siteName={site.name} onSubmit={addRequest} pro={site.benevoleOnly} />
                 {site.benevoleOnly && <AntenneContactNote cityId={site.cityId} />}
+              </Card>
+              {siteKey && <EntityActivity key={siteKey} kind="partner" id={siteKey} media="none" />}
+              <div className="mt-8 mb-3.5 flex items-center gap-3.5">
+                <h2 className="font-display text-[20px] font-black whitespace-nowrap text-[var(--navy)]">Tableau de bord</h2>
+                <span className="h-px flex-1 bg-[var(--border)]" />
+              </div>
+              <p className="mb-3 text-[12px] text-[var(--slate)]">Vos volumes et collectes pour le site sélectionné en haut de page.</p>
+              <GranToggle options={[["semaine", "Semaine"], ["mois", "Mois"], ["tout", "Depuis le début"]]} value={gran} onChange={(v) => setGran(v as typeof gran)} />
+              <div className="mb-4 grid grid-cols-1 gap-3.5 sm:grid-cols-3 lg:grid-cols-5">
+                <Tile label="Volume collecté" value={`${fmtNum(dash.volume)} kg`} sub={dash.periodLabel} />
+                <Tile label="Collectes" value={String(dash.collectes)} sub={`${dash.ok} réalisées · ${dash.annulees} annulées`} />
+                <Tile label="Taux de réussite" value={`${dash.collectes ? Math.round((dash.ok / dash.collectes) * 100) : 0} %`} sub="sur la période" />
+                <Tile label={<>Links Bénévoles <BetaBadge /></>} value={String(dash.linksCount)} sub="demandes envoyées" />
+                <Tile label="kg sauvés (Links)" value={`${fmtNum(dash.linksKg)} kg`} sub="livrés par les Linkers" />
+              </div>
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr]">
+                <Card title="Évolution du volume collecté" note="Volume collecté par période"><EvoChart data={dash.evo} /></Card>
+                <Card title="Répartition par type de denrée" note="Sur la période sélectionnée">
+                  <div className="flex flex-col gap-3">
+                    {dash.denrees.map((x) => (
+                      <div key={x.k} className="grid grid-cols-[110px_1fr_64px] items-center gap-2.5">
+                        <span className="text-xs font-semibold">{CAT_LABELS[x.k]}</span>
+                        <span className="h-[11px] overflow-hidden rounded-md bg-[var(--track)]"><span className="block h-full rounded-md" style={{ width: `${Math.round((x.pct / maxPct) * 100)}%`, background: CAT_COLORS[x.k] }} /></span>
+                        <span className="text-right text-[11.5px] font-semibold text-[var(--slate)]">{x.pct}% · {x.kg}kg</span>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              </div>
+              <div className="mt-8 mb-3.5 flex items-center gap-3.5">
+                <h2 className="font-display text-[20px] font-black whitespace-nowrap text-[var(--navy)]">Valorisation RSE</h2>
+                <span className="h-px flex-1 bg-[var(--border)]" />
+              </div>
+              <p className="mb-3 text-[12px] text-[var(--slate)]">
+                Mise à jour à chaque collecte validée ({dash.periodLabel.toLowerCase()}).{dash.customShare > 0 ? ` ${dash.customShare} % du volume est valorisé avec vos prix unitaires, le reste à ${DEFAULT_EUR_PER_KG} €/kg.` : ` Valeur calculée à ${DEFAULT_EUR_PER_KG} €/kg — renseignez vos prix dans l'onglet « Valorisation ».`}
+              </p>
+              <div className="mb-4 grid grid-cols-2 gap-3.5 lg:grid-cols-3">
+                <Tile label="Valeur des dons" value={`${fmtNum(dashR.don)} €`} />
+                <Tile label="Défiscalisation (60 %)" value={`${fmtNum(dashR.defisc)} €`} />
+                <Tile label="Valeur sociale (×2)" value={`${fmtNum(dashR.social)} €`} />
+                <Tile label="Repas distribués" value={fmtNum(dashR.repas)} />
+                <Tile label="CO₂ évité" value={`${fmtNum(dashR.co2)} kg`} />
+                <Tile label="Déchets évités" value={`${fmtNum(dashR.dechets)} kg`} />
+              </div>
+              <Card title="Bilan RSE" note="Génère votre bilan d'impact RSE officiel Linkee (poids sauvé, valeur du don, défiscalisation, impact social et environnemental) — utilisez « Enregistrer en PDF » dans la fenêtre d'impression de votre navigateur.">
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="text-xs text-[var(--slate)]">Du</label>
+                  <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-2.5 py-2 text-[12.5px]" />
+                  <label className="text-xs text-[var(--slate)]">au</label>
+                  <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-2.5 py-2 text-[12.5px]" />
+                  <button type="button" onClick={() => window.print()} className="flex items-center gap-[7px] rounded-[40px] bg-[var(--navy-deep)] px-[18px] py-[11px] font-display text-[13.5px] font-bold text-[var(--panel-fg)]">
+                    <Icon className="h-[15px] w-[15px]" sw={2}><path d="M12 4 V15 M7 10 L12 15 L17 10" /><path d="M4 19 H20" /></Icon>
+                    Générer mon bilan RSE
+                  </button>
+                </div>
               </Card>
             </div>
           )}
@@ -924,61 +979,6 @@ export default function EspacePartenairePage() {
                   )}
                 </button>
                 <input ref={sitePhotoInput} type="file" accept="image/*" hidden onChange={onSitePhoto} />
-              </Card>
-            </div>
-          )}
-
-          {tab === "dashboard" && (
-            <div>
-              <PanelHead title="Tableau de bord" sub="Vos volumes et collectes pour le site sélectionné en haut de page." />
-              <GranToggle options={[["semaine", "Semaine"], ["mois", "Mois"], ["tout", "Depuis le début"]]} value={gran} onChange={(v) => setGran(v as typeof gran)} />
-              <div className="mb-4 grid grid-cols-1 gap-3.5 sm:grid-cols-3 lg:grid-cols-5">
-                <Tile label="Volume collecté" value={`${fmtNum(dash.volume)} kg`} sub={dash.periodLabel} />
-                <Tile label="Collectes" value={String(dash.collectes)} sub={`${dash.ok} réalisées · ${dash.annulees} annulées`} />
-                <Tile label="Taux de réussite" value={`${dash.collectes ? Math.round((dash.ok / dash.collectes) * 100) : 0} %`} sub="sur la période" />
-                <Tile label={<>Links Bénévoles <BetaBadge /></>} value={String(dash.linksCount)} sub="demandes envoyées" />
-                <Tile label="kg sauvés (Links)" value={`${fmtNum(dash.linksKg)} kg`} sub="livrés par les Linkers" />
-              </div>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr]">
-                <Card title="Évolution du volume collecté" note="Volume collecté par période"><EvoChart data={dash.evo} /></Card>
-                <Card title="Répartition par type de denrée" note="Sur la période sélectionnée">
-                  <div className="flex flex-col gap-3">
-                    {dash.denrees.map((x) => (
-                      <div key={x.k} className="grid grid-cols-[110px_1fr_64px] items-center gap-2.5">
-                        <span className="text-xs font-semibold">{CAT_LABELS[x.k]}</span>
-                        <span className="h-[11px] overflow-hidden rounded-md bg-[var(--track)]"><span className="block h-full rounded-md" style={{ width: `${Math.round((x.pct / maxPct) * 100)}%`, background: CAT_COLORS[x.k] }} /></span>
-                        <span className="text-right text-[11.5px] font-semibold text-[var(--slate)]">{x.pct}% · {x.kg}kg</span>
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-              </div>
-              <div className="mt-8 mb-3.5 flex items-center gap-3.5">
-                <h2 className="font-display text-[20px] font-black whitespace-nowrap text-[var(--navy)]">Valorisation RSE</h2>
-                <span className="h-px flex-1 bg-[var(--border)]" />
-              </div>
-              <p className="mb-3 text-[12px] text-[var(--slate)]">
-                Mise à jour à chaque collecte validée ({dash.periodLabel.toLowerCase()}).{dash.customShare > 0 ? ` ${dash.customShare} % du volume est valorisé avec vos prix unitaires, le reste à ${DEFAULT_EUR_PER_KG} €/kg.` : ` Valeur calculée à ${DEFAULT_EUR_PER_KG} €/kg — renseignez vos prix dans l'onglet « Valorisation ».`}
-              </p>
-              <div className="mb-4 grid grid-cols-2 gap-3.5 lg:grid-cols-3">
-                <Tile label="Valeur des dons" value={`${fmtNum(dashR.don)} €`} />
-                <Tile label="Défiscalisation (60 %)" value={`${fmtNum(dashR.defisc)} €`} />
-                <Tile label="Valeur sociale (×2)" value={`${fmtNum(dashR.social)} €`} />
-                <Tile label="Repas distribués" value={fmtNum(dashR.repas)} />
-                <Tile label="CO₂ évité" value={`${fmtNum(dashR.co2)} kg`} />
-                <Tile label="Déchets évités" value={`${fmtNum(dashR.dechets)} kg`} />
-              </div>
-              <Card title="Bilan RSE" note="Génère votre bilan d'impact RSE officiel Linkee (poids sauvé, valeur du don, défiscalisation, impact social et environnemental) — utilisez « Enregistrer en PDF » dans la fenêtre d'impression de votre navigateur.">
-                <div className="flex flex-wrap items-center gap-3">
-                  <label className="text-xs text-[var(--slate)]">Du</label>
-                  <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-2.5 py-2 text-[12.5px]" />
-                  <label className="text-xs text-[var(--slate)]">au</label>
-                  <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-[10px] border border-[var(--border)] bg-[var(--card)] px-2.5 py-2 text-[12.5px]" />
-                  <button type="button" onClick={() => window.print()} className="flex items-center gap-[7px] rounded-[40px] bg-[var(--navy-deep)] px-[18px] py-[11px] font-display text-[13.5px] font-bold text-[var(--panel-fg)]">
-                    <Icon className="h-[15px] w-[15px]" sw={2}><path d="M12 4 V15 M7 10 L12 15 L17 10" /><path d="M4 19 H20" /></Icon>
-                    Générer mon bilan RSE
-                  </button>
-                </div>
               </Card>
             </div>
           )}
