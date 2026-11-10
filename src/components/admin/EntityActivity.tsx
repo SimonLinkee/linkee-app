@@ -169,6 +169,7 @@ export default function EntityActivity({ kind, id, media = "all" }: { kind: "par
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filesBy, setFilesBy] = useState<Record<string, TeamFile[]>>({});
+  const [idx, setIdx] = useState(0); // collecte à venir affichée dans le carré (un clic passe à la suivante)
   const [openId, setOpenId] = useState<string | null>(null);
   const [viewer, setViewer] = useState<{ title: string; paths: string[] } | null>(null);
   const today = isoOf(new Date());
@@ -208,7 +209,8 @@ export default function EntityActivity({ kind, id, media = "all" }: { kind: "par
   const done = history.filter((r) => r.status === "collecte");
   const totalKg = Math.round(done.reduce((t, r) => t + sum(r.collecte_items), 0) * 10) / 10;
   const failed = history.filter((r) => r.status === "annule").length;
-  const next = upcoming[0];
+  const pos = upcoming.length ? idx % upcoming.length : 0;
+  const next = upcoming[pos];
   const daysTo = next ? Math.round((new Date(next.scheduled_date + "T00:00:00").getTime() - new Date(today + "T00:00:00").getTime()) / 86400000) : 0;
   const nd = next ? day(next.scheduled_date) : null;
   const lineProps = (r: Row): LineProps => ({
@@ -259,8 +261,11 @@ export default function EntityActivity({ kind, id, media = "all" }: { kind: "par
         )}
       </div>
 
-      <div className={`${card} flex flex-col items-center justify-center text-center`}>
-        <div className="text-[10.5px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">Prochaine {one}</div>
+      <div
+        className={`${card} flex flex-col items-center justify-center text-center ${upcoming.length > 1 ? "cursor-pointer select-none hover:border-[var(--turquoise)]" : ""}`}
+        {...(upcoming.length > 1 ? { role: "button", tabIndex: 0, title: `Cliquez pour voir la ${one} suivante`, onClick: () => setIdx(pos + 1), onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setIdx(pos + 1); } } } : {})}
+      >
+        <div className="text-[10.5px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">{pos === 0 ? `Prochaine ${one}` : `${one[0].toUpperCase()}${one.slice(1)} suivante`}</div>
         {!next || !nd ? (
           rows === null ? (
             <p className="mt-2 text-[12px] text-[var(--slate)]">Chargement…</p>
@@ -279,7 +284,18 @@ export default function EntityActivity({ kind, id, media = "all" }: { kind: "par
               {next.status === "en_attente" ? "Demande client" : daysTo <= 0 ? "Aujourd'hui" : daysTo === 1 ? "Demain" : `Dans ${daysTo} jours`}
             </span>
             {next.scheduled_time && <div className="mt-1.5 text-[11.5px] text-[var(--slate)]">{next.scheduled_time.slice(0, 5)}</div>}
-            {upcoming.length > 1 && <div className="mt-1 text-[11px] text-[var(--muted)]">puis {upcoming.length - 1} autre{upcoming.length > 2 ? "s" : ""} planifiée{upcoming.length > 2 ? "s" : ""}</div>}
+            {upcoming.length > 1 && (
+              <div className="mt-2 flex flex-col items-center gap-1">
+                <div className="flex gap-1" aria-hidden>
+                  {upcoming.slice(0, 8).map((u, k) => (
+                    <span key={u.id} className={`h-1.5 w-1.5 rounded-full ${k === pos ? "bg-[var(--navy)]" : "bg-[var(--border)]"}`} />
+                  ))}
+                </div>
+                <div className="text-[11px] text-[var(--muted)]">
+                  {pos + 1} / {upcoming.length} · cliquez pour la suivante
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
