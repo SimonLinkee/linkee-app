@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { geocode, toKm, type LatLng } from "@/lib/geocode";
-import { openPrivateFile, uploadPrivateFile, type TeamFile, signedUrls } from "@/lib/photos";
+import { openPrivateFile, uploadPrivateFile, uploadPrivatePhoto, type TeamFile, signedUrls } from "@/lib/photos";
 import { useCity } from "@/components/admin/CityContext";
 import { PassageBadges, type Passage } from "@/components/PassageIcons";
 import AdminStopModal from "@/components/planning/AdminStopModal";
@@ -492,6 +492,48 @@ export default function PlanningPage() {
   async function removeTeamFile(stop: Stop, f: TeamFile) {
     if (!window.confirm(`Retirer le fichier « ${f.name} » de cet arrêt ?`)) return;
     if (await saveTeamFiles(stop.id, (stop.teamFiles ?? []).filter((x) => x.path !== f.path))) await supabase.storage.from("collecte-photos").remove([f.path]);
+  }
+  // Photos ajoutées par l'équipe sur un arrêt (le logisticien, lui, ne peut que prendre des photos).
+  // Elles rejoignent les photos de l'arrêt (collectes.photo_paths) : la base les range aussi dans « Mes photos de collecte » du partenaire, à la date de l'arrêt.
+  const [photoEdit, setPhotoEdit] = useState<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoThumbs, setPhotoThumbs] = useState<Record<string, string>>({});
+  async function loadPhotoThumbs(paths: string[]) {
+    const urls = await signedUrls(supabase, paths);
+    setPhotoThumbs((prev) => ({ ...prev, ...Object.fromEntries(paths.map((p, i) => [p, urls[i]]).filter((e) => e[1])) }));
+  }
+  async function savePhotoPaths(id: string, paths: string[]) {
+    const { error } = await supabase.from("collectes").update({ photo_paths: paths, photos_count: paths.length }).eq("id", id);
+    if (error) {
+      fail("Photo non enregistrée", error.message);
+      return false;
+    }
+    setStops((prev) => prev.map((s) => (s.id === id ? { ...s, photoPaths: paths } : s)));
+    return true;
+  }
+  async function addStopPhotos(stop: Stop, list: FileList | null) {
+    if (!list?.length || !cityId) return;
+    const files = Array.from(list).filter((f) => f.type.startsWith("image/"));
+    if (!files.length) return showToast("Choisis une image (JPG, PNG…). Pour un autre type de document, utilise « Fichier ».");
+    if (stop.photoPaths.length + files.length > 30) return showToast("30 photos maximum par arrêt.");
+    setPhotoBusy(true);
+    const added: string[] = [];
+    for (const f of files) {
+      try {
+        added.push(await uploadPrivatePhoto(supabase, `${cityId}/${stop.id}`, f));
+      } catch (e) {
+        fail("Photo non envoyée", (e as Error).message);
+      }
+    }
+    if (added.length && (await savePhotoPaths(stop.id, [...stop.photoPaths, ...added]))) {
+      void loadPhotoThumbs(added);
+      showToast(added.length > 1 ? "Photos ajoutées : rangées dans les photos de collecte du partenaire." : "Photo ajoutée : rangée dans les photos de collecte du partenaire.");
+    }
+    setPhotoBusy(false);
+  }
+  async function removeStopPhoto(stop: Stop, path: string) {
+    if (!window.confirm("Retirer cette photo de l'arrêt ? Elle disparaîtra aussi des documents du partenaire.")) return;
+    if (await savePhotoPaths(stop.id, stop.photoPaths.filter((x) => x !== path))) await supabase.storage.from("collecte-photos").remove([path]);
   }
   async function openTeamFile(path: string) {
     const err = await openPrivateFile(supabase, path);
@@ -1355,6 +1397,20 @@ export default function PlanningPage() {
                           📎 {(s.teamFiles ?? []).length ? `Fichiers (${(s.teamFiles ?? []).length})` : "Fichier"}
                         </button>
                       )}
+                      {!ro && s.kind !== "pause" && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (photoEdit !== s.id) void loadPhotoThumbs(s.photoPaths);
+                            setPhotoEdit(photoEdit === s.id ? null : s.id);
+                          }}
+                          title="Ajouter une photo à cet arrêt : elle est rangée dans les photos de collecte du partenaire, à la date de l'arrêt"
+                          className={`flex h-[28px] flex-none items-center gap-1 rounded-full border-[1.5px] px-3 text-[11.5px] font-bold whitespace-nowrap hover:brightness-95 ${s.photoPaths.length ? "border-[var(--turquoise)] bg-[var(--input-bg)] text-[var(--navy)]" : "border-[var(--border)] bg-[var(--input-bg)] text-[var(--navy)]"}`}
+                        >
+                          📷 {s.photoPaths.length ? `Photos (${s.photoPaths.length})` : "Photo"}
+                        </button>
+                      )}
                       {!ro && !(s.kind === "stock" && !s.stockIn && done) && s.kind !== "pause" && (
                         <button
                           type="button"
@@ -1442,6 +1498,31 @@ export default function PlanningPage() {
                       <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">Rattaché à cet arrêt de ce jour uniquement : il reste affiché au logisticien tant que tu ne le retires pas.</p>
                     </div>
                   )}
+                  {!ro && photoEdit === s.id && (
+                    <div className="mt-1.5 rounded-xl border-[1.5px] border-[var(--turquoise)] bg-[var(--input-bg)] p-3">
+                      <div className="mb-2 text-[12.5px] font-bold text-[var(--navy)]">Photos de cet arrêt</div>
+                      {s.photoPaths.length === 0 && <p className="mb-2 text-[12px] text-[var(--slate)]">Aucune photo pour l&apos;instant.</p>}
+                      {s.photoPaths.length > 0 && (
+                        <div className="mb-2 flex flex-wrap gap-2">
+                          {s.photoPaths.map((path) => (
+                            <div key={path} className="relative h-[72px] w-[72px] overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--track)]">
+                              {photoThumbs[path] && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={photoThumbs[path]} alt="Photo de l'arrêt" className="h-full w-full object-cover" />
+                              )}
+                              <button type="button" onClick={() => void removeStopPhoto(s, path)} title="Retirer cette photo" className="absolute top-0.5 right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-[12px] leading-none text-white hover:bg-[var(--critical)]">×</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-[40px] bg-[var(--navy-deep)] px-4 py-1.5 text-[12.5px] font-bold text-[var(--panel-fg)] ${photoBusy ? "opacity-60" : ""}`}>
+                        {photoBusy ? "Envoi…" : "+ Ajouter une photo"}
+                        <input type="file" accept="image/*" multiple hidden disabled={photoBusy} onChange={(e) => { const list = e.target.files; void addStopPhotos(s, list).then(() => { e.target.value = ""; }); }} />
+                      </label>
+                      <button type="button" onClick={() => setPhotoEdit(null)} className="ml-2 rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-1.5 text-[12.5px] font-semibold text-[var(--slate)]">Fermer</button>
+                      <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">Les photos sont rangées dans « Mes photos de collecte » du {s.kind === "dropoff" ? "bénéficiaire" : "partenaire"}, à la date de cet arrêt (visibles de l&apos;équipe uniquement).</p>
+                    </div>
+                  )}
                   {!ro && fileEdit === s.id && (
                     <div className="mt-1.5 rounded-xl border-[1.5px] border-[var(--turquoise)] bg-[var(--input-bg)] p-3">
                       <div className="mb-2 text-[12.5px] font-bold text-[var(--navy)]">Fichiers de cet arrêt</div>
@@ -1460,7 +1541,7 @@ export default function PlanningPage() {
                         <input type="file" multiple hidden disabled={fileBusy} onChange={(e) => { const list = e.target.files; void addTeamFiles(s, list).then(() => { e.target.value = ""; }); }} />
                       </label>
                       <button type="button" onClick={() => setFileEdit(null)} className="ml-2 rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-1.5 text-[12.5px] font-semibold text-[var(--slate)]">Fermer</button>
-                      <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">PDF, Word, Excel, image… 20 Mo maximum par fichier, 10 par arrêt. Le logisticien les ouvre depuis son arrêt.</p>
+                      <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">PDF, Word, Excel, image… 20 Mo maximum par fichier, 10 par arrêt. Le logisticien les ouvre depuis son arrêt. Ils sont aussi rangés dans « Mes documents » du {s.kind === "dropoff" ? "bénéficiaire" : "partenaire"}, à la date de cet arrêt (équipe uniquement).</p>
                     </div>
                   )}
                 </div>
