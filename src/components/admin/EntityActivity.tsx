@@ -172,6 +172,8 @@ export default function EntityActivity({ kind, id, media = "all" }: { kind: "par
   const [idx, setIdx] = useState(0); // collecte à venir affichée dans le carré (un clic passe à la suivante)
   const [openId, setOpenId] = useState<string | null>(null);
   const [viewer, setViewer] = useState<{ title: string; paths: string[] } | null>(null);
+  const [mode, setMode] = useState<"collecte" | "depose">("collecte"); // fiche « collecte ET dépose » : sorties (collecté chez lui) / entrées (reçu chez lui)
+  const [flag, setFlag] = useState(false);
   const today = isoOf(new Date());
   const isPartner = kind === "partner";
 
@@ -186,8 +188,17 @@ export default function EntityActivity({ kind, id, media = "all" }: { kind: "par
       .then(({ data, error: err }) => {
         if (err) return setError(err.message);
         const list = (data ?? []) as unknown as Row[];
-        setRows(list.filter((r) => (isPartner ? isCollectKind(r.kind) : r.kind === "dropoff")));
+        setRows(list.filter((r) => (isPartner ? isCollectKind(r.kind) || r.kind === "dropoff" : r.kind === "dropoff"))); // un partenaire « aussi lieu de dépose » a aussi des déposes
       });
+    // la fiche est-elle « aussi lieu de dépose » ? (pas de migration : c'est un champ de la fiche)
+    if (isPartner) {
+      supabase
+        .from("partners")
+        .select("aussiDepose:fiche->aussiDepose")
+        .eq("id", id)
+        .maybeSingle()
+        .then(({ data }) => setFlag((data as { aussiDepose?: boolean | null } | null)?.aussiDepose === true));
+    }
     // fichiers joints par l'équipe (migration 074) : requête à part, sans conséquence si la migration n'est pas passée
     if (media === "all") supabase
       .from("collectes")
@@ -200,11 +211,17 @@ export default function EntityActivity({ kind, id, media = "all" }: { kind: "par
       });
   }, [supabase, id, isPartner, media]);
 
-  const list = rows ?? [];
+  const allRows = rows ?? [];
+  const hasDeposes = isPartner && (flag || allRows.some((r) => r.kind === "dropoff"));
+  const inDepose = hasDeposes && mode === "depose";
+  const list = isPartner ? allRows.filter((r) => (inDepose ? r.kind === "dropoff" : isCollectKind(r.kind))) : allRows;
+  const kgOf = (pred: (r: Row) => boolean) => Math.round(allRows.filter((r) => r.status === "collecte" && pred(r)).reduce((t, r) => t + sum(r.collecte_items), 0) * 10) / 10;
+  const kgOut = kgOf((r) => isCollectKind(r.kind));
+  const kgIn = kgOf((r) => r.kind === "dropoff");
   const upcoming = list.filter((r) => (r.status === "todo" || r.status === "en_attente") && r.scheduled_date >= today).sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date) || (a.scheduled_time ?? "").localeCompare(b.scheduled_time ?? ""));
   const history = list.filter((r) => r.status === "collecte" || r.status === "annule" || (r.status === "todo" && r.scheduled_date < today)); // déjà triées du plus récent au plus ancien
-  const noun = isPartner ? "collectes" : "livraisons";
-  const one = isPartner ? "collecte" : "livraison";
+  const noun = inDepose ? "déposes" : isPartner ? "collectes" : "livraisons";
+  const one = inDepose ? "dépose" : isPartner ? "collecte" : "livraison";
 
   const done = history.filter((r) => r.status === "collecte");
   const totalKg = Math.round(done.reduce((t, r) => t + sum(r.collecte_items), 0) * 10) / 10;
@@ -229,12 +246,35 @@ export default function EntityActivity({ kind, id, media = "all" }: { kind: "par
       {viewer && <PhotoViewer title={viewer.title} paths={viewer.paths} onClose={() => setViewer(null)} />}
 
       <div className={`${card} lg:col-span-3`}>
+        {hasDeposes && (
+          <div className="mb-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            {([
+              ["collecte", "⬆ Sorties", "collecté chez ce lieu", kgOut],
+              ["depose", "⬇ Entrées", "reçu par ce lieu (déposes)", kgIn],
+            ] as const).map(([k, title, sub, kg]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => {
+                  setMode(k);
+                  setOpenId(null);
+                }}
+                className={`rounded-xl border-2 px-3.5 py-2.5 text-left ${mode === k ? "border-[var(--turquoise)] bg-[var(--input-bg)]" : "border-[var(--border)] hover:border-[var(--turquoise)]"}`}
+              >
+                <div className="text-[11px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase">
+                  {title} · {sub}
+                </div>
+                <div className="font-display text-[20px] font-black text-[var(--navy)]">{kg.toLocaleString("fr-FR")} kg</div>
+              </button>
+            ))}
+          </div>
+        )}
         <h3 className="mb-0.5 font-display text-[17px] font-extrabold text-[var(--navy)]">Historique des {noun}</h3>
         <p className="mb-3 text-[11.5px] text-[var(--slate)]">Les 2 plus récentes{media === "none" ? "" : ` · boutons Photo${media === "all" ? " / Fichier" : ""} sur chaque ${one} qui en a`}</p>
         {rows !== null && done.length > 0 && (
           <div className="mb-3 grid grid-cols-3 gap-2.5">
             {[
-              [isPartner ? "Collectes réalisées" : "Livraisons réalisées", String(done.length), "var(--navy)"],
+              [`${noun[0].toUpperCase()}${noun.slice(1)} réalisées`, String(done.length), "var(--navy)"],
               ["Poids total saisi", `${totalKg.toLocaleString("fr-FR")} kg`, "var(--navy)"],
               ["Échecs (annulations)", String(failed), failed > 0 ? "var(--critical)" : "var(--navy)"],
             ].map(([l, v, c]) => (
