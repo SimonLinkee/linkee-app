@@ -128,7 +128,7 @@ function rowToStop(r: DbStop, all: DbStop[], depotAddress: string): Stop {
     phones: rel ? stopPhones(fiche, one(r.partners) ? "Partenaire" : "Association") : [],
     sitePhoto: one(r.partners)?.photo_url || undefined,
     comment: r.comment || undefined,
-    allowedTypes: kind === "dropoff" ? Object.entries(fiche.denrees ?? {}).filter(([, on]) => on).map(([k]) => k) : undefined,
+    allowedTypes: kind === "dropoff" && !r.partner_id ? Object.entries(fiche.denrees ?? {}).filter(([, on]) => on).map(([k]) => k) : undefined,
     result:
       status === "collecte"
         ? { items, totalKg: Math.round(items.reduce((s, it) => s + it.kg, 0) * 10) / 10, photos: r.photo_paths?.length || r.photos_count, photoPaths: r.photo_paths ?? [] }

@@ -74,6 +74,7 @@ type PartnerEntity = {
   activityStatus?: string;
   rythme?: Rythme;
   linkSystematique?: boolean;
+  aussiDepose?: boolean; // lieu de collecte ET de dépose avec une seule fiche (apparaît aussi en « dépose » dans le Planning)
   cerfaFrequency?: CerfaFrequency;
   cerfaAutoSend?: boolean; // envoi automatique du Cerfa par mail à l'échéance (par défaut : oui dès qu'il y a une fréquence)
   cerfaSendDay?: number; // jour du mois de l'échéance d'envoi
@@ -804,6 +805,21 @@ export default function PartenairesPage() {
                 </label>
               )}
             </div>
+          )}
+          {current.kind === "partner" && (
+            <label className="mb-4 flex items-start gap-2.5 rounded-[14px] border-[1.5px] border-[var(--border)] p-3">
+              <input
+                type="checkbox"
+                disabled={readOnly}
+                checked={!!current.aussiDepose}
+                onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, aussiDepose: e.target.checked } : entity))}
+                className="mt-0.5 h-[16px] w-[16px] accent-[var(--dropoff)]"
+              />
+              <span>
+                <span className="block text-[13px] font-bold text-[var(--navy)]">Peut aussi recevoir des dépôts (lieu de dépose)</span>
+                <span className="block text-[11.5px] leading-[1.4] text-[var(--slate)]">Une seule fiche pour la collecte ET la dépose : dans le Planning, ce lieu se propose alors deux fois, « — collecte » et « — dépose ». Tous les types de denrées sont acceptés en dépose.</span>
+              </span>
+            </label>
           )}
           {current.kind === "partner" && (
             <label className="mb-4 flex items-start gap-2.5 rounded-[14px] border-[1.5px] p-3" style={{ borderColor: current.benevoleOnly ? "#eb6834" : "var(--border)", background: current.benevoleOnly ? "rgba(235,104,52,.08)" : "var(--card)" }}>

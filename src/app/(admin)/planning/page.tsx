@@ -414,18 +414,22 @@ export default function PlanningPage() {
     (async () => {
       const [ps, bs, tpl, lp] = await Promise.all([
         // les partenaires "Éligible collecte bénévole" sortent du planning pro classique — ils passent par les Links Bénévoles
-        supabase.from("partners").select("id,name,category,address,passage:fiche->passage,creneaux:fiche->creneaux,rythme:fiche->>rythme,duree:fiche->dureeCollecte").eq("city_id", cityId ?? "").eq("active", true).eq("benevole_only", false).is("deleted_at", null).order("name"),
+        supabase.from("partners").select("id,name,category,address,passage:fiche->passage,creneaux:fiche->creneaux,rythme:fiche->>rythme,duree:fiche->dureeCollecte,aussiDepose:fiche->aussiDepose").eq("city_id", cityId ?? "").eq("active", true).eq("benevole_only", false).is("deleted_at", null).order("name"),
         supabase.from("beneficiaries").select("id,name,category,address,creneaux:fiche->creneaux").eq("city_id", cityId ?? "").eq("active", true).is("deleted_at", null).order("name"),
         supabase.from("checklist_templates").select("weekday,items").eq("city_id", cityId ?? ""),
         supabase.from("partners").select("id,name,creneaux:fiche->creneaux").eq("city_id", cityId ?? "").eq("active", true).eq("fiche->>rythme", "regulier").eq("fiche->linkSystematique", true).is("deleted_at", null).order("name"),
       ]);
       setLinkPartners(((lp.data ?? []) as unknown as { id: string; name: string; creneaux: Creneaux | null }[]).map((p) => ({ partnerId: p.id, name: p.name, creneaux: p.creneaux ?? {} })));
       const list: Place[] = [
-        ...((ps.data ?? []) as unknown as { id: string; name: string; category: string | null; address: string | null; passage: Passage | null; creneaux: Creneaux | null; rythme: string | null; duree: number | null }[]).map((p) => ({
+        ...((ps.data ?? []) as unknown as { id: string; name: string; category: string | null; address: string | null; passage: Passage | null; creneaux: Creneaux | null; rythme: string | null; duree: number | null; aussiDepose?: boolean | null }[]).map((p) => ({
           key: "p:" + p.id, kind: "partner" as const, name: p.name, cat: p.category ?? "", address: p.address ?? "", partnerId: p.id, beneficiaryId: null, passage: p.passage ?? undefined, creneaux: p.creneaux ?? undefined,
           regulier: p.rythme === "regulier",
           duration: Number(p.duree) > 0 ? Number(p.duree) : undefined, // « Durée de collecte » de la fiche
         })),
+        // une fiche partenaire « peut aussi recevoir des dépôts » se propose aussi comme lieu de dépose (même fiche, deux rôles)
+        ...((ps.data ?? []) as unknown as { id: string; name: string; category: string | null; address: string | null; creneaux: Creneaux | null; aussiDepose?: boolean | null }[])
+          .filter((p) => p.aussiDepose === true)
+          .map((p) => ({ key: "pd:" + p.id, kind: "dropoff" as const, name: p.name, cat: p.category ?? "", address: p.address ?? "", partnerId: p.id, beneficiaryId: null, creneaux: p.creneaux ?? undefined })),
         ...((bs.data ?? []) as unknown as { id: string; name: string; category: string | null; address: string | null; creneaux: Creneaux | null }[]).map((b) => ({
           key: "b:" + b.id, kind: "dropoff" as const, name: b.name, cat: b.category ?? "", address: b.address ?? "", partnerId: null, beneficiaryId: b.id, creneaux: b.creneaux ?? undefined,
         })),
