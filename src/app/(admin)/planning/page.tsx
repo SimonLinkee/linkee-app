@@ -18,7 +18,7 @@ const RouteMap = dynamic(() => import("@/components/RouteMap"), {
 });
 const TRAFFIC_FACTOR = 1.15; // city traffic margin applied to the raw road durations
 
-type Kind = "partner" | "dropoff" | "stock" | "exceptionnel" | "demande_client" | "pause" | "dechetterie";
+type Kind = "partner" | "dropoff" | "stock" | "exceptionnel" | "demande_client" | "pause" | "dechetterie" | "mission";
 type Status = "planifie" | "annule";
 type Coords = { x: number; y: number };
 type Stop = {
@@ -41,9 +41,10 @@ type Stop = {
   teamNote?: string | null; // commentaire d'équipe « à la volée », visible tout de suite par le logisticien (migration 073)
   teamNoteAt?: string | null;
   teamFiles?: TeamFile[]; // fichiers joints à l'arrêt par l'équipe (migration 074)
+  fixedTime?: string | null; // heure d'arrivée fixée à la main (« HH:MM »), vide = calculée (migration 077)
 };
 type StopC = Stop & { coords: Coords };
-type EnrichedStop = StopC & { scheduledTime: string | null; travelFromPrev: number; travelKmFromPrev: number; arrivalMin?: number; waitMin?: number };
+type EnrichedStop = StopC & { scheduledTime: string | null; travelFromPrev: number; travelKmFromPrev: number; arrivalMin?: number; waitMin?: number; lateBy?: number };
 type ChecklistItem = { id: string; label: string };
 type Place = { key: string; kind: "partner" | "dropoff" | "stock" | "dechetterie"; name: string; cat: string; address: string; partnerId: string | null; beneficiaryId: string | null; passage?: Passage; creneaux?: Creneaux; regulier?: boolean; duration?: number; direction?: "entree" };
 // Partenaire régulier passant par un Link bénévole sur chacun de ses créneaux (case « Link bénévole systématique » de la fiche)
@@ -196,12 +197,19 @@ function computeSchedule(stops: StopC[], legs: Leg[] | undefined, dayStart: numb
     if (s.kind === "pause") {
       // pas de trajet : la pause se prend là où l'équipe se trouve. Reprise au plus tôt à 14h, avec une
       // durée mini garantie (s.duration, modifiable comme n'importe quel arrêt) même en cas de retard.
-      const arrivalMin = t;
-      const scheduledTime = fmtTime(t);
-      const resumeAt = Math.max(LUNCH_RESUME_FLOOR, t + s.duration);
-      totalDuration += resumeAt - t;
+      const arrivalMin = s.fixedTime ? toMin(s.fixedTime) : t; // heure fixée à la main : prioritaire
+      const scheduledTime = fmtTime(arrivalMin);
+      const resumeAt = Math.max(LUNCH_RESUME_FLOOR, arrivalMin + s.duration);
+      totalDuration += resumeAt - arrivalMin;
       t = resumeAt;
       return { ...s, scheduledTime, travelFromPrev: 0, travelKmFromPrev: 0, arrivalMin };
+    }
+    if (s.kind === "mission" && !s.address) {
+      // mission sans adresse : pas de trajet, elle se fait là où l'équipe se trouve
+      const arrivalMin = s.fixedTime ? toMin(s.fixedTime) : t;
+      t = arrivalMin + s.duration;
+      totalDuration += s.duration;
+      return { ...s, scheduledTime: fmtTime(arrivalMin), travelFromPrev: 0, travelKmFromPrev: 0, arrivalMin };
     }
     const leg = legs?.[activeIdx++];
     const travel = leg ? Math.round(leg.min) : travelMinutes(prevCoords, s.coords);
@@ -209,7 +217,12 @@ function computeSchedule(stops: StopC[], legs: Leg[] | undefined, dayStart: numb
     const natural = t + travel;
     // arrivée avant l'ouverture du créneau habituel du partenaire : on attend (non bloquant, intégré aux
     // horaires) ; arrivée après la fermeture de tous les créneaux du jour : rien à faire, juste signalé.
-    const { arrival, waitMin } = (s.kind === "partner" || s.kind === "dropoff" || s.kind === "dechetterie") && s.creneaux ? resolveArrival(natural, slotsForDate(s.creneaux, dateIso)) : { arrival: natural, waitMin: 0 };
+    // heure fixée à la main : elle l'emporte sur le calcul (on attend si on arrive trop tôt ; trop tard / trop juste : signalé)
+    const fixedMin = s.fixedTime ? toMin(s.fixedTime) : null;
+    const lateBy = fixedMin != null && fixedMin < natural ? natural - fixedMin : 0;
+    const { arrival, waitMin } = fixedMin != null
+      ? { arrival: fixedMin, waitMin: Math.max(0, fixedMin - natural) }
+      : (s.kind === "partner" || s.kind === "dropoff" || s.kind === "dechetterie") && s.creneaux ? resolveArrival(natural, slotsForDate(s.creneaux, dateIso)) : { arrival: natural, waitMin: 0 };
     totalTravel += travel;
     totalKm += km;
     const arrivalMin = arrival;
@@ -217,7 +230,7 @@ function computeSchedule(stops: StopC[], legs: Leg[] | undefined, dayStart: numb
     t = arrival + s.duration;
     totalDuration += s.duration;
     prevCoords = s.coords;
-    return { ...s, scheduledTime, travelFromPrev: travel, travelKmFromPrev: km, arrivalMin, waitMin };
+    return { ...s, scheduledTime, travelFromPrev: travel, travelKmFromPrev: km, arrivalMin, waitMin, lateBy };
   });
   // the truck goes back to the depot at the end of the day
   let returnMin = 0;
@@ -233,7 +246,7 @@ function computeSchedule(stops: StopC[], legs: Leg[] | undefined, dayStart: numb
   return { stops: enriched, dayEnd: t, totalTravel, totalKm, totalDuration, returnMin, returnKm };
 }
 
-const KIND_BADGE: Record<string, string> = { stock: "Stock", dropoff: "Dépose", demande_client: "Demande exceptionnelle client", exceptionnel: "Exceptionnel", pause: "Pause", dechetterie: "Déchetterie" };
+const KIND_BADGE: Record<string, string> = { mission: "Mission", stock: "Stock", dropoff: "Dépose", demande_client: "Demande exceptionnelle client", exceptionnel: "Exceptionnel", pause: "Pause", dechetterie: "Déchetterie" };
 const KIND_BORDER: Record<Kind, string> = {
   partner: "",
   stock: "border-l-4 border-l-[var(--stock-accent)]",
@@ -242,6 +255,7 @@ const KIND_BORDER: Record<Kind, string> = {
   demande_client: "border-l-4 border-l-[var(--client-req)] bg-[var(--client-req-bg)]",
   pause: "border-l-4 border-l-[var(--muted)] border-dashed bg-[var(--input-bg)]",
   dechetterie: "border-l-4 border-l-[#6b7f3a]",
+  mission: "border-l-4 border-l-[#c2410c]",
 };
 const KIND_BADGE_CLS: Record<string, string> = {
   stock: "bg-[var(--stock-accent-bg)] text-[var(--stock-accent)]",
@@ -250,6 +264,7 @@ const KIND_BADGE_CLS: Record<string, string> = {
   demande_client: "bg-[var(--client-req)] text-white",
   pause: "bg-[var(--track)] text-[var(--slate)]",
   dechetterie: "bg-[#6b7f3a1a] text-[#6b7f3a]",
+  mission: "bg-[#c2410c1a] text-[#c2410c]",
 };
 
 const SELECT_DAY =
@@ -337,7 +352,7 @@ export default function PlanningPage() {
     if (!depotGeo) return null;
     const pts: LatLng[] = [depotGeo];
     for (const s of stops) {
-      if (s.status === "annule" || s.kind === "pause") continue;
+      if (s.status === "annule" || s.kind === "pause" || (s.kind === "mission" && !s.address)) continue;
       const g = geo[s.address];
       if (!g) return null;
       pts.push(g);
@@ -443,6 +458,7 @@ export default function PlanningPage() {
     setStopsIso(forIso);
     void loadTeamNotes(forIso);
     void loadTeamFiles(forIso);
+    void loadStopExtras(forIso);
     // rows that were never scheduled (fresh copies) get their times written once
     if ((data ?? []).some((r) => (r as { scheduled_time: string | null }).scheduled_time === null && (r as { status: string }).status !== "annule")) dirty.current = true;
     setLoadingDay(false);
@@ -455,6 +471,58 @@ export default function PlanningPage() {
     const m = new Map((data as { id: string; team_note: string | null; team_note_at: string | null }[]).map((r) => [r.id, r]));
     setStops((prev) => prev.map((s) => (m.has(s.id) ? { ...s, teamNote: m.get(s.id)!.team_note, teamNoteAt: m.get(s.id)!.team_note_at } : s)));
   }
+  // Adresse des missions et heures fixées à la main (migration 077) : requête à part, le planning marche comme avant sans elle
+  async function loadStopExtras(forIso: string) {
+    const { data, error } = await supabase.from("collectes").select("id,kind,address,fixed_time").eq("city_id", cityId ?? "").eq("scheduled_date", forIso).eq("source", "planning");
+    if (error || !data || isoRef.current !== forIso) return;
+    const m = new Map((data as { id: string; kind: string; address: string | null; fixed_time: string | null }[]).map((r) => [r.id, r]));
+    setStops((prev) =>
+      prev.map((s) => {
+        const r = m.get(s.id);
+        if (!r) return s;
+        return { ...s, fixedTime: r.fixed_time ? r.fixed_time.slice(0, 5) : null, ...(s.kind === "mission" ? { address: r.address ?? "", cat: r.address ?? "" } : {}) };
+      }),
+    );
+  }
+  /** Fixe (ou libère, avec null) l'heure d'arrivée d'un arrêt : les arrêts suivants se recalculent à partir d'elle. */
+  async function setFixedTime(id: string, value: string | null) {
+    if (ro) return;
+    const { error } = await supabase.from("collectes").update({ fixed_time: value }).eq("id", id);
+    if (error) return fail("Heure non enregistrée", error.message + (error.message.includes("fixed_time") ? " (la migration 077 est-elle passée ?)" : ""));
+    editStops((prev) => prev.map((s) => (s.id === id ? { ...s, fixedTime: value } : s)));
+  }
+
+  // Arrêt « Mission » : texte libre (commentaire), adresse facultative, durée
+  const [missionForm, setMissionForm] = useState<{ id?: string; text: string; address: string; duration: number } | null>(null);
+  async function saveMission() {
+    if (!missionForm || !cityId) return;
+    const text = missionForm.text.trim();
+    const address = missionForm.address.trim();
+    if (!text) return showToast("Décris la mission en quelques mots.");
+    const duration = Math.max(5, Math.round(missionForm.duration) || 30);
+    const hint = " (la migration 077 est-elle passée ?)";
+    if (missionForm.id) {
+      const id = missionForm.id;
+      const { error } = await supabase.from("collectes").update({ comment: text, address: address || null, duration_min: duration }).eq("id", id);
+      if (error) return fail("Mission non enregistrée", error.message + hint);
+      editStops((prev) => prev.map((s) => (s.id === id ? { ...s, comment: text, address, cat: address, duration } : s)));
+      setMissionForm(null);
+      return showToast("Mission modifiée.");
+    }
+    const forIso = iso;
+    const { data, error } = await supabase
+      .from("collectes")
+      .insert({ city_id: cityId, kind: "mission", label: "Mission", comment: text, address: address || null, scheduled_date: forIso, sort_order: stops.length, status: "todo", duration_min: duration })
+      .select("id")
+      .single();
+    if (error || !data) return fail("Ajout impossible", (error?.message ?? "erreur inconnue") + hint);
+    setMissionForm(null);
+    if (isoRef.current !== forIso) return;
+    const stop: Stop = { id: data.id as string, name: "Mission", cat: address, kind: "mission", duration, status: "planifie", dbStatus: "todo", comment: text, address, partnerId: null, beneficiaryId: null, label: "Mission", photoPaths: [] };
+    editStops((prev) => [...prev, stop]);
+    showToast("Mission ajoutée — glisse-la où tu veux dans la tournée.");
+  }
+
   const [fileEdit, setFileEdit] = useState<string | null>(null);
   const [fileBusy, setFileBusy] = useState(false);
   const fmtFileSize = (b: number) => (b > 1048576 ? `${(b / 1048576).toFixed(1).replace(".", ",")} Mo` : `${Math.max(1, Math.round(b / 1024))} Ko`);
@@ -880,14 +948,14 @@ export default function PlanningPage() {
   }
 
   /* ---------- map projection (km → svg) ---------- */
-  const KIND_HEX: Record<Kind, string> = { partner: "#0a1a3f", stock: "#b97600", dropoff: "#1a8f68", exceptionnel: "#1f93a8", demande_client: "#7c5cd9", pause: "#7a7f8c", dechetterie: "#6b7f3a" };
+  const KIND_HEX: Record<Kind, string> = { partner: "#0a1a3f", stock: "#b97600", dropoff: "#1a8f68", exceptionnel: "#1f93a8", demande_client: "#7c5cd9", pause: "#7a7f8c", dechetterie: "#6b7f3a", mission: "#c2410c" };
   const mapPoints: MapPoint[] = [];
   if (depotGeo) mapPoints.push({ lat: depotGeo.lat, lng: depotGeo.lng, label: "Entrepôt Linkee — départ", color: "#4FC1D6", num: "home", time: `Début de journée ${fmtTime(dayStart)}` });
   activeStops.forEach((s) => {
     const g = geo[s.address];
     if (g) mapPoints.push({ lat: g.lat, lng: g.lng, label: s.name, color: KIND_HEX[s.kind], num: sched.stops.findIndex((x) => x.id === s.id) + 1, time: s.scheduledTime ?? undefined });
   });
-  const unlocated = activeStops.filter((s) => !geo[s.address]).length;
+  const unlocated = activeStops.filter((s) => !(s.kind === "mission" && !s.address) && !geo[s.address]).length;
 
   const weekDays = (() => {
     const monday = new Date(currentDate);
@@ -1255,7 +1323,7 @@ export default function PlanningPage() {
                 <div key={s.id}>
                   {cancelled ? (
                     <div className="py-1 pl-[50px] text-[11px] font-semibold text-[var(--critical)] italic">Annulé — exclu du calcul de trajet et de la carte</div>
-                  ) : s.kind === "pause" ? null : (
+                  ) : s.kind === "pause" || (s.kind === "mission" && !s.address) ? null : (
                     <div className="flex items-center gap-1.5 py-0.5 pl-[50px] text-[11px] font-semibold text-[var(--muted)]">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-[13px] w-[13px]">
                         <path d="M12 5 V19 M6 13 L12 19 L18 13" />
@@ -1291,9 +1359,27 @@ export default function PlanningPage() {
                       </svg>
                     </span>
                     <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-full bg-[var(--track)] font-display text-xs font-extrabold text-[var(--navy)]">{i + 1}</span>
-                    <span className={`w-[70px] flex-none leading-tight ${cancelled ? "opacity-60" : ""}`}>
-                      <span className="block text-[9.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">{s.kind === "dropoff" ? "Dépose" : s.kind === "stock" ? (s.stockIn ? "Dépose stock" : "Prise stock") : s.kind === "pause" ? "Pause" : s.kind === "dechetterie" ? "Déchetterie" : "Collecte"}</span>
-                      <span className="block font-display text-[18px] font-extrabold text-[var(--navy)]">{s.scheduledTime || "—"}</span>
+                    <span className={`w-[92px] flex-none leading-tight ${cancelled ? "opacity-60" : ""}`}>
+                      <span className="block text-[9.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">{s.kind === "dropoff" ? "Dépose" : s.kind === "stock" ? (s.stockIn ? "Dépose stock" : "Prise stock") : s.kind === "pause" ? "Pause" : s.kind === "dechetterie" ? "Déchetterie" : s.kind === "mission" ? "Mission" : "Collecte"}</span>
+                      {!cancelled && !ro && s.scheduledTime ? (
+                        <input
+                          type="time"
+                          value={s.scheduledTime}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            if (e.target.value) void setFixedTime(s.id, e.target.value);
+                          }}
+                          title="Modifier l'heure d'arrivée de cet arrêt à la main : les arrêts suivants se recalculent à partir d'elle"
+                          className={`w-[88px] cursor-pointer rounded-[8px] border-[1.5px] bg-transparent px-1 py-px font-display text-[16px] font-extrabold text-[var(--navy)] outline-none focus:border-[var(--turquoise)] ${s.fixedTime ? "border-[var(--turquoise)] bg-[var(--input-bg)]" : "border-transparent hover:border-[var(--border)]"}`}
+                        />
+                      ) : (
+                        <span className="block font-display text-[18px] font-extrabold text-[var(--navy)]">{s.scheduledTime || "—"}</span>
+                      )}
+                      {s.fixedTime && !cancelled && !ro && (
+                        <button type="button" onClick={(e) => { e.stopPropagation(); void setFixedTime(s.id, null); }} title="Revenir à l'heure calculée automatiquement" className="block text-[10px] font-bold text-[var(--turquoise)] underline">
+                          ✎ fixée · ↺ auto
+                        </button>
+                      )}
                       {s.arrivalMin !== undefined && (
                         <span className="block text-[10.5px] text-[var(--slate)]">→ {fmtTime(s.kind === "pause" ? Math.max(LUNCH_RESUME_FLOOR, s.arrivalMin + s.duration) : s.arrivalMin + s.duration)}</span>
                       )}
@@ -1351,6 +1437,8 @@ export default function PlanningPage() {
                           </div>
                         );
                       })()}
+                      {s.lateBy ? <div className="text-[11px] font-semibold text-[var(--warn)]">⚠︎ Heure fixée {fmtDuration(s.lateBy)} avant l&apos;arrivée possible (trajet)</div> : null}
+                      {s.comment && s.kind === "mission" && <div className="text-[12.5px] leading-[1.4] font-semibold whitespace-pre-line text-[var(--navy)]">{s.comment}</div>}
                       {s.comment && (s.kind === "stock" || s.kind === "dropoff") && <div className="truncate text-[11px] text-[var(--stock-accent)] italic" title={s.comment}>{s.comment}</div>}
                     </span>
                     <span className={`flex-none rounded-[40px] px-2 py-[3px] text-[9.5px] font-bold tracking-[0.03em] uppercase ${cancelled ? "bg-[var(--critical-bg)] text-[var(--critical)]" : done ? "bg-[var(--good-bg)] text-[var(--good)]" : KIND_BADGE_CLS[s.kind] || "bg-[var(--track)] text-[var(--slate)]"}`}>
@@ -1411,7 +1499,20 @@ export default function PlanningPage() {
                           📷 {s.photoPaths.length ? `Photos (${s.photoPaths.length})` : "Photo"}
                         </button>
                       )}
-                      {!ro && !(s.kind === "stock" && !s.stockIn && done) && s.kind !== "pause" && (
+                      {!ro && s.kind === "mission" && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMissionForm({ id: s.id, text: s.comment ?? "", address: s.address, duration: s.duration });
+                          }}
+                          title="Modifier le texte, l'adresse ou la durée de la mission"
+                          className="flex h-[28px] flex-none items-center gap-1 rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-3 text-[11.5px] font-bold whitespace-nowrap text-[var(--navy)] hover:brightness-95"
+                        >
+                          ✎ Mission
+                        </button>
+                      )}
+                      {!ro && !(s.kind === "stock" && !s.stockIn && done) && s.kind !== "pause" && s.kind !== "mission" && (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1572,12 +1673,41 @@ export default function PlanningPage() {
               <button type="button" onClick={addPlaceToTour} className="rounded-[40px] bg-[var(--navy-deep)] px-4 py-2 font-display text-[13px] font-bold text-[var(--panel-fg)]">
                 + Ajouter
               </button>
+              <button type="button" onClick={() => setMissionForm({ text: "", address: "", duration: 30 })} className="rounded-[40px] border-[1.5px] border-dashed border-[#c2410c] px-4 py-2 font-display text-[13px] font-bold text-[#c2410c] hover:bg-[#c2410c1a]">
+                + Mission
+              </button>
               {!stops.some((s) => s.kind === "pause") && (
                 <button type="button" onClick={addLunchStop} className="rounded-[40px] border-[1.5px] border-dashed border-[var(--border)] px-4 py-2 font-display text-[13px] font-bold text-[var(--slate)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]">
                   + Pause déjeuner
                 </button>
               )}
             </div>
+            )}
+
+            {!ro && missionForm && (
+              <div className="mt-2 rounded-2xl border-[1.5px] border-[#c2410c] bg-[var(--card)] p-4">
+                <h4 className="mb-2.5 font-display text-[15px] font-extrabold text-[var(--navy)]">{missionForm.id ? "Modifier la mission" : "Nouvelle mission"}</h4>
+                <label className="mb-1 block text-[11.5px] font-semibold text-[var(--slate)]">Que faut-il faire ? (le logisticien le voit sur son arrêt)</label>
+                <textarea value={missionForm.text} onChange={(e) => setMissionForm({ ...missionForm, text: e.target.value })} rows={3} maxLength={600} placeholder="Ex : Récupérer le colis chez le fournisseur, déposer les caisses vides au local…" className={`${inputCls} resize-y`} />
+                <div className="mt-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-[1fr_120px]">
+                  <label className="text-[11.5px] font-semibold text-[var(--slate)]">
+                    Adresse (facultatif — avec une adresse, le trajet est calculé)
+                    <input value={missionForm.address} onChange={(e) => setMissionForm({ ...missionForm, address: e.target.value })} placeholder="Laisser vide si la mission se fait sur place" className={`${inputCls} mt-1`} />
+                  </label>
+                  <label className="text-[11.5px] font-semibold text-[var(--slate)]">
+                    Durée (min)
+                    <input type="number" min={5} step={5} value={missionForm.duration} onChange={(e) => setMissionForm({ ...missionForm, duration: +e.target.value })} className={`${inputCls} mt-1`} />
+                  </label>
+                </div>
+                <div className="mt-3 flex gap-2.5">
+                  <button type="button" onClick={() => void saveMission()} className="rounded-[40px] bg-[var(--navy-deep)] px-5 py-2 font-display text-[13px] font-bold text-[var(--panel-fg)]">
+                    {missionForm.id ? "Enregistrer" : "Ajouter la mission"}
+                  </button>
+                  <button type="button" onClick={() => setMissionForm(null)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-2 font-display text-[13px] font-bold text-[var(--slate)]">
+                    Annuler
+                  </button>
+                </div>
+              </div>
             )}
           </div>
 

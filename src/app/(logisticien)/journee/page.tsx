@@ -20,7 +20,7 @@ const RouteMap = dynamic(() => import("@/components/RouteMap"), {
   loading: () => <div className="flex h-[300px] items-center justify-center text-[12.5px] text-[var(--slate)]">Chargement de la carte…</div>,
 });
 
-type Kind = "partner" | "dropoff" | "stock" | "exceptionnel" | "pause" | "dechetterie";
+type Kind = "partner" | "dropoff" | "stock" | "exceptionnel" | "pause" | "dechetterie" | "mission";
 type ResultItem = { denree?: string; name?: string; kg: number; from?: string; sourceId?: string; stockId?: string; colis?: number; subcategoryId?: string; quantity?: number; unit?: string; valueSnapshot?: number };
 type StopResult = { items?: ResultItem[]; totalKg?: number; photos?: number; photoPaths?: string[]; motif?: string };
 type ChecklistItem = { id: string; label: string };
@@ -104,7 +104,7 @@ const ACCESS_KEY_MAP: Record<string, string> = { digicode: "digicode", quai: "qu
 function rowToStop(r: DbStop, all: DbStop[], depotAddress: string): Stop {
   const rel = one(r.partners) ?? one(r.beneficiaries);
   const fiche = (rel?.fiche ?? {}) as { access?: Record<string, boolean>; accessNote?: string; denrees?: Record<string, boolean>; contacts?: { type?: string; nom?: string; tel?: string }[]; tel?: string };
-  const kind: Kind = r.kind === "dropoff" ? "dropoff" : r.kind === "stock" ? "stock" : r.kind === "partner" ? "partner" : r.kind === "pause" ? "pause" : r.kind === "dechetterie" ? "dechetterie" : "exceptionnel";
+  const kind: Kind = r.kind === "dropoff" ? "dropoff" : r.kind === "stock" ? "stock" : r.kind === "partner" ? "partner" : r.kind === "pause" ? "pause" : r.kind === "dechetterie" ? "dechetterie" : r.kind === "mission" ? "mission" : "exceptionnel";
   const items: ResultItem[] = (r.collecte_items ?? []).map((it) => {
     const src = it.source_collecte_id ? all.find((x) => x.id === it.source_collecte_id) : null;
     const srcRel = src ? (one(src.partners) ?? one(src.beneficiaries)) : null;
@@ -208,6 +208,7 @@ const thumbCls = "flex h-14 w-14 flex-none items-center justify-center rounded-x
 function summary(s: Stop) {
   const r = s.result!;
   const photos = r.photos ?? 0;
+  if (s.kind === "mission") return <><strong className="text-[var(--navy)]">Mission faite</strong>{photos > 0 ? ` · ${photos} photo(s)` : ""}</>;
   if (s.kind === "stock" && !s.stockIn) return <><strong className="text-[var(--navy)]">{r.totalKg} kg pris</strong> · {r.items!.length} item(s) : {r.items!.map((i) => i.name).join(", ")} · {photos} photo(s)</>;
   if (s.kind === "dropoff" || s.kind === "stock") return <><strong className="text-[var(--navy)]">{r.totalKg} kg déposés</strong> · {r.items!.map((i) => `${i.name ?? i.denree} (${i.from})`).join(", ")} · {photos} photo(s)</>;
   return <><strong className="text-[var(--navy)]">{r.totalKg} kg</strong> · {r.items!.length} item(s) ({r.items!.map((i) => i.denree).join(", ")}) · {photos} photo(s)</>;
@@ -300,13 +301,15 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
   const [errCollecte, setErrCollecte] = useState("");
   const [errAnnule, setErrAnnule] = useState("");
 
-  const okLabel = s.kind === "stock" ? (s.stockIn ? "Déposé" : "Pris") : s.kind === "dropoff" ? "Déposé" : s.kind === "dechetterie" ? "Confirmé" : "Collecté";
+  const okLabel = s.kind === "stock" ? (s.stockIn ? "Déposé" : "Pris") : s.kind === "dropoff" ? "Déposé" : s.kind === "dechetterie" ? "Confirmé" : s.kind === "mission" ? "Fait" : "Collecté";
   const earlier = stops.map((st, idx) => ({ st, idx })).filter(({ st, idx }) => idx < index && (st.kind === "partner" || (st.kind === "stock" && !st.stockIn)) && st.status === "collecte" && st.result?.items?.length);
   // an association with no accepted types filled in on its fiche: everything can be dropped
   const allowed = s.allowedTypes?.length ? s.allowedTypes : null;
 
   function validateCollecte() {
-    if (s.kind === "dechetterie") {
+    if (s.kind === "mission") {
+      onDone({ items: [], totalKg: 0, photos, photoPaths }, "collecte"); // rien à saisir, la photo est facultative
+    } else if (s.kind === "dechetterie") {
       if (photos < 1) return setErrCollecte("Ajoutez une photo pour confirmer le passage.");
       onDone({ items: [], totalKg: 0, photos, photoPaths }, "collecte");
     } else if (s.kind === "stock" && !s.stockIn) {
@@ -359,10 +362,12 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
         <div className="mt-3.5 flex flex-col gap-3.5">
           <StepBlock
             n={1}
-            title={s.kind === "stock" ? (s.stockIn ? "Que déposez-vous au stock ?" : "Que prenez-vous au stock ?") : s.kind === "dropoff" ? "Que laissez-vous ici ?" : s.kind === "dechetterie" ? "Passage déchetterie" : "Qu'avez-vous collecté ?"}
-            sub={s.kind === "stock" ? (s.stockIn ? "Touchez les produits que vous laissez au stock (ou « Tout déposer »). Ils sont ajoutés au stock avec leur poids." : "Indiquez le nombre de colis pour chaque produit.") : s.kind === "dropoff" ? "Touchez les produits déposés (ou « Tout déposer »). Seuls les types acceptés par l'association sont sélectionnables." : s.kind === "dechetterie" ? "Rien à saisir, juste à confirmer avec une photo à l'étape suivante." : "Une carte par type de denrée : choisissez le type, puis le poids."}
+            title={s.kind === "mission" ? "La mission est faite ?" : s.kind === "stock" ? (s.stockIn ? "Que déposez-vous au stock ?" : "Que prenez-vous au stock ?") : s.kind === "dropoff" ? "Que laissez-vous ici ?" : s.kind === "dechetterie" ? "Passage déchetterie" : "Qu'avez-vous collecté ?"}
+            sub={s.kind === "mission" ? "Rien à saisir, il suffit de confirmer." : s.kind === "stock" ? (s.stockIn ? "Touchez les produits que vous laissez au stock (ou « Tout déposer »). Ils sont ajoutés au stock avec leur poids." : "Indiquez le nombre de colis pour chaque produit.") : s.kind === "dropoff" ? "Touchez les produits déposés (ou « Tout déposer »). Seuls les types acceptés par l'association sont sélectionnables." : s.kind === "dechetterie" ? "Rien à saisir, juste à confirmer avec une photo à l'étape suivante." : "Une carte par type de denrée : choisissez le type, puis le poids."}
           >
-          {s.kind === "dechetterie" ? (
+          {s.kind === "mission" ? (
+            <p className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--input-bg)] px-3.5 py-3 text-[12.5px] leading-[1.5] text-[var(--slate)]">Confirmez simplement que la mission a été faite — vous pouvez ajouter une photo à l&apos;étape 2 si c&apos;est utile.</p>
+          ) : s.kind === "dechetterie" ? (
             <p className="rounded-xl border border-dashed border-[var(--border)] bg-[var(--input-bg)] px-3.5 py-3 text-[12.5px] leading-[1.5] text-[var(--slate)]">Confirmez simplement que le passage a eu lieu — ajoutez une photo à l&apos;étape 2.</p>
           ) : s.kind === "partner" || s.kind === "exceptionnel" ? (
             <div>
@@ -534,12 +539,12 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
             </div>
           )}
           </StepBlock>
-          <StepBlock n={2} title={s.kind === "dropoff" || s.stockIn ? "Photo (facultative)" : "Ajoutez une photo"} sub={s.kind === "stock" && !s.stockIn ? "Une photo de ce que vous chargez suffit." : s.kind === "dropoff" || s.stockIn ? "Si vous le souhaitez, une photo de la dépose." : "Une seule photo suffit pour valider, quel que soit le nombre de denrées."}>
+          <StepBlock n={2} title={s.kind === "dropoff" || s.stockIn || s.kind === "mission" ? "Photo (facultative)" : "Ajoutez une photo"} sub={s.kind === "mission" ? "Si vous le souhaitez, une photo de ce qui a été fait." : s.kind === "stock" && !s.stockIn ? "Une photo de ce que vous chargez suffit." : s.kind === "dropoff" || s.stockIn ? "Si vous le souhaitez, une photo de la dépose." : "Une seule photo suffit pour valider, quel que soit le nombre de denrées."}>
             <PhotoField previews={previews} busy={photoBusy} onPick={addPhoto} />
           </StepBlock>
           {errCollecte && <div className="rounded-xl bg-[var(--critical-bg)] px-3.5 py-2.5 text-[12.5px] font-semibold text-[var(--critical)]">{errCollecte}</div>}
           <button type="button" onClick={validateCollecte} className="min-h-[56px] rounded-[40px] bg-[var(--good)] px-4 py-3.5 font-display text-[16px] font-bold text-white">
-            {s.kind === "stock" ? (s.stockIn ? "Valider la dépose au stock" : "Valider la sortie de stock") : s.kind === "dropoff" ? "Valider la dépose" : s.kind === "dechetterie" ? "Confirmer le passage" : "Valider la collecte"}
+            {s.kind === "stock" ? (s.stockIn ? "Valider la dépose au stock" : "Valider la sortie de stock") : s.kind === "dropoff" ? "Valider la dépose" : s.kind === "dechetterie" ? "Confirmer le passage" : s.kind === "mission" ? "Mission faite" : "Valider la collecte"}
           </button>
         </div>
       )}
@@ -931,6 +936,11 @@ export default function JourneePage() {
         const fm = new Map((fr.data as { id: string; team_files: TeamFile[] | null }[]).map((r) => [r.id, r.team_files ?? []]));
         setStops((prev) => (prev.some((s) => (fm.get(s.id) ?? []).length !== (s.teamFiles ?? []).length) ? prev.map((s) => ({ ...s, teamFiles: fm.get(s.id) ?? s.teamFiles ?? [] })) : prev));
       }
+      const ar = await supabase.from("collectes").select("id,address").in("id", ids);
+      if (!ar.error && ar.data) { // sans la migration 077, pas d'adresse de mission
+        const am = new Map((ar.data as { id: string; address: string | null }[]).map((r) => [r.id, r.address ?? ""]));
+        setStops((prev) => (prev.some((s) => s.kind === "mission" && (am.get(s.id) ?? "") !== (s.address ?? "")) ? prev.map((s) => (s.kind === "mission" ? { ...s, address: am.get(s.id) ?? "" } : s)) : prev));
+      }
     };
     void refresh();
     const t = window.setInterval(refresh, 30000);
@@ -995,7 +1005,7 @@ export default function JourneePage() {
     if (!mapOpen || stops.length === 0) return;
     let cancelled = false;
     (async () => {
-      const hex: Record<Kind, string> = { partner: "#0a1a3f", stock: "#b97600", dropoff: "#1a8f68", exceptionnel: "#1f93a8", pause: "#7a7f8c", dechetterie: "#6b7f3a" };
+      const hex: Record<Kind, string> = { partner: "#0a1a3f", stock: "#b97600", dropoff: "#1a8f68", exceptionnel: "#1f93a8", pause: "#7a7f8c", dechetterie: "#6b7f3a", mission: "#c2410c" };
       const depot = await geocode(depotAddr);
       const found: { s: Stop; i: number; g: { lat: number; lng: number } }[] = [];
       for (let i = 0; i < stops.length; i++) {
@@ -1218,9 +1228,10 @@ export default function JourneePage() {
             {stops.map((s, i) => {
               const done = s.status !== "todo";
               const isPause = s.kind === "pause";
-              const badge = isPause ? "Pause" : s.status === "collecte" ? (s.kind === "stock" ? (s.stockIn ? "Déposé" : "Pris") : s.kind === "dropoff" ? "Déposé" : s.kind === "dechetterie" ? "Confirmé" : "Collecté") : s.status === "annule" ? "Annulé" : "À faire";
-              const borderCls = isPause ? "border-l-[3px] border-dashed border-l-[var(--muted)]" : s.kind === "stock" ? "border-l-[3px] border-l-[var(--stock-accent)]" : s.kind === "dropoff" ? "border-l-[3px] border-l-[var(--dropoff)]" : s.kind === "exceptionnel" ? "border-l-[3px] border-l-[var(--exc-accent)]" : s.kind === "dechetterie" ? "border-l-[3px] border-l-[#6b7f3a]" : "";
-              const iconCls = isPause ? "bg-[var(--todo-bg)] text-[var(--slate)]" : s.kind === "stock" ? "bg-[var(--stock-accent-bg)] text-[var(--stock-accent)]" : s.kind === "dropoff" ? "bg-[var(--dropoff-bg)] text-[var(--dropoff)]" : s.kind === "exceptionnel" ? "bg-[var(--exc-accent-bg)] text-[var(--exc-accent)]" : s.kind === "dechetterie" ? "bg-[#6b7f3a1a] text-[#6b7f3a]" : "bg-[var(--todo-bg)] text-[var(--slate)]";
+              const isMission = s.kind === "mission";
+              const badge = isPause ? "Pause" : s.status === "collecte" ? (s.kind === "stock" ? (s.stockIn ? "Déposé" : "Pris") : s.kind === "dropoff" ? "Déposé" : s.kind === "dechetterie" ? "Confirmé" : isMission ? "Fait" : "Collecté") : s.status === "annule" ? "Annulé" : isMission ? "Mission" : "À faire";
+              const borderCls = isPause ? "border-l-[3px] border-dashed border-l-[var(--muted)]" : s.kind === "stock" ? "border-l-[3px] border-l-[var(--stock-accent)]" : s.kind === "dropoff" ? "border-l-[3px] border-l-[var(--dropoff)]" : s.kind === "exceptionnel" ? "border-l-[3px] border-l-[var(--exc-accent)]" : s.kind === "dechetterie" ? "border-l-[3px] border-l-[#6b7f3a]" : isMission ? "border-l-[3px] border-l-[#c2410c]" : "";
+              const iconCls = isPause ? "bg-[var(--todo-bg)] text-[var(--slate)]" : s.kind === "stock" ? "bg-[var(--stock-accent-bg)] text-[var(--stock-accent)]" : s.kind === "dropoff" ? "bg-[var(--dropoff-bg)] text-[var(--dropoff)]" : s.kind === "exceptionnel" ? "bg-[var(--exc-accent-bg)] text-[var(--exc-accent)]" : s.kind === "dechetterie" ? "bg-[#6b7f3a1a] text-[#6b7f3a]" : isMission ? "bg-[#c2410c1a] text-[#c2410c]" : "bg-[var(--todo-bg)] text-[var(--slate)]";
               const badgeCls = isPause ? "bg-[var(--todo-bg)] text-[var(--slate)]" : s.status === "collecte" ? (s.kind === "dropoff" ? "bg-[var(--dropoff-bg)] text-[var(--dropoff)]" : "bg-[var(--good-bg)] text-[var(--good)]") : s.status === "annule" ? "bg-[var(--critical-bg)] text-[var(--critical)]" : "bg-[var(--todo-bg)] text-[var(--slate)]";
               const orderCls = s.status === "collecte" ? "bg-[var(--good-bg)] text-[var(--good)]" : s.status === "annule" ? "bg-[var(--critical-bg)] text-[var(--critical)]" : "bg-[var(--todo-bg)] text-[var(--navy)]";
               return (
@@ -1244,7 +1255,7 @@ export default function JourneePage() {
                         </span>
                       </span>
                       <span className="min-w-0 flex-1">
-                        <div className="mb-0.5 text-[9.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">{isPause ? "Pause à" : s.kind === "dropoff" ? "Dépose prévue à" : s.kind === "stock" ? (s.stockIn ? "Dépose au stock prévue à" : "Prise prévue à") : s.kind === "dechetterie" ? "Déchetterie prévue à" : "Collecte prévue à"}</div>
+                        <div className="mb-0.5 text-[9.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">{isPause ? "Pause à" : s.kind === "dropoff" ? "Dépose prévue à" : s.kind === "stock" ? (s.stockIn ? "Dépose au stock prévue à" : "Prise prévue à") : s.kind === "dechetterie" ? "Déchetterie prévue à" : isMission ? "Mission prévue à" : "Collecte prévue à"}</div>
                         <div className="font-display text-[19px] leading-none font-black text-[var(--navy)]">{s.time || "—"}</div>
                         <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[15.5px] leading-tight font-bold text-[var(--navy)]">
                           <span>{s.name}</span>
@@ -1280,7 +1291,7 @@ export default function JourneePage() {
                       )}
                     </div>
 
-                    {!isPause && (
+                    {!isPause && (!isMission || !!s.address) && (
                     <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--input-bg)] p-2.5">
                       <span className="flex min-w-0 flex-1 items-start gap-2 text-[12.5px] leading-[1.35] font-semibold text-[var(--navy)]">
                         <Icon className="mt-0.5 h-4 w-4 flex-none text-[var(--turquoise)]"><path d="M12 21 C 8 16.5, 5 13, 5 9.5 A7 7 0 0 1 19 9.5 C 19 13, 16 16.5, 12 21 Z" /><circle cx="12" cy="9.5" r="2.3" /></Icon>
@@ -1292,7 +1303,7 @@ export default function JourneePage() {
                       </a>
                     </div>
                     )}
-                    {!isPause && s.kind !== "stock" && s.kind !== "dechetterie" && (
+                    {!isPause && !isMission && s.kind !== "stock" && s.kind !== "dechetterie" && (
                       <div className="mt-2 flex flex-wrap gap-2">
                         {s.phones.length === 0 ? (
                           <span className="text-[12px] text-[var(--muted)]">Aucun numéro renseigné pour cet arrêt</span>

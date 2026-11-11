@@ -148,7 +148,7 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
       }
       let newMovementId: string | null = null;
       let items: { denree: string | null; name: string | null; kg: number; subcategory_id?: string | null; quantity?: number | null; unit?: string | null; source_collecte_id?: string | null; value_snapshot?: number }[] = [];
-      if (stop.kind === "dechetterie") {
+      if (stop.kind === "dechetterie" || stop.kind === "mission") {
         items = [];
       } else if (isOut) {
         const taken = stock.filter((it) => (stockCounts[it.id] ?? 0) > 0);
@@ -230,7 +230,7 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
     return kg == null ? s : s + itemValue({ kg, subcategory_id: r.sub || null, quantity: parseFloat(r.qty.replace(",", ".")) }, subsById).value;
   }, 0);
   const fmtEur = (n: number) => n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
-  const okLabel = stop.kind === "stock" ? (stockIn ? "Déposé" : "Pris") : stop.kind === "dropoff" ? "Déposé" : stop.kind === "dechetterie" ? "Passage confirmé" : "Collecté";
+  const okLabel = stop.kind === "stock" ? (stockIn ? "Déposé" : "Pris") : stop.kind === "dropoff" ? "Déposé" : stop.kind === "dechetterie" ? "Passage confirmé" : stop.kind === "mission" ? "Fait" : "Collecté";
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/45 p-4" onClick={onClose}>
@@ -288,6 +288,8 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
               </label>
             ))}
           </div>
+        ) : stop.kind === "mission" ? (
+          <p className="rounded-xl bg-[var(--input-bg)] px-3.5 py-3 text-[13px] leading-[1.5] text-[var(--slate)]">Rien à saisir — marque simplement la mission comme faite.</p>
         ) : stop.kind === "dechetterie" ? (
           <p className="rounded-xl bg-[var(--input-bg)] px-3.5 py-3 text-[13px] leading-[1.5] text-[var(--slate)]">Rien à saisir — confirme juste que le passage à la déchetterie a bien eu lieu (photo facultative ci-dessous).</p>
         ) : (
