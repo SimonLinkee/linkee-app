@@ -11,15 +11,16 @@ type Mission = {
   comment: string | null;
   importance: number;
   deadline: string | null;
+  planned_day?: string | null; // jour prévu (migration 077)
   assigned_to: string | null;
   status: MissionStatus;
   done_at: string | null;
   created_at: string;
 };
 type Person = { id: string; name: string; role: string };
-type Draft = { id?: string; title: string; comment: string; importance: number; deadline: string; assigned_to: string };
+type Draft = { id?: string; title: string; comment: string; importance: number; deadline: string; planned_day: string; assigned_to: string };
 
-const EMPTY: Draft = { title: "", comment: "", importance: 3, deadline: "", assigned_to: "" };
+const EMPTY: Draft = { title: "", comment: "", importance: 3, deadline: "", planned_day: "", assigned_to: "" };
 const ROLE_SHORT: Record<string, string> = { admin_principal: "Superadmin", admin_local: "Responsable d'antenne", logisticien: "Logisticien" };
 const fieldCls = "w-full rounded-[11px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-3 py-2.5 text-[13.5px] font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]";
 const labelCls = "mb-1.5 block text-[11.5px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase";
@@ -32,6 +33,7 @@ export default function TodoPage() {
   const [people, setPeople] = useState<Person[]>([]);
   const [me, setMe] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hasPlannedCol, setHasPlannedCol] = useState(true);
   const [show, setShow] = useState<"open" | "done" | "all">("open");
   const [who, setWho] = useState(""); // "" = everyone, "none" = unassigned, else profile id
   const [search, setSearch] = useState("");
@@ -48,10 +50,14 @@ export default function TodoPage() {
   async function load() {
     const { data: auth } = await supabase.auth.getUser();
     setMe(auth.user?.id ?? null);
-    const [m, p] = await Promise.all([
-      supabase.from("missions").select("id,title,comment,importance,deadline,assigned_to,status,done_at,created_at").eq("city_id", cityId ?? "").order("created_at", { ascending: false }),
+    const base = "id,title,comment,importance,deadline,assigned_to,status,done_at,created_at";
+    const [m0, p] = await Promise.all([
+      supabase.from("missions").select(base + ",planned_day").eq("city_id", cityId ?? "").order("created_at", { ascending: false }),
       supabase.from("profiles").select("id,full_name,email,role,city_id").eq("active", true).in("role", ["admin_principal", "admin_local", "logisticien"]),
     ]);
+    // sans la migration 077, pas de « jour prévu » : on relit sans cette colonne
+    setHasPlannedCol(!m0.error);
+    const m = m0.error ? await supabase.from("missions").select(base).eq("city_id", cityId ?? "").order("created_at", { ascending: false }) : m0;
     if (m.error) showToast("Chargement impossible : " + m.error.message + " (la migration 012 est-elle passée ?)");
     setMissions((m.data ?? []) as unknown as Mission[]);
     const staff = ((p.data ?? []) as unknown as { id: string; full_name: string | null; email: string | null; role: string; city_id: string | null }[])
@@ -89,11 +95,11 @@ export default function TodoPage() {
     if (!draft) return;
     if (!draft.title.trim()) return setErr("Donne un intitulé à la mission.");
     if (!cityId) return setErr("Aucune ville sélectionnée.");
-    const row = { title: draft.title.trim(), comment: draft.comment.trim() || null, importance: draft.importance, deadline: draft.deadline || null, assigned_to: draft.assigned_to || null };
+    const row = { title: draft.title.trim(), comment: draft.comment.trim() || null, importance: draft.importance, deadline: draft.deadline || null, assigned_to: draft.assigned_to || null, ...(hasPlannedCol || draft.planned_day ? { planned_day: draft.planned_day || null } : {}) };
     const res = draft.id
       ? await supabase.from("missions").update(row).eq("id", draft.id)
       : await supabase.from("missions").insert({ ...row, city_id: cityId, created_by: me });
-    if (res.error) return setErr(res.error.message);
+    if (res.error) return setErr(res.error.message + (res.error.message.includes("planned_day") ? " (la migration 077 est-elle passée ?)" : ""));
     setDraft(null);
     setErr("");
     showToast(draft.id ? "Mission modifiée." : row.assigned_to ? "Mission créée — la personne a reçu une notification." : "Mission créée.");
@@ -189,6 +195,12 @@ export default function TodoPage() {
                   {m.comment && <p className="mt-1 text-[13px] leading-[1.5] whitespace-pre-line text-[var(--slate)]">{m.comment}</p>}
                   <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
                     <ImportanceDots level={m.importance} />
+                    {m.planned_day && (
+                      <span className="rounded-[40px] bg-[var(--client-req-bg)] px-2.5 py-1 text-[11.5px] font-bold text-[var(--client-req)]">
+                        📅 Prévue le {new Date(m.planned_day + "T00:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
+                        {m.planned_day === new Date().toISOString().slice(0, 10) ? " · aujourd'hui" : ""}
+                      </span>
+                    )}
                     <span className="rounded-[40px] px-2.5 py-1 text-[11.5px] font-bold" style={{ background: dl.bg, color: dl.color }}>
                       {m.deadline ? "Deadline : " : ""}
                       {dl.text}
@@ -209,7 +221,7 @@ export default function TodoPage() {
                       </option>
                     ))}
                   </select>
-                  <button type="button" title="Modifier" onClick={() => { setDraft({ id: m.id, title: m.title, comment: m.comment ?? "", importance: m.importance, deadline: m.deadline ?? "", assigned_to: m.assigned_to ?? "" }); setErr(""); }} className="flex h-8 w-8 items-center justify-center rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]">
+                  <button type="button" title="Modifier" onClick={() => { setDraft({ id: m.id, title: m.title, comment: m.comment ?? "", importance: m.importance, deadline: m.deadline ?? "", planned_day: m.planned_day ?? "", assigned_to: m.assigned_to ?? "" }); setErr(""); }} className="flex h-8 w-8 items-center justify-center rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] text-[var(--slate)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
                       <path d="M4 20 L4.8 16.5 L16 5.3 C16.8 4.5,18 4.5,18.8 5.3 L18.7 5.2 C19.5 6,19.5 7.2,18.7 8 L7.5 19.2 Z M14 7 L17 10" />
                     </svg>
@@ -254,10 +266,16 @@ export default function TodoPage() {
             </div>
             <div className="mb-3.5 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <label className={labelCls}>Deadline</label>
-                <input type="date" className={fieldCls} value={draft.deadline} onChange={(e) => setDraft({ ...draft, deadline: e.target.value })} />
+                <label className={labelCls}>Jour prévu</label>
+                <input type="date" className={fieldCls} value={draft.planned_day} onChange={(e) => setDraft({ ...draft, planned_day: e.target.value })} />
+                <p className="mt-1 text-[11px] text-[var(--slate)]">Ce jour-là, la mission apparaît en tête de la journée de la personne.</p>
               </div>
               <div>
+                <label className={labelCls}>Deadline</label>
+                <input type="date" className={fieldCls} value={draft.deadline} onChange={(e) => setDraft({ ...draft, deadline: e.target.value })} />
+                <p className="mt-1 text-[11px] text-[var(--slate)]">Date limite (facultative).</p>
+              </div>
+              <div className="sm:col-span-2">
                 <label className={labelCls}>Personne en charge</label>
                 <select className={fieldCls} value={draft.assigned_to} onChange={(e) => setDraft({ ...draft, assigned_to: e.target.value })}>
                   <option value="">Non attribuée</option>

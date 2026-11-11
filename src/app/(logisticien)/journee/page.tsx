@@ -607,21 +607,24 @@ export default function JourneePage() {
   const [depotAddr, setDepotAddr] = useState(DEFAULT_DEPOT_ADDRESS);
 
   // missions assigned to this person (RLS already limits the list to them)
-  type MissionRow = { id: string; title: string; comment: string | null; importance: number; deadline: string | null; status: MissionStatus };
+  type MissionRow = { id: string; title: string; comment: string | null; importance: number; deadline: string | null; status: MissionStatus; planned_day?: string | null };
   const [missions, setMissions] = useState<MissionRow[]>([]);
   const [missionsOpen, setMissionsOpen] = useState(false); // collapsed: the day's planning comes first
-  const openMissions = missions
-    .filter((m) => m.status !== "fait")
-    .sort((a, b) => b.importance - a.importance || (a.deadline ?? "9999").localeCompare(b.deadline ?? "9999"));
+  const todayIsoM = isoDate(new Date());
+  const openAll = missions.filter((m) => m.status !== "fait");
+  // missions prévues POUR AUJOURD'HUI : elles passent en tête de la journée (cadre « À faire aujourd'hui »)
+  const todayMissions = openAll.filter((m) => m.planned_day === todayIsoM).sort((a, b) => b.importance - a.importance);
+  const openMissions = openAll
+    .filter((m) => m.planned_day !== todayIsoM)
+    .sort((a, b) => (a.planned_day ?? "9999").localeCompare(b.planned_day ?? "9999") || b.importance - a.importance || (a.deadline ?? "9999").localeCompare(b.deadline ?? "9999"));
   const doneMissions = missions.filter((m) => m.status === "fait");
   useEffect(() => {
     if (!userId) return;
-    supabase
-      .from("missions")
-      .select("id,title,comment,importance,deadline,status")
-      .eq("assigned_to", userId)
-      .order("created_at", { ascending: false })
-      .then(({ data }) => setMissions((data ?? []) as MissionRow[]));
+    (async () => {
+      let r: { data: unknown; error: unknown } = await supabase.from("missions").select("id,title,comment,importance,deadline,status,planned_day").eq("assigned_to", userId).order("created_at", { ascending: false });
+      if (r.error) r = await supabase.from("missions").select("id,title,comment,importance,deadline,status").eq("assigned_to", userId).order("created_at", { ascending: false }); // avant la migration 077
+      setMissions((r.data ?? []) as unknown as MissionRow[]);
+    })();
   }, [supabase, userId]);
   async function setMissionStatus(id: string, status: MissionStatus) {
     const { error } = await supabase.from("missions").update({ status, done_at: status === "fait" ? new Date().toISOString() : null }).eq("id", id);
@@ -629,6 +632,38 @@ export default function JourneePage() {
     setMissions((prev) => prev.map((m) => (m.id === id ? { ...m, status } : m)));
     if (status === "fait") showToast("Mission terminée, bravo !");
   }
+  const renderMission = (m: MissionRow) => {
+    const dl = deadlineInfo(m.deadline, false);
+    return (
+        <div key={m.id} className={`rounded-2xl border bg-[var(--input-bg)] p-3.5 ${m.planned_day === todayIsoM ? "border-[var(--turquoise)]" : "border-[var(--border)]"}`} style={{ borderLeft: `5px solid ${IMPORTANCE_COLOR[m.importance]}` }}>
+          <div className="text-[15px] leading-tight font-bold text-[var(--navy)]">{m.title}</div>
+          {m.comment && <p className="mt-1 text-[12.5px] leading-[1.45] whitespace-pre-line text-[var(--slate)]">{m.comment}</p>}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <ImportanceDots level={m.importance} />
+          {m.planned_day && m.planned_day !== todayIsoM && (
+            <span className="rounded-[40px] bg-[var(--client-req-bg)] px-2.5 py-1 text-[11px] font-bold text-[var(--client-req)]">
+              📅 Prévue le {new Date(m.planned_day + "T00:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
+            </span>
+          )}
+            <span className="rounded-[40px] px-2.5 py-1 text-[11px] font-bold" style={{ background: dl.bg, color: dl.color }}>
+              {m.deadline ? "Pour le " : ""}
+              {dl.text}
+            </span>
+          </div>
+          <div className="mt-3 flex gap-2">
+            {m.status === "a_faire" && (
+              <button type="button" onClick={() => setMissionStatus(m.id, "en_cours")} className="flex-1 rounded-[40px] border-2 border-[var(--navy-deep)] px-3 py-2.5 font-display text-[14px] font-bold text-[var(--navy)]">
+                Commencer
+              </button>
+            )}
+            {m.status === "en_cours" && <span className="flex flex-none items-center rounded-[40px] bg-[var(--warn-bg)] px-3 text-[11.5px] font-bold text-[var(--warn)]">En cours</span>}
+            <button type="button" onClick={() => setMissionStatus(m.id, "fait")} className="flex-1 rounded-[40px] bg-[var(--good)] px-3 py-2.5 font-display text-[14px] font-bold text-white">
+              Marquer terminée
+            </button>
+          </div>
+        </div>
+    );
+  };
   const [vehicle, setVehicle] = useState<{ id: string; name: string; plate: string | null; rented: boolean } | null>(null);
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   const [depChecked, setDepChecked] = useState<Set<string>>(new Set());
@@ -1067,6 +1102,19 @@ export default function JourneePage() {
 
       {view === "jour" && (
         <div>
+          {todayMissions.length > 0 && (
+            <div className="mb-4 rounded-[18px] border-2 border-[var(--turquoise)] bg-[var(--card)] p-[18px] shadow-[var(--shadow)]">
+              <div className="mb-3 flex items-center gap-2">
+                <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-[var(--turquoise)] text-[#04262e]">
+                  <Icon className="h-4 w-4" sw={2.2}><path d="M9 11 L12 14 L20 6" /><path d="M20 12 V18 A2 2 0 0 1 18 20 H6 A2 2 0 0 1 4 18 V6 A2 2 0 0 1 6 4 H14" /></Icon>
+                </span>
+                <h3 className="font-display text-[17px] font-extrabold">À faire aujourd&apos;hui</h3>
+                <span className="rounded-[40px] bg-[var(--critical)] px-2 py-0.5 text-[11px] font-bold text-white">{todayMissions.length}</span>
+              </div>
+              <div className="flex flex-col gap-2.5">{todayMissions.map(renderMission)}</div>
+            </div>
+          )}
+
           {/* Mes missions: only the missions assigned to this person */}
           <div className="mb-4 rounded-[18px] border border-[var(--border)] bg-[var(--card)] shadow-[var(--shadow)]">
             <button type="button" onClick={() => setMissionsOpen((v) => !v)} aria-expanded={missionsOpen} className="flex w-full items-center gap-2 px-[18px] py-3 text-left">
@@ -1081,33 +1129,7 @@ export default function JourneePage() {
             <div className="border-t border-[var(--border)] p-[18px] pt-3.5">
             {openMissions.length === 0 && <p className="text-[12.5px] text-[var(--slate)]">Aucune mission en cours. Quand l&apos;équipe t&apos;en confie une, elle apparaît ici.</p>}
             <div className="flex flex-col gap-2.5">
-              {openMissions.map((m) => {
-                const dl = deadlineInfo(m.deadline, false);
-                return (
-                  <div key={m.id} className="rounded-2xl border border-[var(--border)] bg-[var(--input-bg)] p-3.5" style={{ borderLeft: `5px solid ${IMPORTANCE_COLOR[m.importance]}` }}>
-                    <div className="text-[15px] leading-tight font-bold text-[var(--navy)]">{m.title}</div>
-                    {m.comment && <p className="mt-1 text-[12.5px] leading-[1.45] whitespace-pre-line text-[var(--slate)]">{m.comment}</p>}
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <ImportanceDots level={m.importance} />
-                      <span className="rounded-[40px] px-2.5 py-1 text-[11px] font-bold" style={{ background: dl.bg, color: dl.color }}>
-                        {m.deadline ? "Pour le " : ""}
-                        {dl.text}
-                      </span>
-                    </div>
-                    <div className="mt-3 flex gap-2">
-                      {m.status === "a_faire" && (
-                        <button type="button" onClick={() => setMissionStatus(m.id, "en_cours")} className="flex-1 rounded-[40px] border-2 border-[var(--navy-deep)] px-3 py-2.5 font-display text-[14px] font-bold text-[var(--navy)]">
-                          Commencer
-                        </button>
-                      )}
-                      {m.status === "en_cours" && <span className="flex flex-none items-center rounded-[40px] bg-[var(--warn-bg)] px-3 text-[11.5px] font-bold text-[var(--warn)]">En cours</span>}
-                      <button type="button" onClick={() => setMissionStatus(m.id, "fait")} className="flex-1 rounded-[40px] bg-[var(--good)] px-3 py-2.5 font-display text-[14px] font-bold text-white">
-                        Marquer terminée
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+              {openMissions.map(renderMission)}
             </div>
             {doneMissions.length > 0 && <p className="mt-2.5 text-center text-[11.5px] text-[var(--slate)]">{doneMissions.length} mission{doneMissions.length > 1 ? "s" : ""} terminée{doneMissions.length > 1 ? "s" : ""}.</p>}
             </div>

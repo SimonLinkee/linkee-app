@@ -492,6 +492,29 @@ export default function PlanningPage() {
     editStops((prev) => prev.map((s) => (s.id === id ? { ...s, fixedTime: value } : s)));
   }
 
+  // Missions de la Todo prévues pour ce jour (migration 077) : rappel sous la tournée, avec la personne concernée
+  const [dayMissions, setDayMissions] = useState<{ id: string; title: string; status: string; who: string }[]>([]);
+  useEffect(() => {
+    if (!cityId) return;
+    let live = true;
+    (async () => {
+      const r = await supabase.from("missions").select("id,title,status,assigned_to").eq("city_id", cityId).eq("planned_day", iso).order("created_at");
+      if (!live) return;
+      if (r.error || !r.data) return setDayMissions([]); // sans la migration 077 : rien à afficher
+      const rows = r.data as { id: string; title: string; status: string; assigned_to: string | null }[];
+      const ids = Array.from(new Set(rows.map((x) => x.assigned_to).filter((x): x is string => !!x)));
+      const names = new Map<string, string>();
+      if (ids.length) {
+        const pr = await supabase.from("profiles").select("id,full_name,email").in("id", ids);
+        for (const x of (pr.data ?? []) as { id: string; full_name: string | null; email: string | null }[]) names.set(x.id, x.full_name || x.email || "Sans nom");
+      }
+      if (live) setDayMissions(rows.map((x) => ({ id: x.id, title: x.title, status: x.status, who: x.assigned_to ? names.get(x.assigned_to) ?? "—" : "Non attribuée" })));
+    })();
+    return () => {
+      live = false;
+    };
+  }, [supabase, cityId, iso]);
+
   // Arrêt « Mission » : texte libre (commentaire), adresse facultative, durée
   const [missionForm, setMissionForm] = useState<{ id?: string; text: string; address: string; duration: number } | null>(null);
   async function saveMission() {
@@ -1656,6 +1679,23 @@ export default function PlanningPage() {
                   Retour Entrepôt Linkee · {fmtDuration(sched.returnMin)} de trajet · {sched.returnKm.toFixed(1)} km
                 </span>
                 <span className="font-display text-[15px] font-extrabold text-[var(--navy)]">{fmtTime(sched.dayEnd)}</span>
+              </div>
+            )}
+
+            {dayMissions.length > 0 && (
+              <div className="mt-1 mb-2 rounded-2xl border-[1.5px] border-[#c2410c] bg-[#c2410c0d] px-3.5 py-3">
+                <div className="mb-1.5 flex items-center gap-2 text-[12.5px] font-bold text-[var(--navy)]">
+                  📋 Missions de la Todo prévues ce jour
+                  <a href="/todo" className="ml-auto text-[11.5px] font-bold text-[var(--turquoise)] underline">Ouvrir la Todo</a>
+                </div>
+                <div className="flex flex-col gap-1">
+                  {dayMissions.map((m) => (
+                    <div key={m.id} className={`flex items-center gap-2 text-[12.5px] ${m.status === "fait" ? "text-[var(--slate)] line-through" : "text-[var(--navy)]"}`}>
+                      <span className="min-w-0 flex-1 truncate font-semibold">{m.title}</span>
+                      <span className="flex-none rounded-[40px] bg-[var(--track)] px-2.5 py-0.5 text-[11px] font-bold text-[var(--navy)]">{m.who}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
