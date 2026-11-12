@@ -1,5 +1,6 @@
 "use client";
 
+import { windowOf } from "@/lib/timewin";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -456,7 +457,7 @@ export default function EspacePartenairePage() {
       const mine = colRows.filter((r) => r.partner_id === p.id && isCollectKind(r.kind));
       const upcoming = mine
         .filter((r) => r.scheduled_date >= todayIso && r.status === "todo")
-        .map((r) => ({ date: r.scheduled_date, time: r.scheduled_time ? r.scheduled_time.slice(0, 5) : "—", note: r.kind === "partner" ? "Collecte planifiée" : "Collecte exceptionnelle" }));
+        .map((r) => ({ date: r.scheduled_date, time: r.scheduled_time ? windowOf(r.scheduled_time) : "—", note: r.kind === "partner" ? "Collecte planifiée" : "Collecte exceptionnelle" }));
       const history: HistoryEntry[] = mine
         .filter((r) => r.status === "collecte" || r.status === "annule")
         .sort((a, b) => b.scheduled_date.localeCompare(a.scheduled_date))

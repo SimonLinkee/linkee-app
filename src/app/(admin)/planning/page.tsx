@@ -1,5 +1,7 @@
 "use client";
 
+import HalfHourSelect from "@/components/HalfHourSelect";
+import { ceil30, hm, step10, toHHMM, windowOfMin } from "@/lib/timewin";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { geocode, toKm, type LatLng } from "@/lib/geocode";
@@ -526,7 +528,7 @@ export default function PlanningPage() {
     const text = missionForm.text.trim();
     const address = missionForm.address.trim();
     if (!text) return showToast("Décris la mission en quelques mots.");
-    const duration = Math.max(5, Math.round(missionForm.duration) || 30);
+    const duration = Math.max(10, Math.round((missionForm.duration || 30) / 10) * 10);
     const hint = " (la migration 077 est-elle passée ?)";
     if (missionForm.id) {
       const id = missionForm.id;
@@ -590,6 +592,7 @@ export default function PlanningPage() {
   }
   // Photos ajoutées par l'équipe sur un arrêt (le logisticien, lui, ne peut que prendre des photos).
   // Elles rejoignent les photos de l'arrêt (collectes.photo_paths) : la base les range aussi dans « Mes photos de collecte » du partenaire, à la date de l'arrêt.
+  const [timeEdit, setTimeEdit] = useState<string | null>(null); // arrêt dont on choisit l'heure d'arrivée
   const [photoEdit, setPhotoEdit] = useState<string | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoThumbs, setPhotoThumbs] = useState<Record<string, string>>({});
@@ -1180,7 +1183,7 @@ export default function PlanningPage() {
                 </div>
                 <div>
                   <label className={labelCls}>Créneau souhaité</label>
-                  <input type="time" value={excTime} onChange={(e) => setExcTime(e.target.value)} className={inputCls} />
+                  <HalfHourSelect allowEmpty value={excTime} onChange={setExcTime} className={inputCls} />
                 </div>
                 <div className="sm:col-span-3">
                   <label className={labelCls}>Commentaire (optionnel)</label>
@@ -1295,17 +1298,16 @@ export default function PlanningPage() {
               </span>
               <label className="flex flex-none flex-col items-end gap-0.5">
                 <span className="text-[9.5px] font-bold tracking-[0.05em] text-[var(--panel-fg-dim)] uppercase">Départ ce jour-là ✎</span>
-                <input
-                  type="time"
+                <HalfHourSelect
+                  from={5 * 60}
+                  to={13 * 60}
                   disabled={ro}
-                  title="Modifie l'heure de départ de cette journée uniquement"
+                  ariaLabel="Heure de départ de la journée"
                   value={fmtTime(dayStart)}
-                  onChange={(e) => {
-                    if (!e.target.value) return;
-                    const [h, m] = e.target.value.split(":").map(Number);
-                    changeDayStart(h * 60 + m);
+                  onChange={(v) => {
+                    if (v) changeDayStart(toMin(v));
                   }}
-                  className="cursor-pointer rounded-lg border-[1.5px] border-[var(--turquoise)] bg-white/10 px-2 py-1 font-display text-[16px] font-extrabold text-[var(--turquoise)] outline-none hover:bg-white/20"
+                  className="cursor-pointer rounded-lg border-[1.5px] border-[var(--turquoise)] bg-white/10 px-2 py-1 font-display text-[16px] font-extrabold text-[var(--turquoise)] outline-none hover:bg-white/20 [&>option]:text-black"
                 />
                 {/* l'heure ne vaut que pour la date affichée : les autres jours gardent 9h00 */}
                 <span className="text-[10.5px] text-[var(--panel-fg-dim)]">
@@ -1386,21 +1388,22 @@ export default function PlanningPage() {
                       </svg>
                     </span>
                     <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-full bg-[var(--track)] font-display text-xs font-extrabold text-[var(--navy)]">{i + 1}</span>
-                    <span className={`w-[92px] flex-none leading-tight ${cancelled ? "opacity-60" : ""}`}>
+                    <span className={`w-[110px] flex-none leading-tight ${cancelled ? "opacity-60" : ""}`}>
                       <span className="block text-[9.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">{s.kind === "dropoff" ? "Dépose" : s.kind === "stock" ? (s.stockIn ? "Dépose stock" : "Prise stock") : s.kind === "pause" ? "Pause" : s.kind === "dechetterie" ? "Déchetterie" : s.kind === "mission" ? "Mission" : "Collecte"}</span>
-                      {!cancelled && !ro && s.scheduledTime ? (
-                        <input
-                          type="time"
-                          value={s.scheduledTime}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => {
-                            if (e.target.value) void setFixedTime(s.id, e.target.value);
+                      {!cancelled && !ro && s.arrivalMin !== undefined ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTimeEdit(timeEdit === s.id ? null : s.id);
                           }}
-                          title="Modifier l'heure d'arrivée de cet arrêt à la main : les arrêts suivants se recalculent à partir d'elle"
-                          className={`w-[88px] cursor-pointer rounded-[8px] border-[1.5px] bg-transparent px-1 py-px font-display text-[16px] font-extrabold text-[var(--navy)] outline-none focus:border-[var(--turquoise)] ${s.fixedTime ? "border-[var(--turquoise)] bg-[var(--input-bg)]" : "border-transparent hover:border-[var(--border)]"}`}
-                        />
+                          title="Choisir l'heure d'arrivée de cet arrêt (par demi-heure) : les arrêts suivants se recalculent"
+                          className={`block w-[106px] cursor-pointer rounded-[8px] border-[1.5px] px-1 py-0.5 text-left font-display text-[14px] font-extrabold whitespace-nowrap text-[var(--navy)] ${s.fixedTime ? "border-[var(--turquoise)] bg-[var(--input-bg)]" : "border-transparent hover:border-[var(--border)]"}`}
+                        >
+                          {windowOfMin(s.arrivalMin)}
+                        </button>
                       ) : (
-                        <span className="block font-display text-[18px] font-extrabold text-[var(--navy)]">{s.scheduledTime || "—"}</span>
+                        <span className="block font-display text-[14px] font-extrabold whitespace-nowrap text-[var(--navy)]">{s.arrivalMin !== undefined ? windowOfMin(s.arrivalMin) : "—"}</span>
                       )}
                       {s.fixedTime && !cancelled && !ro && (
                         <button type="button" onClick={(e) => { e.stopPropagation(); void setFixedTime(s.id, null); }} title="Revenir à l'heure calculée automatiquement" className="block text-[10px] font-bold text-[var(--turquoise)] underline">
@@ -1408,7 +1411,7 @@ export default function PlanningPage() {
                         </button>
                       )}
                       {s.arrivalMin !== undefined && (
-                        <span className="block text-[10.5px] text-[var(--slate)]">→ {fmtTime(s.kind === "pause" ? Math.max(LUNCH_RESUME_FLOOR, s.arrivalMin + s.duration) : s.arrivalMin + s.duration)}</span>
+                        <span className="block text-[10.5px] text-[var(--slate)]">→ vers {hm(ceil30(s.kind === "pause" ? Math.max(LUNCH_RESUME_FLOOR, s.arrivalMin + s.duration) : s.arrivalMin + s.duration))}</span>
                       )}
                     </span>
                     <span className="min-w-0 flex-1">
@@ -1472,18 +1475,9 @@ export default function PlanningPage() {
                       {cancelled ? "Annulé" : done ? "Réalisée" : KIND_BADGE[s.kind] || "Collecte"}
                     </span>
                     <span className="flex flex-none items-center gap-1">
-                      <input
-                        type="number"
-                        min={0}
-                        step={5}
-                        value={s.duration}
-                        onClick={(e) => e.stopPropagation()}
-                        disabled={ro}
-                        title={s.kind === "pause" ? "Durée minimum garantie (la reprise ne se fait jamais avant 14h)" : undefined}
-                        onChange={(e) => updateDuration(i, +e.target.value || 0)}
-                        className="w-11 rounded-[8px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-1.5 py-1 text-center text-xs font-semibold text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
-                      />
-                      <small className="text-[11px] text-[var(--slate)]">min</small>
+                      <button type="button" disabled={ro} aria-label="10 minutes de moins" onClick={(e) => { e.stopPropagation(); updateDuration(i, step10(s.duration, -1)); }} className="flex h-7 w-7 items-center justify-center rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] text-[14px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)] disabled:opacity-40">−</button>
+                      <span title={s.kind === "pause" ? "Durée minimum garantie (la reprise ne se fait jamais avant 14h)" : "Durée sur place, par tranche de 10 minutes"} className="min-w-[38px] text-center text-xs font-semibold text-[var(--navy)]">{s.duration} min</span>
+                      <button type="button" disabled={ro} aria-label="10 minutes de plus" onClick={(e) => { e.stopPropagation(); updateDuration(i, step10(s.duration, 1)); }} className="flex h-7 w-7 items-center justify-center rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] text-[14px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)] disabled:opacity-40">+</button>
                     </span>
                     <span className="flex flex-none gap-1.5">
                       {!ro && s.kind !== "pause" && (
@@ -1626,6 +1620,38 @@ export default function PlanningPage() {
                       <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">Rattaché à cet arrêt de ce jour uniquement : il reste affiché au logisticien tant que tu ne le retires pas.</p>
                     </div>
                   )}
+                  {!ro && !cancelled && timeEdit === s.id && s.arrivalMin !== undefined && (
+                    <div className="mt-1.5 rounded-xl border-[1.5px] border-[var(--turquoise)] bg-[var(--input-bg)] p-3">
+                      <div className="mb-2 text-[12.5px] font-bold text-[var(--navy)]">Heure d&apos;arrivée de cet arrêt</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {Array.from({ length: 29 }, (_, k) => 6 * 60 + k * 30).map((m) => {
+                          const on = s.fixedTime ? s.fixedTime === toHHMM(m) : false;
+                          return (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => {
+                                void setFixedTime(s.id, toHHMM(m));
+                                setTimeEdit(null);
+                              }}
+                              className={`h-8 rounded-[8px] border-[1.5px] px-2.5 text-[12.5px] font-bold ${on ? "border-[var(--turquoise)] bg-[var(--card)] text-[var(--navy)]" : m <= (s.arrivalMin ?? 0) && (s.arrivalMin ?? 0) < m + 30 ? "border-[var(--border-strong)] bg-[var(--card)] text-[var(--navy)]" : "border-[var(--border)] bg-[var(--card)] text-[var(--slate)] hover:border-[var(--turquoise)]"}`}
+                            >
+                              {hm(m)}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-2 flex items-center gap-2">
+                        {s.fixedTime && (
+                          <button type="button" onClick={() => { void setFixedTime(s.id, null); setTimeEdit(null); }} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-1.5 text-[12.5px] font-semibold text-[var(--navy)]">
+                            ↺ Revenir au calcul auto
+                          </button>
+                        )}
+                        <button type="button" onClick={() => setTimeEdit(null)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-1.5 text-[12.5px] font-semibold text-[var(--slate)]">Fermer</button>
+                      </div>
+                      <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">Heure calculée : {windowOfMin(s.arrivalMin)}. Choisis le début de la demi-heure : les arrêts suivants se recalculent à partir de là.</p>
+                    </div>
+                  )}
                   {!ro && photoEdit === s.id && (
                     <div className="mt-1.5 rounded-xl border-[1.5px] border-[var(--turquoise)] bg-[var(--input-bg)] p-3">
                       <div className="mb-2 text-[12.5px] font-bold text-[var(--navy)]">Photos de cet arrêt</div>
@@ -1740,7 +1766,7 @@ export default function PlanningPage() {
                   </label>
                   <label className="text-[11.5px] font-semibold text-[var(--slate)]">
                     Durée (min)
-                    <input type="number" min={5} step={5} value={missionForm.duration} onChange={(e) => setMissionForm({ ...missionForm, duration: +e.target.value })} className={`${inputCls} mt-1`} />
+                    <input type="number" min={10} step={10} value={missionForm.duration} onChange={(e) => setMissionForm({ ...missionForm, duration: +e.target.value })} className={`${inputCls} mt-1`} />
                   </label>
                 </div>
                 <div className="mt-3 flex gap-2.5">

@@ -1,5 +1,6 @@
 "use client";
 
+import HalfHourSelect from "@/components/HalfHourSelect";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -152,9 +153,9 @@ function SlotsEditor({ value, onChange }: { value: Creneaux; onChange: (v: Crene
               <div className="mt-1.5 flex flex-col gap-1.5">
                 {slots.map((s, i) => (
                   <div key={i} className="flex flex-wrap items-center gap-2">
-                    <input type="time" className={`${fieldCls} !w-auto !px-2 !py-1.5 !text-xs`} value={s.open} onChange={(e) => updateSlot(d.k, i, { open: e.target.value })} />
+                    <HalfHourSelect className={`${fieldCls} !w-auto !px-2 !py-1.5 !text-xs`} value={s.open} onChange={(v) => updateSlot(d.k, i, { open: v })} />
                     <span className="text-[11px] text-[var(--muted)]">à</span>
-                    <input type="time" className={`${fieldCls} !w-auto !px-2 !py-1.5 !text-xs`} value={s.close} onChange={(e) => updateSlot(d.k, i, { close: e.target.value })} />
+                    <HalfHourSelect className={`${fieldCls} !w-auto !px-2 !py-1.5 !text-xs`} value={s.close} onChange={(v) => updateSlot(d.k, i, { close: v })} />
                     <select
                       className={`${fieldCls} !w-auto !px-2 !py-1.5 !text-xs`}
                       value={s.weekParity ?? "toutes"}

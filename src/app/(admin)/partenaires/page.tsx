@@ -1,5 +1,6 @@
 "use client";
 
+import HalfHourSelect from "@/components/HalfHourSelect";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
@@ -290,9 +291,9 @@ function SlotsEditor({ value, onChange }: { value: Creneaux; onChange: (v: Crene
               <div className="mt-1.5 flex flex-col gap-1.5">
                 {slots.map((s, i) => (
                   <div key={i} className="flex flex-wrap items-center gap-2">
-                    <input type="time" className={`${inputCls} !w-auto !px-2 !py-1.5 !text-xs`} value={s.open} onChange={(e) => updateSlot(d.k, i, { open: e.target.value })} />
+                    <HalfHourSelect className={`${inputCls} !w-auto !px-2 !py-1.5 !text-xs`} value={s.open} onChange={(v) => updateSlot(d.k, i, { open: v })} />
                     <span className="text-[11px] text-[var(--muted)]">à</span>
-                    <input type="time" className={`${inputCls} !w-auto !px-2 !py-1.5 !text-xs`} value={s.close} onChange={(e) => updateSlot(d.k, i, { close: e.target.value })} />
+                    <HalfHourSelect className={`${inputCls} !w-auto !px-2 !py-1.5 !text-xs`} value={s.close} onChange={(v) => updateSlot(d.k, i, { close: v })} />
                     <select
                       className={`${inputCls} !w-auto !px-2 !py-1.5 !text-xs`}
                       value={s.weekParity ?? "toutes"}
@@ -1030,14 +1031,17 @@ export default function PartenairesPage() {
                 </div>
                 <div>
                   <label className={labelCls}>Durée de collecte sur place (min)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={5}
+                  <select
                     className={inputCls}
                     value={current.dureeCollecte || 10}
                     onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, dureeCollecte: +e.target.value || 10 } : entity))}
-                  />
+                  >
+                    {Array.from(new Set([...Array.from({ length: 12 }, (_, k) => (k + 1) * 10), current.dureeCollecte || 10])).sort((x, y) => x - y).map((m) => (
+                      <option key={m} value={m}>
+                        {m} min
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
             </AccordionSection>

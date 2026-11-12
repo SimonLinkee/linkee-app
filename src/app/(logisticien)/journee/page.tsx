@@ -1,5 +1,6 @@
 "use client";
 
+import { windowOf } from "@/lib/timewin";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -523,7 +524,7 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
                     <div key={idx} className="rounded-2xl border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] p-3.5">
                       <div className="mb-2.5 flex items-center gap-2">
                         <span className="min-w-0 flex-1 truncate text-[15px] font-bold text-[var(--navy)]">{st.name}</span>
-                        <span className="flex-none text-[12px] font-semibold text-[var(--slate)]">{st.time}</span>
+                        <span className="flex-none text-[12px] font-semibold text-[var(--slate)]">{windowOf(st.time)}</span>
                         {n === 0 && <span className="flex-none rounded-[40px] bg-[var(--dropoff-bg)] px-2 py-1 text-[10px] font-bold tracking-[0.03em] text-[var(--dropoff)] uppercase">Suggéré</span>}
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -757,7 +758,7 @@ export default function JourneePage() {
           title: key === iso ? "Aujourd'hui" : rows.length ? "Tournée planifiée" : "Pas de tournée",
           status: key === iso ? ("today" as const) : key < iso ? ("past" as const) : ("upcoming" as const),
           stops: rows.map((r) => ({
-            t: r.scheduled_time ? r.scheduled_time.slice(0, 5) : "—",
+            t: r.scheduled_time ? windowOf(r.scheduled_time) : "—",
             n: one(r.partners)?.name ?? one(r.beneficiaries)?.name ?? r.label ?? "Point",
             c: one(r.partners)?.category ?? one(r.beneficiaries)?.category ?? (r.label ? "Dépôt stock" : ""),
           })),
@@ -1065,7 +1066,7 @@ export default function JourneePage() {
       if (cancelled) return;
       const points: MapPoint[] = [
         ...(depot ? [{ lat: depot.lat, lng: depot.lng, label: "Entrepôt Linkee — départ", color: "#4FC1D6", num: "home" as const }] : []),
-        ...found.map(({ s, i, g }) => ({ lat: g.lat, lng: g.lng, label: s.name, color: hex[s.kind], num: i + 1, time: s.time || undefined })),
+        ...found.map(({ s, i, g }) => ({ lat: g.lat, lng: g.lng, label: s.name, color: hex[s.kind], num: i + 1, time: windowOf(s.time) || undefined })),
       ];
       setMapPts(points);
       if (depot && found.length) {
@@ -1083,7 +1084,7 @@ export default function JourneePage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapOpen, addrKey]);
-  const todayWeekStops = stops.map((s) => ({ t: s.time, n: s.name, c: s.cat }));
+  const todayWeekStops = stops.map((s) => ({ t: windowOf(s.time), n: s.name, c: s.cat }));
 
   return (
     <div className="relative">
@@ -1292,7 +1293,7 @@ export default function JourneePage() {
                       </span>
                       <span className="min-w-0 flex-1">
                         <div className="mb-0.5 text-[9.5px] font-bold tracking-[0.05em] text-[var(--slate)] uppercase">{isPause ? "Pause à" : s.kind === "dropoff" ? "Dépose prévue à" : s.kind === "stock" ? (s.stockIn ? "Dépose au stock prévue à" : "Prise prévue à") : s.kind === "dechetterie" ? "Déchetterie prévue à" : isMission ? "Mission prévue à" : "Collecte prévue à"}</div>
-                        <div className="font-display text-[19px] leading-none font-black text-[var(--navy)]">{s.time || "—"}</div>
+                        <div className="font-display text-[19px] leading-none font-black text-[var(--navy)]">{windowOf(s.time) || "—"}</div>
                         <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[15.5px] leading-tight font-bold text-[var(--navy)]">
                           <span>{s.name}</span>
                           <PassageBadges passage={s.passage} size={22} />

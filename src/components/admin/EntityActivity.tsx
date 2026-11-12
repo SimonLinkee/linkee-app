@@ -1,5 +1,6 @@
 "use client";
 
+import { windowOf } from "@/lib/timewin";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { isCollectKind, isoOf } from "@/lib/stats";
@@ -100,7 +101,7 @@ function Line({ r, past, today, media, files, open, onToggle, onPhotos, onFile }
   let badge = "À venir";
   let bg = "var(--client-req-bg)";
   let fg = "var(--client-req)";
-  let note = [r.scheduled_time ? r.scheduled_time.slice(0, 5) : "", denrees(r.collecte_items), r.source === "manual" ? "saisie manuelle" : ""].filter(Boolean).join(" · ") || "—";
+  let note = [r.scheduled_time ? windowOf(r.scheduled_time) : "", denrees(r.collecte_items), r.source === "manual" ? "saisie manuelle" : ""].filter(Boolean).join(" · ") || "—";
   if (r.status === "en_attente") {
     badge = "Demande client";
   } else if (past) {
@@ -323,7 +324,7 @@ export default function EntityActivity({ kind, id, media = "all" }: { kind: "par
             <span className="mt-2 rounded-[40px] px-2.5 py-[4px] text-[10px] font-bold whitespace-nowrap uppercase" style={{ background: "var(--client-req-bg)", color: "var(--client-req)" }}>
               {next.status === "en_attente" ? "Demande client" : daysTo <= 0 ? "Aujourd'hui" : daysTo === 1 ? "Demain" : `Dans ${daysTo} jours`}
             </span>
-            {next.scheduled_time && <div className="mt-1.5 text-[11.5px] text-[var(--slate)]">{next.scheduled_time.slice(0, 5)}</div>}
+            {next.scheduled_time && <div className="mt-1.5 text-[11.5px] text-[var(--slate)]">{windowOf(next.scheduled_time)}</div>}
             {upcoming.length > 1 && (
               <div className="mt-2 flex flex-col items-center gap-1">
                 <div className="flex gap-1" aria-hidden>
