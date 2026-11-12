@@ -24,7 +24,7 @@ type CollecteRow = {
   collecte_items: { denree: string | null; kg: number | string | null }[] | null;
   photo_paths: string[] | null;
 };
-const CAT_COLORS: Record<CatKey, string> = { secs: "var(--cat-1)", fl: "var(--cat-2)", frais: "var(--cat-3)", plats: "var(--cat-4)", boulang: "var(--cat-5)" };
+const CAT_COLORS: Record<CatKey, string> = { secs: "var(--cat-1)", fl: "var(--cat-2)", frais: "var(--cat-3)", plats: "var(--cat-4)", boulang: "var(--cat-5)", bacs: "var(--cat-6)", autres: "var(--cat-7)" };
 const MONTHS_SHORT = ["jan.", "fév.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
 const DENREE_TO_CAT: Partial<Record<string, CatKey>> = Object.fromEntries(CAT_KEYS.map((k) => [CAT_LABELS[k], k]));
 
@@ -273,7 +273,7 @@ function summarizeDropoffs(rows: CollecteRow[]) {
   let volume = 0;
   let ok = 0;
   let annulees = 0;
-  const kgByCat: Record<CatKey, number> = { secs: 0, fl: 0, frais: 0, plats: 0, boulang: 0 };
+  const kgByCat = Object.fromEntries(CAT_KEYS.map((k) => [k, 0])) as Record<CatKey, number>;
   const byDay: Record<string, number> = {};
   for (const r of rows) {
     if (r.status === "annule") { annulees++; continue; }

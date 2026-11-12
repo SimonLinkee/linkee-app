@@ -24,6 +24,8 @@
   --cat-3: #1baf7a;
   --cat-4: #eda100;
   --cat-5: #a9673b;
+  --cat-6: #7a5cc7;
+  --cat-7: #6b7280;
   --seq: #2a78d6;
   --seq-tint: rgba(42, 120, 214, 0.14);
   --client-req: #7c5cd9;
@@ -63,6 +65,8 @@
     --cat-3: #199e70;
     --cat-4: #c98500;
     --cat-5: #c98a57;
+    --cat-6: #9a82e0;
+    --cat-7: #9ca3af;
     --seq: #5598e7;
     --seq-tint: rgba(85, 152, 231, 0.18);
     --client-req: #a48ce8;
@@ -102,6 +106,8 @@
   --cat-3: #199e70;
   --cat-4: #c98500;
   --cat-5: #c98a57;
+  --cat-6: #9a82e0;
+  --cat-7: #9ca3af;
   --seq: #5598e7;
   --seq-tint: rgba(85, 152, 231, 0.18);
   --client-req: #a48ce8;

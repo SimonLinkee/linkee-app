@@ -1,14 +1,16 @@
 // Statistics computed from the real collectes / collecte_items rows.
 // Shared by the admin dashboard and the partner space (RSE report).
 
-export type CatKey = "secs" | "fl" | "frais" | "plats" | "boulang";
-export const CAT_KEYS: CatKey[] = ["secs", "fl", "frais", "plats", "boulang"];
+export type CatKey = "secs" | "fl" | "frais" | "plats" | "boulang" | "bacs" | "autres";
+export const CAT_KEYS: CatKey[] = ["secs", "fl", "frais", "plats", "boulang", "bacs", "autres"];
 export const CAT_LABELS: Record<CatKey, string> = {
   secs: "Secs",
   fl: "Fruits et légumes",
   frais: "Produits frais",
   plats: "Plats préparés",
   boulang: "Boulangerie",
+  bacs: "Bacs gastronomiques alimentaires",
+  autres: "Autres",
 };
 const DENREE_TO_KEY: Record<string, CatKey> = Object.fromEntries(CAT_KEYS.map((k) => [CAT_LABELS[k], k])) as Record<string, CatKey>;
 
@@ -110,7 +112,7 @@ export function summarize(rows: StatRow[], subs: Map<string, SubCat> = new Map()
   let customKg = 0;
   let ok = 0;
   let annulees = 0;
-  const kgByCat: Record<CatKey, number> = { secs: 0, fl: 0, frais: 0, plats: 0, boulang: 0 };
+  const kgByCat = Object.fromEntries(CAT_KEYS.map((k) => [k, 0])) as Record<CatKey, number>;
   const byPartner = new Map<string, { id: string; n: string; c: string; kg: number }>();
   const motifs = new Map<string, number>();
   const byDay: Record<string, number> = {};

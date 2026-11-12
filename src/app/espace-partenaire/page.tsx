@@ -106,8 +106,8 @@ const DAYS = [
 ];
 const VOLUME_BUCKETS = ["10/20kg", "20/50kg", "50/100kg", "100/250kg", "250/500kg", "+500kg"];
 
-const CAT_COLORS: Record<CatKey, string> = { secs: "var(--cat-1)", fl: "var(--cat-2)", frais: "var(--cat-3)", plats: "var(--cat-4)", boulang: "var(--cat-5)" };
-const CAT_PRINT: Record<CatKey, string> = { secs: "#2a78d6", fl: "#eb6834", frais: "#1baf7a", plats: "#eda100", boulang: "#a9673b" };
+const CAT_COLORS: Record<CatKey, string> = { secs: "var(--cat-1)", fl: "var(--cat-2)", frais: "var(--cat-3)", plats: "var(--cat-4)", boulang: "var(--cat-5)", bacs: "var(--cat-6)", autres: "var(--cat-7)" };
+const CAT_PRINT: Record<CatKey, string> = { secs: "#2a78d6", fl: "#eb6834", frais: "#1baf7a", plats: "#eda100", boulang: "#a9673b", bacs: "#7a5cc7", autres: "#6b7280" };
 
 /** One point per month between two dates (for year / since-the-beginning views). */
 function monthlyEvo(byDay: Record<string, number>, from: Date, to: Date) {

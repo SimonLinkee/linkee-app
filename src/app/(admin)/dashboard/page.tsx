@@ -17,6 +17,8 @@ const CAT_COLORS: Record<CatKey, string> = {
   frais: "var(--cat-3)",
   plats: "var(--cat-4)",
   boulang: "var(--cat-5)",
+  bacs: "var(--cat-6)",
+  autres: "var(--cat-7)",
 };
 
 const CAT_DOT: Record<string, string> = {

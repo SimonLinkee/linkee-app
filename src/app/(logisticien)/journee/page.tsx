@@ -70,7 +70,7 @@ type Stop = {
 };
 type StopPhone = { label: string; tel: string };
 
-const DENREE_OPTIONS = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
+const DENREE_OPTIONS = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie", "Bacs gastronomiques alimentaires", "Autres"];
 const DEFAULT_DEPOT_ADDRESS = "110 Rue du Companet, 69140 Rillieux-la-Pape"; // used when the city has no depot address yet
 const DECHETTERIE_NAME = "Déchetterie";
 const DECHETTERIE_ADDRESS = "11 Av. du Dr Schweitzer, 69330 Meyzieu";
@@ -274,7 +274,7 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
   const s = stops[index];
   const [pick, setPick] = useState<"collecte" | "annule" | null>(null);
   // kg holds the typed quantity: kg, or the sub-category's unit (unité / litre) when one is chosen
-  const [rows, setRows] = useState<{ denree: string; kg: string; sub: string }[]>([{ denree: "", kg: "", sub: "" }]);
+  const [rows, setRows] = useState<{ denree: string; kg: string; sub: string; note?: string }[]>([{ denree: "", kg: "", sub: "" }]);
   const subOf = (r: { sub: string }) => subs.find((x) => x.id === r.sub);
   const rowKg = (r: { kg: string; sub: string }): number => {
     const q = parseFloat(r.kg) || 0;
@@ -331,7 +331,8 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
       if (missingUnitWeight) return setErrCollecte("Le poids d'une unité n'est pas défini pour cette sous-catégorie : demandez à l'admin de le renseigner, ou choisissez « Sans sous-catégorie ».");
       const items: ResultItem[] = rows.filter((r) => r.denree && r.kg).map((r) => {
         const sc = subOf(r);
-        if (!sc) return { denree: r.denree, kg: rowKg(r) };
+        const free = r.denree === "Autres" && r.note?.trim() ? { name: r.note.trim() } : {}; // « Autres » : le texte libre est gardé avec la ligne
+        if (!sc) return { denree: r.denree, kg: rowKg(r), ...free };
         const quantity = parseFloat(r.kg) || 0;
         // une sous-catégorie du barème n'a pas d'id enregistrable : on fige sa valeur à la place
         if (isBaremSub(sc.id)) return { denree: r.denree, kg: rowKg(r), quantity, unit: sc.unit, valueSnapshot: Math.round(itemValue({ kg: rowKg(r), subcategory_id: sc.id, quantity }, subMap(subs)).value * 100) / 100 };
@@ -401,6 +402,19 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
                         );
                       })}
                     </div>
+                    {row.denree === "Autres" && (
+                      <div className="mb-3.5">
+                        <div className="mb-1.5 text-[12px] font-bold text-[var(--navy)]">Précisez <span className="font-medium text-[var(--slate)]">(champ libre)</span></div>
+                        <input
+                          type="text"
+                          maxLength={80}
+                          value={row.note ?? ""}
+                          placeholder="Ex : produits d'hygiène, vaisselle…"
+                          onChange={(e) => setRows(rows.map((r, i) => (i === idx ? { ...r, note: e.target.value } : r)))}
+                          className={fieldCls}
+                        />
+                      </div>
+                    )}
                     {row.denree && subs.some((x) => x.category === row.denree) && (
                       <div className="mb-3.5">
                         <div className="mb-1.5 text-[12px] font-bold text-[var(--navy)]">Sous-catégorie <span className="font-medium text-[var(--slate)]">(facultatif)</span></div>

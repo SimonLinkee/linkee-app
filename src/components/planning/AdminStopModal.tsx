@@ -8,7 +8,7 @@ import { BAREME_SELECT, CAT_KEYS, CAT_LABELS, SUBCAT_SELECT, UNIT_LABEL, isBarem
 export type AdminStop = { id: string; name: string; kind: string; partnerId: string | null; cat: string; stockIn?: boolean };
 export type AdminStopSaved = { status: "collecte" | "annule" | "todo"; photoPaths: string[] };
 
-type Row = { denree: string; sub: string; qty: string };
+type Row = { denree: string; sub: string; qty: string; note?: string };
 type StockItem = { id: string; name: string; category: string | null; colis: number; upc: number; grammage: number | string };
 type DropItem = { key: string; sourceId: string; from: string; denree: string | null; name: string | null; kg: number };
 const STOCK_CATEGORIES = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
@@ -48,7 +48,7 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
       setExistingPhotos(rec?.photo_paths ?? []);
       if (current === "annule" && rec?.motif) setMotif(rec.motif);
       if (current === "collecte" && isPickup && existing.length) {
-        setRows(existing.map((it) => ({ denree: it.denree ?? "", sub: it.subcategory_id ?? "", qty: it.subcategory_id && it.quantity != null ? String(it.quantity) : String(Number(it.kg)) })));
+        setRows(existing.map((it) => ({ denree: it.denree ?? "", note: it.denree === "Autres" ? it.name ?? "" : "", sub: it.subcategory_id ?? "", qty: it.subcategory_id && it.quantity != null ? String(it.quantity) : String(Number(it.kg)) })));
       }
       if (isPickup && stop.partnerId) {
         // sous-catégories propres au partenaire + celles du barème de sa catégorie (ex. Boulangerie → Baguettes, Viennoiseries…)
@@ -187,7 +187,7 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
           const quantity = parseFloat(r.qty.replace(",", "."));
           const barem = isBaremSub(s?.id);
           return {
-            denree: r.denree, name: null, kg: rowKg(r)!, subcategory_id: barem ? null : (s?.id ?? null), quantity, unit: s?.unit ?? "kg",
+            denree: r.denree, name: r.denree === "Autres" && r.note?.trim() ? r.note.trim() : null, kg: rowKg(r)!, subcategory_id: barem ? null : (s?.id ?? null), quantity, unit: s?.unit ?? "kg",
             ...(barem ? { value_snapshot: Math.round(itemValue({ kg: rowKg(r)!, subcategory_id: s!.id, quantity }, subMap(subs)).value * 100) / 100 } : {}),
           };
         });
@@ -317,6 +317,12 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
                         </select>
                       </div>
                     </div>
+                    {r.denree === "Autres" && (
+                      <div className="mt-2">
+                        <label className={labelCls}>Précisez (champ libre)</label>
+                        <input type="text" maxLength={80} value={r.note ?? ""} placeholder="Ex : produits d'hygiène, vaisselle…" onChange={(e) => patchRow(i, { note: e.target.value })} className={fieldCls} />
+                      </div>
+                    )}
                     <div className="mt-2 flex items-center gap-2">
                       <input type="number" min={0} step="0.1" placeholder="0" value={r.qty} onChange={(e) => patchRow(i, { qty: e.target.value })} className={fieldCls} />
                       <span className="flex-none rounded-[10px] bg-[var(--track)] px-3 py-2 text-[13px] font-bold text-[var(--navy)]">{s ? UNIT_LABEL[s.unit] : "kg"}</span>
