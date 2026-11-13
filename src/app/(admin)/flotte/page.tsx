@@ -21,7 +21,9 @@ type Vehicle = {
   revisions: CheckItem[];
   invoices: Invoice[];
   cubage?: number | null; // volume utile, en m³
-  frigo?: boolean; // camion frigorifique
+  frigo?: boolean; // camion frigorifique (déduit de « froid », gardé pour les anciennes fiches)
+  froid?: string; // type de caisse : Non réfrigéré, Isotherme, Frigorifique, Isotherme et frigorifique, Autre
+  froidAutre?: string; // précision quand froid = « Autre »
   chargeUtile?: number | null; // charge utile MAXIMALE (kg) : le poids maximum qu'on peut charger dans le véhicule
   photoPath?: string | null; // photo du véhicule (coffre privé collecte-photos)
   rented?: boolean; // véhicule loué : l'entretien est assuré par le loueur, seules les photos du lundi matin restent à faire
@@ -30,6 +32,9 @@ type Vehicle = {
 type Report = { tourDate: string | null; tourUrls: string[]; receipts: { id: string; date: string; amount: number | null; url: string }[] };
 const TODAY = new Date();
 const VEHICLE_TYPES = ["Camion", "Camionnette / fourgon", "Voiture", "Vélo cargo", "Autre"];
+// Type de caisse : ce qui garde les denrées au frais pendant la tournée
+const FROID_TYPES = ["Non réfrigéré", "Isotherme", "Frigorifique", "Isotherme et frigorifique", "Autre"];
+const froidLabel = (v: { froid?: string; froidAutre?: string }) => (v.froid === "Autre" ? v.froidAutre?.trim() || "Autre" : v.froid || "");
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
 const defaultChecks = (): CheckItem[] => [
@@ -60,6 +65,8 @@ const rowToVehicle = (r: VehicleRow): Vehicle => ({
   rented: !!r.fiche?.rented,
   cubage: r.fiche?.cubage ?? null,
   frigo: !!r.fiche?.frigo,
+  froid: r.fiche?.froid ?? (r.fiche?.frigo ? "Frigorifique" : ""),
+  froidAutre: r.fiche?.froidAutre ?? "",
   chargeUtile: r.fiche?.chargeUtile ?? null,
   photoPath: r.fiche?.photoPath ?? null,
 });
@@ -173,7 +180,7 @@ export default function FlottePage() {
     saveTimer.current = window.setTimeout(async () => {
       const { error } = await supabase
         .from("vehicles")
-        .update({ name: v.name, plate: v.plate, assigned_to: v.assignedTo || null, fiche: { type: v.type, statut: v.statut, checks: v.checks, revisions: v.revisions, invoices: v.invoices, cubage: v.cubage ?? null, frigo: !!v.frigo, chargeUtile: v.chargeUtile ?? null, photoPath: v.photoPath ?? null, ...(v.rented ? { rented: true } : {}) } })
+        .update({ name: v.name, plate: v.plate, assigned_to: v.assignedTo || null, fiche: { type: v.type, statut: v.statut, checks: v.checks, revisions: v.revisions, invoices: v.invoices, cubage: v.cubage ?? null, frigo: v.froid ? v.froid === "Frigorifique" || v.froid === "Isotherme et frigorifique" : !!v.frigo, froid: v.froid ?? "", froidAutre: v.froidAutre ?? "", chargeUtile: v.chargeUtile ?? null, photoPath: v.photoPath ?? null, ...(v.rented ? { rented: true } : {}) } })
         .eq("id", v.id);
       if (error) showToast("Enregistrement impossible : " + error.message);
       else flashAutosave();
@@ -398,7 +405,7 @@ export default function FlottePage() {
                 <span className="min-w-0 flex-1">
                   <div className="truncate text-[13px] font-bold text-[var(--navy)]">{v.name}</div>
                   <div className="text-[11px] text-[var(--slate)]">
-                    {v.plate} · {assignedName}
+                    {v.plate} · {assignedName}{froidLabel(v) ? ` · ${froidLabel(v)}` : ""}
                     {isAll && v.cityId && (
                       <span className="ml-1.5 inline-flex items-center gap-1 rounded-[40px] px-1.5 py-px align-middle text-[9.5px] font-bold text-white" style={{ background: cities.find((c) => c.id === v.cityId)?.color ?? "var(--slate)" }}>
                         {cities.find((c) => c.id === v.cityId)?.name ?? "?"}
@@ -528,12 +535,18 @@ export default function FlottePage() {
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-[11.5px] font-semibold text-[var(--slate)]">Camion frigorifique</label>
-                  <div className="inline-flex rounded-[40px] bg-[var(--track)] p-[3px]">
-                    {([[true, "Oui"], [false, "Non"]] as const).map(([val, label]) => (
-                      <button key={label} type="button" onClick={() => updateCurrent((v) => ({ ...v, frigo: val }))} className={`rounded-[40px] px-5 py-1.5 text-[12.5px] font-bold ${!!current.frigo === val ? "bg-[var(--card)] text-[var(--navy)] shadow-[var(--shadow)]" : "text-[var(--slate)]"}`}>{label}</button>
-                    ))}
-                  </div>
+                  <label className="mb-1 block text-[11.5px] font-semibold text-[var(--slate)]">Type de caisse (froid)</label>
+                  <select
+                    value={current.froid ?? ""}
+                    onChange={(e) => updateCurrent((v) => ({ ...v, froid: e.target.value }))}
+                    className="w-full rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[13px] font-semibold text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
+                  >
+                    <option value="">À préciser</option>
+                    {FROID_TYPES.map((t) => <option key={t}>{t}</option>)}
+                  </select>
+                  {current.froid === "Autre" && (
+                    <input type="text" maxLength={60} placeholder="Précisez (ex : bac réfrigéré amovible)" value={current.froidAutre ?? ""} onChange={(e) => updateCurrent((v) => ({ ...v, froidAutre: e.target.value }))} className="mt-2 w-full rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[13px] font-semibold text-[var(--navy)] outline-none focus:border-[var(--turquoise)]" />
+                  )}
                 </div>
                 <div>
                   <label className="mb-1 block text-[11.5px] font-semibold text-[var(--slate)]">Cubage (m³)</label>
