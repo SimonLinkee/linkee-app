@@ -1,5 +1,6 @@
 "use client";
 
+import { stepTranche } from "@/lib/tranches";
 import { STOCK_CATEGORIES } from "@/lib/stats";
 import { windowOf } from "@/lib/timewin";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
@@ -568,15 +569,16 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
                         if (!dropChecked.has(key)) return null;
                         const rem = remaining(st.id, it);
                         const val = dropQty[key] ?? String(rem);
-                        const setQ = (v: number) => setDropQty({ ...dropQty, [key]: String(Math.round(Math.max(0, Math.min(rem, v)) * 100) / 100) });
+                        const cur = parseFloat(val.replace(",", ".")) || rem;
+                        const setQ = (dir: 1 | -1) => setDropQty({ ...dropQty, [key]: String(stepTranche(rem, cur, dir)) });
                         return (
                           <div key={key} className="mt-2.5 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2">
                             <span className="min-w-0 flex-1 text-[13px] font-bold text-[var(--navy)]">{it.name ?? it.denree} — quantité laissée ici</span>
-                            <button type="button" aria-label="Moins 1 kg" onClick={() => setQ((parseFloat(val.replace(",", ".")) || 0) - 1)} className="flex h-11 w-11 flex-none items-center justify-center rounded-full border-2 border-[var(--border)] text-[20px] font-bold text-[var(--navy)]">–</button>
-                            <input type="number" inputMode="decimal" min={0} max={rem} step={0.5} value={val} onChange={(e) => setDropQty({ ...dropQty, [key]: e.target.value })} className={`${fieldCls} !w-[88px] text-center`} />
+                            <button type="button" aria-label="5 kg de moins" onClick={() => setQ(-1)} className="flex h-11 w-11 flex-none items-center justify-center rounded-full border-2 border-[var(--border)] text-[20px] font-bold text-[var(--navy)]">–</button>
+                            <span className="min-w-[64px] rounded-xl border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-3 py-2.5 text-center font-display text-[18px] font-black text-[var(--navy)] tabular-nums">{val.replace(".", ",")}</span>
                             <span className="text-[13px] font-semibold text-[var(--slate)]">kg</span>
-                            <button type="button" aria-label="Plus 1 kg" onClick={() => setQ((parseFloat(val.replace(",", ".")) || 0) + 1)} className="flex h-11 w-11 flex-none items-center justify-center rounded-full border-2 border-[var(--border)] text-[20px] font-bold text-[var(--navy)]">+</button>
-                            <span className="w-full text-[11.5px] text-[var(--slate)]">Reste {rem} kg dans le camion — mettez moins pour ne laisser qu&apos;une partie.</span>
+                            <button type="button" aria-label="5 kg de plus" onClick={() => setQ(1)} className="flex h-11 w-11 flex-none items-center justify-center rounded-full border-2 border-[var(--border)] text-[20px] font-bold text-[var(--navy)]">+</button>
+                            <span className="w-full text-[11.5px] text-[var(--slate)]">Reste {rem} kg dans le camion — par tranches de 5 kg, pour ne laisser qu&apos;une partie.</span>
                           </div>
                         );
                       })}

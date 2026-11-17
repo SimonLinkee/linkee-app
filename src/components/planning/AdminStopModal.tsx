@@ -1,5 +1,6 @@
 "use client";
 
+import { trancheOptions } from "@/lib/tranches";
 import { STOCK_CATEGORIES } from "@/lib/stats";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -314,8 +315,12 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
                   {on && (
                     <div className="mt-2 flex items-center gap-2 pl-6">
                       <span className="text-[12px] font-semibold text-[var(--slate)]">Quantité déposée ici</span>
-                      <input type="number" min={0} max={rem} step={0.1} value={dropQty[d.key] ?? String(rem)} onChange={(e) => setDropQty((p) => ({ ...p, [d.key]: e.target.value }))} className={`${fieldCls} !w-[96px]`} />
-                      <span className="text-[12px] font-semibold text-[var(--slate)]">kg (sur {rem})</span>
+                      <select value={dropQty[d.key] ?? String(rem)} onChange={(e) => setDropQty((p) => ({ ...p, [d.key]: e.target.value }))} className={`${fieldCls} !w-[110px]`}>
+                        {Array.from(new Set([...trancheOptions(rem), ...(Number.isFinite(parseFloat(dropQty[d.key] ?? "")) ? [parseFloat(dropQty[d.key])] : [])])).sort((x, y) => x - y).map((q) => (
+                          <option key={q} value={String(q)}>{String(q).replace(".", ",")} kg</option>
+                        ))}
+                      </select>
+                      <span className="text-[12px] font-semibold text-[var(--slate)]">par tranches de 5 kg (reste {rem} kg)</span>
                     </div>
                   )}
                 </div>
