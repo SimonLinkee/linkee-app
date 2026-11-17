@@ -875,7 +875,7 @@ export default function DistributionsPage() {
                     <tbody>
                       {draft.lines.length === 0 && (
                         <tr>
-                          <td colSpan={COLS.length + 1} className="px-4 py-6 text-center text-[12.5px] text-[var(--slate)]">Aucun produit pour l&apos;instant. Ajoute une ligne, ou récupère les collectes du jour ou de la veille.</td>
+                          <td colSpan={COLS.length + 1} className="px-4 py-6 text-center text-[12.5px] text-[var(--slate)]">Aucun produit pour l&apos;instant. Ajoute une ligne, importe le fichier, ou récupère les déposes du jour ou de la veille.</td>
                         </tr>
                       )}
                       {draft.lines.map((l, i) => (
