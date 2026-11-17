@@ -2,6 +2,8 @@
 // Shared by the admin dashboard and the partner space (RSE report).
 
 export type CatKey = "secs" | "fl" | "frais" | "plats" | "boulang" | "bacs" | "autres";
+/** Catégories d'un produit en stock (toutes les antennes) — distinctes des catégories de poids des collectes. */
+export const STOCK_CATEGORIES = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie", "Hygiène", "Fournitures", "Autres"];
 export const CAT_KEYS: CatKey[] = ["secs", "fl", "frais", "plats", "boulang", "bacs", "autres"];
 export const CAT_LABELS: Record<CatKey, string> = {
   secs: "Secs",

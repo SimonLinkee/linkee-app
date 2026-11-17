@@ -1,5 +1,7 @@
 "use client";
 
+import { planStockOut } from "@/lib/stockOut";
+import { STOCK_CATEGORIES } from "@/lib/stats";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
@@ -26,7 +28,7 @@ type DbMove = { id: string; type: "sortie" | "entree"; day: string; time: string
 
 const TODAY = new Date();
 const todayIso = () => new Date().toISOString().slice(0, 10);
-const CATEGORIES = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
+const CATEGORIES = STOCK_CATEGORIES;
 const STOCK_COLS = "id,name,category,provenance,grammage,colis,upc,kg,ddm,dlc";
 const toItem = (r: DbStock): StockItem => ({
   id: r.id, produit: r.name, categorie: r.category ?? CATEGORIES[0], provenance: r.provenance ?? "", grammage: Number(r.grammage), colis: r.colis,
@@ -237,24 +239,13 @@ export default function StockPage() {
     const dest = destinations.find((d) => d.name === outDestination);
     const dateLabel = new Date(day + "T00:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "2-digit", month: "long" });
 
-    supabase
-      .from("collectes")
-      .insert([
-        {
-          city_id: cityId, kind: "stock", label: `Sortie de stock — ${outDestination}`, scheduled_date: day, scheduled_time: time, sort_order: 98, status: "todo",
-          duration_min: 15, planned_items: planned, comment: `À prendre au dépôt pour ${outDestination} : ${summaryText}`,
-        },
-        {
-          city_id: cityId, kind: "dropoff", beneficiary_id: dest?.id ?? null, label: dest?.id ? null : outDestination, scheduled_date: day, scheduled_time: time, sort_order: 99, status: "todo",
-          duration_min: 10, comment: `Livraison du stock : ${summaryText}`,
-        },
-      ])
-      .then(async ({ error }) => {
+    planStockOut(supabase, { cityId, day, time, destId: dest?.id ?? null, destName: outDestination, planned, summaryText })
+      .then(async ({ error, merged }) => {
         if (error) return setOutError("Planification impossible : " + error.message + " (la migration 009 est-elle passée ?)");
         setOutDay(day);
         setOutConfirm({
           name: `Sortie planifiée — ${outDestination}`,
-          sub: `${dateLabel}${time ? ` vers ${time}` : ""} · ${planned.length} produit(s) · ${fmtNum(totalUnits)} unités · ${fmtNum(totalKg)} kg`,
+          sub: `${dateLabel}${time ? ` vers ${time}` : ""}${merged ? " · ajoutée à la dépose déjà prévue ce jour-là" : ""} · ${planned.length} produit(s) · ${fmtNum(totalUnits)} unités · ${fmtNum(totalKg)} kg`,
           items: planned.map((p) => ({ produit: p.name, colis: p.colis, unites: p.unites, kg: p.kg })),
         });
         setOutLines([{ uid: "ol" + Date.now(), productId: stock[0]?.id ?? null, colisCount: 1 }]);

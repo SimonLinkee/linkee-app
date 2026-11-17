@@ -1,5 +1,6 @@
 "use client";
 
+import { STOCK_CATEGORIES } from "@/lib/stats";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { uploadPrivatePhoto } from "@/lib/photos";
@@ -11,7 +12,6 @@ export type AdminStopSaved = { status: "collecte" | "annule" | "todo"; photoPath
 type Row = { denree: string; sub: string; qty: string; note?: string };
 type StockItem = { id: string; name: string; category: string | null; colis: number; upc: number; grammage: number | string };
 type DropItem = { key: string; sourceId: string; from: string; denree: string | null; name: string | null; kg: number };
-const STOCK_CATEGORIES = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
 
 const fieldCls = "w-full rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[13px] font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]";
 const labelCls = "mb-1 block text-[11px] font-bold tracking-[0.03em] text-[var(--slate)] uppercase";
@@ -30,6 +30,8 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
   const [stockCounts, setStockCounts] = useState<Record<string, number>>({});
   const [drops, setDrops] = useState<DropItem[]>([]);
   const [dropChecked, setDropChecked] = useState<Set<string>>(new Set());
+  const [dropQty, setDropQty] = useState<Record<string, string>>({}); // kg déposés par ligne cochée (vide = tout ce qui reste)
+  const [usedElsewhere, setUsedElsewhere] = useState<Record<string, number>>({}); // kg déjà laissés ailleurs, par ligne collectée
   const [motif, setMotif] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -96,9 +98,21 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
           for (const it of c.collecte_items ?? []) list.push({ key: it.id, sourceId: c.id, from: p?.name ?? b?.name ?? c.label ?? "Point", denree: it.denree, name: it.name, kg: Number(it.kg) });
         }
         setDrops(list);
+        // ce qui a déjà été laissé AILLEURS (autres déposes du jour) : un produit peut être déposé en plusieurs fois
+        const used: Record<string, number> = {};
+        if (list.length) {
+          const other = await supabase.from("collecte_items").select("collecte_id,denree,name,kg,source_collecte_id").in("source_collecte_id", Array.from(new Set(list.map((d) => d.sourceId)))).neq("collecte_id", stop.id);
+          for (const o of (other.data ?? []) as { denree: string | null; name: string | null; kg: number | string; source_collecte_id: string }[]) {
+            const line = list.find((d) => d.sourceId === o.source_collecte_id && d.denree === o.denree && d.name === o.name);
+            if (line) used[line.key] = (used[line.key] ?? 0) + Number(o.kg);
+          }
+        }
+        setUsedElsewhere(used);
         if (current === "collecte" && existing.length) {
-          const same = (d: DropItem, it: (typeof existing)[number]) => d.sourceId === it.source_collecte_id && d.denree === it.denree && d.name === it.name && Math.abs(d.kg - Number(it.kg)) < 0.005;
-          setDropChecked(new Set(list.filter((d) => existing.some((it) => same(d, it))).map((d) => d.key)));
+          const same = (d: DropItem, it: (typeof existing)[number]) => d.sourceId === it.source_collecte_id && d.denree === it.denree && d.name === it.name;
+          const mine = list.filter((d) => existing.some((it) => same(d, it)));
+          setDropChecked(new Set(mine.map((d) => d.key)));
+          setDropQty(Object.fromEntries(mine.map((d) => [d.key, String(Number(existing.find((it) => same(d, it))!.kg))])));
         }
       }
     })();
@@ -159,7 +173,14 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
       } else if (stop.kind === "dropoff" || stockIn) {
         const chosen = drops.filter((d) => dropChecked.has(d.key));
         if (chosen.length < 1) throw new Error("Coche au moins un produit déposé ici.");
-        items = chosen.map((d) => ({ denree: d.denree, name: d.name, kg: d.kg, source_collecte_id: d.sourceId }));
+        items = chosen.map((d) => {
+          const rem = Math.max(0, Math.round((d.kg - (usedElsewhere[d.key] ?? 0)) * 100) / 100);
+          const raw = dropQty[d.key];
+          const q = raw === undefined || raw === "" ? rem : parseFloat(raw.replace(",", "."));
+          if (!(q > 0)) throw new Error(`Indique combien de kg de « ${d.name ?? d.denree} » sont déposés ici.`);
+          if (q > rem + 0.001) throw new Error(`Il ne reste que ${rem} kg de « ${d.name ?? d.denree} » à déposer.`);
+          return { denree: d.denree, name: d.name, kg: Math.round(q * 100) / 100, source_collecte_id: d.sourceId };
+        });
         if (stockIn) {
           // dépose au stock : l'ancienne entrée (si on corrige après coup) est retirée, puis une ligne de stock est créée par produit déposé
           if (movementId) {
@@ -169,7 +190,7 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
           }
           const add = await supabase.rpc("add_stock", {
             p_city: cityId,
-            p_items: chosen.map((d) => ({ name: d.name ?? d.denree ?? "Produit déposé", category: d.denree && STOCK_CATEGORIES.includes(d.denree) ? d.denree : null, kg: d.kg, provenance: d.from })),
+            p_items: chosen.map((d, k) => ({ name: d.name ?? d.denree ?? "Produit déposé", category: d.denree && STOCK_CATEGORIES.includes(d.denree) ? d.denree : null, kg: items[k].kg, provenance: d.from })), // la quantité réellement déposée (dépose partielle)
             p_source: `Dépose du ${date}`,
             p_day: date,
           });
@@ -280,13 +301,26 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
           <div className="flex flex-col gap-2">
             <label className={labelCls}>{stockIn ? "Produits déposés au stock (collectés ce jour)" : "Produits laissés ici (collectés ce jour)"}</label>
             {drops.length === 0 && <p className="text-[12.5px] text-[var(--slate)]">Aucune collecte réalisée ce jour pour l&apos;instant.</p>}
-            {drops.map((d) => (
-              <label key={d.key} className="flex cursor-pointer items-center gap-2.5 rounded-xl border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-3 py-2 text-[13px] font-semibold text-[var(--navy)]">
-                <input type="checkbox" checked={dropChecked.has(d.key)} onChange={() => setDropChecked((p) => { const n = new Set(p); if (n.has(d.key)) n.delete(d.key); else n.add(d.key); return n; })} className="h-4 w-4 accent-[var(--dropoff)]" />
-                <span className="flex-1">{d.name ?? d.denree} <span className="font-normal text-[var(--slate)]">({d.from})</span></span>
-                <span className="tabular-nums text-[var(--slate)]">{d.kg} kg</span>
-              </label>
-            ))}
+            {drops.map((d) => {
+              const rem = Math.max(0, Math.round((d.kg - (usedElsewhere[d.key] ?? 0)) * 100) / 100);
+              const on = dropChecked.has(d.key);
+              return (
+                <div key={d.key} className={`rounded-xl border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-3 py-2 text-[13px] font-semibold text-[var(--navy)] ${rem <= 0 && !on ? "opacity-50" : ""}`}>
+                  <label className="flex cursor-pointer items-center gap-2.5">
+                    <input type="checkbox" disabled={rem <= 0 && !on} checked={on} onChange={() => setDropChecked((p) => { const n = new Set(p); if (n.has(d.key)) n.delete(d.key); else n.add(d.key); return n; })} className="h-4 w-4 accent-[var(--dropoff)]" />
+                    <span className="flex-1">{d.name ?? d.denree} <span className="font-normal text-[var(--slate)]">({d.from})</span></span>
+                    <span className="tabular-nums text-[var(--slate)]">{rem > 0 ? `${rem} kg` : "déjà déposé"}</span>
+                  </label>
+                  {on && (
+                    <div className="mt-2 flex items-center gap-2 pl-6">
+                      <span className="text-[12px] font-semibold text-[var(--slate)]">Quantité déposée ici</span>
+                      <input type="number" min={0} max={rem} step={0.1} value={dropQty[d.key] ?? String(rem)} onChange={(e) => setDropQty((p) => ({ ...p, [d.key]: e.target.value }))} className={`${fieldCls} !w-[96px]`} />
+                      <span className="text-[12px] font-semibold text-[var(--slate)]">kg (sur {rem})</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : stop.kind === "mission" ? (
           <p className="rounded-xl bg-[var(--input-bg)] px-3.5 py-3 text-[13px] leading-[1.5] text-[var(--slate)]">Rien à saisir — marque simplement la mission comme faite.</p>

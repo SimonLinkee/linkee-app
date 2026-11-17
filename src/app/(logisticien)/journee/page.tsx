@@ -1,5 +1,6 @@
 "use client";
 
+import { STOCK_CATEGORIES } from "@/lib/stats";
 import { windowOf } from "@/lib/timewin";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -298,6 +299,7 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
   // quantities planned by the admin are pre-filled (the logisticien can still adjust them)
   const [stockCounts, setStockCounts] = useState<Record<string, number>>(() => Object.fromEntries((s.planned ?? []).map((p) => [p.id, p.colis])));
   const [dropChecked, setDropChecked] = useState<Set<string>>(new Set());
+  const [dropQty, setDropQty] = useState<Record<string, string>>({}); // kg réellement déposés par ligne cochée (vide = tout ce qui reste)
   const [motif, setMotif] = useState("");
   const [errCollecte, setErrCollecte] = useState("");
   const [errAnnule, setErrAnnule] = useState("");
@@ -306,6 +308,14 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
   const earlier = stops.map((st, idx) => ({ st, idx })).filter(({ st, idx }) => idx < index && (st.kind === "partner" || (st.kind === "stock" && !st.stockIn)) && st.status === "collecte" && st.result?.items?.length);
   // an association with no accepted types filled in on its fiche: everything can be dropped
   const allowed = s.allowedTypes?.length ? s.allowedTypes : null;
+  // ce qui reste dans le camion pour une ligne collectée = son poids moins ce qui a déjà été laissé ailleurs (déposes partielles)
+  const usedKg = (srcId: string, it: ResultItem) =>
+    stops
+      .filter((x) => x.id !== s.id && x.status === "collecte")
+      .flatMap((x) => x.result?.items ?? [])
+      .filter((d) => d.sourceId === srcId && d.denree === it.denree && (d.name ?? null) === (it.name ?? null))
+      .reduce((t, d) => t + d.kg, 0);
+  const remaining = (srcId: string, it: ResultItem) => Math.max(0, Math.round((it.kg - usedKg(srcId, it)) * 100) / 100);
 
   function validateCollecte() {
     if (s.kind === "mission") {
@@ -320,12 +330,18 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
       onDone({ items, totalKg: Math.round(items.reduce((sum, it) => sum + it.kg, 0) * 100) / 100, photos, photoPaths }, "collecte");
     } else if (s.kind === "dropoff" || s.kind === "stock") {
       const dropped: ResultItem[] = [];
+      let bad = "";
       dropChecked.forEach((key) => {
         const [p, it] = key.split(":").map(Number);
         const src = stops[p].result!.items![it];
-        dropped.push({ denree: src.denree, name: src.name, kg: src.kg, from: stops[p].name, sourceId: stops[p].id });
+        const rem = remaining(stops[p].id, src);
+        const q = dropQty[key] === undefined || dropQty[key] === "" ? rem : parseFloat(dropQty[key].replace(",", "."));
+        if (!(q > 0)) bad = `Indiquez combien de kg de « ${src.name ?? src.denree} » vous laissez ici.`;
+        else if (q > rem + 0.001) bad = `Il ne reste que ${rem} kg de « ${src.name ?? src.denree} » dans le camion.`;
+        dropped.push({ denree: src.denree, name: src.name, kg: Math.round(Math.min(q, rem) * 100) / 100, from: stops[p].name, sourceId: stops[p].id });
       });
       if (dropped.length < 1) return setErrCollecte("Touchez au moins un produit à laisser ici.");
+      if (bad) return setErrCollecte(bad);
       onDone({ items: dropped, totalKg: Math.round(dropped.reduce((sum, it) => sum + it.kg, 0) * 10) / 10, photos, photoPaths }, "collecte");
     } else {
       const missingUnitWeight = rows.find((r) => r.denree && r.kg && subOf(r)?.unit === "unite" && !subOf(r)?.unit_weight_kg);
@@ -510,7 +526,7 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
                   const pointItems = st.result!.items!;
                   const fromStock = st.kind === "stock"; // goods the admin chose to send here: always accepted
                   const accepted = (it: ResultItem) => fromStock || !allowed || allowed.includes(it.denree!);
-                  const allowedIdx = pointItems.map((it, j) => (accepted(it) ? j : -1)).filter((j) => j >= 0);
+                  const allowedIdx = pointItems.map((it, j) => (accepted(it) && remaining(st.id, it) > 0 ? j : -1)).filter((j) => j >= 0);
                   const allOn = allowedIdx.length > 0 && allowedIdx.every((j) => dropChecked.has(`${idx}:${j}`));
                   const toggle = (keys: string[], on: boolean) =>
                     setDropChecked((prev) => {
@@ -534,18 +550,36 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
                           </button>
                         )}
                         {pointItems.map((it, j) => {
-                          const ok = accepted(it);
+                          const rem = remaining(st.id, it);
+                          const ok = accepted(it) && rem > 0;
                           const on = dropChecked.has(`${idx}:${j}`);
                           return (
                             <button key={j} type="button" disabled={!ok} onClick={() => toggle([`${idx}:${j}`], !on)} className={chip(on, ok)}>
                               {on && <Icon className="h-4 w-4" sw={3}><path d="M5 12.5 L10 17.5 L19 7" /></Icon>}
                               <span>{it.name ?? it.denree}</span>
-                              <span className="font-semibold opacity-80 tabular-nums">{it.kg} kg</span>
-                              {!ok && <span className="text-[11px] font-normal italic">non accepté</span>}
+                              <span className="font-semibold opacity-80 tabular-nums">{rem} kg</span>
+                              {!ok && <span className="text-[11px] font-normal italic">{accepted(it) ? "déjà déposé" : "non accepté"}</span>}
                             </button>
                           );
                         })}
                       </div>
+                      {pointItems.map((it, j) => {
+                        const key = `${idx}:${j}`;
+                        if (!dropChecked.has(key)) return null;
+                        const rem = remaining(st.id, it);
+                        const val = dropQty[key] ?? String(rem);
+                        const setQ = (v: number) => setDropQty({ ...dropQty, [key]: String(Math.round(Math.max(0, Math.min(rem, v)) * 100) / 100) });
+                        return (
+                          <div key={key} className="mt-2.5 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2">
+                            <span className="min-w-0 flex-1 text-[13px] font-bold text-[var(--navy)]">{it.name ?? it.denree} — quantité laissée ici</span>
+                            <button type="button" aria-label="Moins 1 kg" onClick={() => setQ((parseFloat(val.replace(",", ".")) || 0) - 1)} className="flex h-11 w-11 flex-none items-center justify-center rounded-full border-2 border-[var(--border)] text-[20px] font-bold text-[var(--navy)]">–</button>
+                            <input type="number" inputMode="decimal" min={0} max={rem} step={0.5} value={val} onChange={(e) => setDropQty({ ...dropQty, [key]: e.target.value })} className={`${fieldCls} !w-[88px] text-center`} />
+                            <span className="text-[13px] font-semibold text-[var(--slate)]">kg</span>
+                            <button type="button" aria-label="Plus 1 kg" onClick={() => setQ((parseFloat(val.replace(",", ".")) || 0) + 1)} className="flex h-11 w-11 flex-none items-center justify-center rounded-full border-2 border-[var(--border)] text-[20px] font-bold text-[var(--navy)]">+</button>
+                            <span className="w-full text-[11.5px] text-[var(--slate)]">Reste {rem} kg dans le camion — mettez moins pour ne laisser qu&apos;une partie.</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}
@@ -1009,7 +1043,7 @@ export default function JourneePage() {
       // dépose au stock : une ligne de stock par produit déposé + une entrée dans l'historique (migration 071)
       const add = await supabase.rpc("add_stock", {
         p_city: cityId,
-        p_items: result.items.map((it) => ({ name: it.name ?? it.denree ?? "Produit déposé", category: it.denree && DENREE_OPTIONS.includes(it.denree) ? it.denree : null, kg: it.kg, provenance: it.from ?? "" })),
+        p_items: result.items.map((it) => ({ name: it.name ?? it.denree ?? "Produit déposé", category: it.denree && STOCK_CATEGORIES.includes(it.denree) ? it.denree : null, kg: it.kg, provenance: it.from ?? "" })),
         p_source: `Dépose du ${iso}`,
         p_day: iso,
       });

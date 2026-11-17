@@ -1,5 +1,7 @@
 "use client";
 
+import { planStockOut } from "@/lib/stockOut";
+import { STOCK_CATEGORIES } from "@/lib/stats";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
@@ -8,7 +10,7 @@ type Item = { id: string; name: string; category: string | null; grammage: numbe
 type Dest = { id: string | null; name: string };
 type OutLine = { uid: string; productId: string; colis: string };
 
-const CATS = ["Secs", "Fruits et légumes", "Produits frais", "Plats préparés", "Boulangerie"];
+const CATS = STOCK_CATEGORIES;
 const NEW = "__new__";
 const OTHER = "Autre bénéficiaire / à préciser";
 const todayIso = () => {
@@ -116,12 +118,9 @@ export default function MobileStock() {
     const dest = dests.find((d) => d.name === outDest);
     const summary = planned.map((p) => `${p.name} (${p.colis} colis)`).join(", ");
     // same as the PC version: two stops are planned (pick-up at the depot, drop-off at the beneficiary); the stock goes down when the logisticien confirms
-    const { error } = await supabase.from("collectes").insert([
-      { city_id: cityId, kind: "stock", label: `Sortie de stock — ${outDest}`, scheduled_date: outDate, scheduled_time: outTime || null, sort_order: 98, status: "todo", duration_min: 15, planned_items: planned, comment: `À prendre au dépôt pour ${outDest} : ${summary}` },
-      { city_id: cityId, kind: "dropoff", beneficiary_id: dest?.id ?? null, label: dest?.id ? null : outDest, scheduled_date: outDate, scheduled_time: outTime || null, sort_order: 99, status: "todo", duration_min: 10, comment: `Livraison du stock : ${summary}` },
-    ]);
+    const { error, merged } = await planStockOut(supabase, { cityId, day: outDate, time: outTime || null, destId: dest?.id ?? null, destName: outDest, planned, summaryText: summary });
     if (error) return setMsg("Planification impossible : " + error.message);
-    setOk(`Sortie planifiée le ${new Date(outDate + "T00:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })} pour ${outDest}.`);
+    setOk(`Sortie planifiée le ${new Date(outDate + "T00:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })} pour ${outDest}${merged ? " (ajoutée à la dépose déjà prévue ce jour-là)" : ""}.`);
     setLines([{ uid: uid(), productId: "", colis: "" }]);
   }
 
