@@ -7,6 +7,7 @@ import { useCity } from "@/components/admin/CityContext";
 import DistribTabs from "@/components/DistribTabs";
 import PhotoStrip from "@/components/PhotoStrip";
 import ComparatifTabs from "@/components/distribution/ComparatifTabs";
+import ImportSheet, { type ImportResult } from "@/components/distribution/ImportSheet";
 import { STATUS_UI, distribStatus, isoToday } from "@/lib/distributions";
 
 /* ---------------- types ---------------- */
@@ -177,6 +178,7 @@ export default function DistributionsPage() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [newOpen, setNewOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [newPlace, setNewPlace] = useState("");
   const [newDate, setNewDate] = useState(isoOf(new Date()));
   const dirty = useRef(false);
@@ -522,6 +524,24 @@ export default function DistributionsPage() {
     edit((d) => ({ ...d, lines: [...d.lines, ...lines] }));
   }
 
+  // Importe les produits (et, au choix, inscrits / présence / paniers / cible F&L) lus dans le classeur « Schéma cible »
+  function applyImport(r: ImportResult) {
+    const lines: Line[] = r.lines.map((l) => ({ ...blankLine(), ...l, source_collecte_id: null }));
+    edit((d) => ({
+      ...d,
+      lines: r.mode === "replace" ? lines : [...d.lines, ...lines],
+      ...(r.withMeta
+        ? {
+            registered: r.meta.registered || d.registered,
+            presence: r.meta.presence || d.presence,
+            baskets: r.meta.baskets || d.baskets,
+            flTarget: r.meta.flTarget || d.flTarget,
+          }
+        : {}),
+    }));
+    setMsg(`${lines.length} ligne(s) importée(s) depuis le fichier — vérifie le tableau, puis enregistre.`);
+  }
+
   async function createNew() {
     if (!cityId || !newPlace || !newDate) return;
     const exists = entries.find((e) => e.key === `${newPlace}|${newDate}`);
@@ -605,6 +625,9 @@ export default function DistributionsPage() {
         </div>
       )}
 
+      {importOpen && draft && (
+        <ImportSheet placeName={place?.name ?? ""} date={draft.date} hasLines={draft.lines.length > 0} onClose={() => setImportOpen(false)} onApply={applyImport} />
+      )}
       {newOpen && (
         <div className="mb-4 flex flex-wrap items-end gap-3 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4">
           <div className="min-w-[220px] flex-1">
@@ -823,6 +846,9 @@ export default function DistributionsPage() {
                     <p className="text-[11.5px] text-[var(--slate)]">Pré-rempli avec ce qui est livré au planning ce jour-là. Poids = nb colis × poids d&apos;un colis.</p>
                   </div>
                   <div className="flex gap-2">
+                    <button type="button" onClick={() => setImportOpen(true)} className="rounded-[40px] border-[1.5px] border-[#2a78d6] px-3.5 py-2 text-[12.5px] font-bold text-[#2a78d6] hover:bg-[#2a78d6]/10" title="Lire le classeur Google Sheet / Excel des coordinateurs et remplir ce tableau">
+                      Importer le fichier
+                    </button>
                     <button type="button" onClick={() => prefillFromDay(-1)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--navy)] hover:border-[#2a78d6]">
                       Ajouter les collectes de la veille
                     </button>
