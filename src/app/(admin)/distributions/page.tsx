@@ -504,22 +504,24 @@ export default function DistributionsPage() {
     setSaveState("idle");
     await load();
   }
-  // Reprend les collectes réalisées au Planning le jour de la distribution, ou la veille (dayOffset = -1) : les quantités arrivent
-  // dans le tableau et le responsable les ajuste à la main aux quantités réellement distribuées.
+  // Reprend ce qui a été DÉPOSÉ à ce point de distribution (arrêt de dépose du Planning, réalisé) le jour de la distribution, ou la veille
+  // (dayOffset = -1), avec les quantités réellement laissées (dépose partielle comprise). Les collectes du jour qui sont parties
+  // ailleurs (autres associations, reste du camion) ne sont PAS reprises ; le responsable ajuste ensuite à ce qui a été distribué.
   async function prefillFromDay(dayOffset = 0) {
     if (!draft || !cityId) return;
     const target = new Date(draft.date + "T12:00:00");
     target.setDate(target.getDate() + dayOffset);
     const { data } = await supabase
       .from("collectes")
-      .select("id,collecte_items!collecte_id(denree,name,kg)")
+      .select("id,collecte_items!collecte_id(denree,name,kg,source_collecte_id)")
       .eq("city_id", cityId)
+      .eq("beneficiary_id", draft.beneficiaryId)
       .eq("scheduled_date", isoOf(target))
       .eq("status", "collecte")
       .eq("source", "planning")
-      .in("kind", ["partner", "exceptionnel", "demande_client"]);
-    const items = ((data ?? []) as unknown as { id: string; collecte_items: { denree: string | null; name: string | null; kg: number | string }[] | null }[]).flatMap((c) => (c.collecte_items ?? []).map((i) => ({ ...i, source_collecte_id: c.id })));
-    if (!items.length) return setMsg(dayOffset === 0 ? "Aucune collecte réalisée ce jour-là pour l'instant." : "Aucune collecte réalisée la veille.");
+      .eq("kind", "dropoff");
+    const items = ((data ?? []) as unknown as { id: string; collecte_items: { denree: string | null; name: string | null; kg: number | string; source_collecte_id: string | null }[] | null }[]).flatMap((c) => c.collecte_items ?? []);
+    if (!items.length) return setMsg(dayOffset === 0 ? "Aucune dépose réalisée à ce point ce jour-là pour l'instant." : "Aucune dépose réalisée à ce point la veille.");
     const lines = await linesFromItems(items);
     edit((d) => ({ ...d, lines: [...d.lines, ...lines] }));
   }
@@ -850,10 +852,10 @@ export default function DistributionsPage() {
                       Importer le fichier
                     </button>
                     <button type="button" onClick={() => prefillFromDay(-1)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--navy)] hover:border-[#2a78d6]">
-                      Ajouter les collectes de la veille
+                      Ajouter les déposes de la veille
                     </button>
                     <button type="button" onClick={() => prefillFromDay(0)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--navy)] hover:border-[#2a78d6]">
-                      Ajouter les collectes du jour
+                      Ajouter les déposes du jour
                     </button>
                     <button type="button" onClick={() => edit((d) => ({ ...d, lines: [...d.lines, blankLine()] }))} className="rounded-[40px] bg-[#2a78d6] px-3.5 py-2 text-[12.5px] font-bold text-white">
                       + Ajouter une ligne
