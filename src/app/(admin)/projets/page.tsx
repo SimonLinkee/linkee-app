@@ -313,8 +313,11 @@ export default function ProjetsPage() {
             <select disabled={dis} className={fieldCls} value={r.go_status} onChange={(e) => patch(r.id, { go_status: e.target.value as Aap["go_status"] }, true)}>{GO.map((g) => <option key={g.k} value={g.k}>{g.label}</option>)}</select>
           </Field>
           <Field label="Justification (éligibilité, effort vs montant)">{inp("go_reason")}</Field>
-          <Field label="Prochaine action">{inp("next_action", "Ex : appeler la chargée de mission")}</Field>
+          <Field label="Notes / commentaires (affichés dans la liste ; motif de refus, conseils du chargé de mission, point d'étape…)" wide>
+            <textarea disabled={dis} className={`${fieldCls} min-h-[80px] resize-y`} value={doc("notes")} onChange={(e) => patch(r.id, { notes: e.target.value })} placeholder="Ex : dossier presque prêt, attente du budget de la compta" />
+          </Field>
           <Field label="Date de la prochaine action">{inp("next_action_date", undefined, "date")}</Field>
+          <Field label="Prochaine action">{inp("next_action", "Ex : appeler la chargée de mission")}</Field>
           <Field label="Pièces manquantes (statuts, bilan, RIB, budget prévisionnel…)" wide>
             <textarea disabled={dis} className={`${fieldCls} min-h-[56px] resize-y`} value={doc("missing_docs")} onChange={(e) => patch(r.id, { missing_docs: e.target.value })} />
           </Field>
@@ -324,9 +327,6 @@ export default function ProjetsPage() {
           <Field label="Bilan à rendre">{inp("report_due", "Ex : bilan d'utilisation des fonds")}</Field>
           <Field label="Date du bilan">{inp("report_date", undefined, "date")}</Field>
           <Field label="Contact chez le financeur" wide>{inp("funder_contact", "Nom, fonction, e-mail, téléphone")}</Field>
-          <Field label="Notes / retours (motif de refus, conseils du chargé de mission)" wide>
-            <textarea disabled={dis} className={`${fieldCls} min-h-[80px] resize-y`} value={doc("notes")} onChange={(e) => patch(r.id, { notes: e.target.value })} />
-          </Field>
         </Section>
         <Section title="Dossiers de l'AAP">
           <Field label="Dossier de candidature (lien à coller ici)" wide>
@@ -419,7 +419,7 @@ export default function ProjetsPage() {
               {th("deadline", "Date limite")}
               {th("requested_amount", "Demandé")}
               {th("status", "Statut")}
-              {th("next_action_date", "Prochaine action")}
+              {th("next_action_date", "Notes · prochaine date")}
               <span className="text-[11px] font-bold tracking-[0.03em] text-[var(--muted)] uppercase">Dossiers</span>
             </div>
             {loading && <p className="p-4 text-[13px] text-[var(--slate)]">Chargement…</p>}
@@ -447,9 +447,9 @@ export default function ProjetsPage() {
                     )}
                   </span>
                   <span className="min-w-0 text-[12.5px] text-[var(--navy)]">
-                    {r.next_action || r.next_action_date ? (
+                    {r.notes || r.next_action || r.next_action_date ? (
                       <>
-                        <span className="block truncate">{r.next_action || "—"}</span>
+                        <span className="line-clamp-2 block whitespace-pre-line" title={r.notes || r.next_action || undefined}>{r.notes || r.next_action || "—"}</span>
                         {r.next_action_date && <span className={`block text-[11.5px] ${late ? "font-semibold text-[var(--critical)]" : "text-[var(--slate)]"}`}>{fmtDate(r.next_action_date)}</span>}
                       </>
                     ) : (
