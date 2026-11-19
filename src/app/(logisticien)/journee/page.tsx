@@ -774,8 +774,24 @@ export default function JourneePage() {
   const remaining = realStops.length - doneCount;
   const pad = (n: number) => (n < 10 ? "0" + n : "" + n);
   const [now] = useState(() => new Date());
-  const today = now.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
-  const iso = isoDate(now);
+  const todayIso = isoDate(now);
+  const MAX_BACK_DAYS = 15; // le logisticien peut remonter jusqu'à 15 jours pour compléter les infos d'une journée passée
+  const minIso = (() => {
+    const d = new Date(now);
+    d.setDate(d.getDate() - MAX_BACK_DAYS);
+    return isoDate(d);
+  })();
+  const [dayIso, setDayIso] = useState(todayIso);
+  const iso = dayIso;
+  const isPast = iso < todayIso; // jour passé : on peut saisir les arrêts sans « démarrer la journée »
+  const today = new Date(iso + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+  function shiftDay(delta: number) {
+    const d = new Date(iso + "T12:00:00");
+    d.setDate(d.getDate() + delta);
+    const next = isoDate(d);
+    if (next < minIso || next > todayIso) return;
+    setDayIso(next);
+  }
 
   const week = (() => {
     const monday = new Date(now);
@@ -791,8 +807,8 @@ export default function JourneePage() {
           dow,
           dom: String(d.getDate()),
           key,
-          title: key === iso ? "Aujourd'hui" : rows.length ? "Tournée planifiée" : "Pas de tournée",
-          status: key === iso ? ("today" as const) : key < iso ? ("past" as const) : ("upcoming" as const),
+          title: key === todayIso ? "Aujourd'hui" : rows.length ? "Tournée planifiée" : "Pas de tournée",
+          status: key === todayIso ? ("today" as const) : key < todayIso ? ("past" as const) : ("upcoming" as const),
           stops: rows.map((r) => ({
             t: r.scheduled_time ? windowOf(r.scheduled_time) : "—",
             n: one(r.partners)?.name ?? one(r.beneficiaries)?.name ?? r.label ?? "Point",
@@ -817,10 +833,16 @@ export default function JourneePage() {
         setPlannedStart(`${pad(Math.floor(m / 60))}:${pad(m % 60)}`);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cityId]);
+  }, [cityId, iso]);
 
   useEffect(() => {
+    let cancelled = false; // un changement de jour rapide : la réponse du jour précédent est ignorée
     (async () => {
+      setLoading(true);
+      setDayState("idle");
+      setStartedAt(null);
+      setEndedAt(null);
+      setOpenIdx(null);
       const { data: auth } = await supabase.auth.getUser();
       const uid = auth.user?.id;
       if (!uid) return;
@@ -853,6 +875,7 @@ export default function JourneePage() {
           .order("scheduled_date")
           .order("sort_order"),
       ]);
+      if (cancelled) return;
       setCityId(prof.data?.city_id ?? null);
       setFirstName(((prof.data?.full_name || prof.data?.email?.split("@")[0] || "") as string).split(" ")[0]);
       if (col.error) showToast("Chargement impossible : " + col.error.message);
@@ -887,8 +910,11 @@ export default function JourneePage() {
       }
       setLoading(false);
     })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase]);
+  }, [supabase, iso]);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -1127,7 +1153,16 @@ export default function JourneePage() {
       <div className="flex items-center justify-between pt-2.5 pb-3.5">
         <div>
           <div className="font-display text-2xl leading-none font-black">Bonjour{firstName ? ` ${firstName}` : ""}</div>
-          <div className="mt-[3px] text-[12.5px] text-[var(--slate)] capitalize">{today}</div>
+          <div className="mt-[3px] flex items-center gap-1.5 text-[12.5px] text-[var(--slate)]">
+            <button type="button" aria-label="Jour précédent" disabled={iso <= minIso} onClick={() => shiftDay(-1)} className="flex h-8 w-8 items-center justify-center rounded-full border-[1.5px] border-[var(--border)] text-[16px] font-bold text-[var(--navy)] disabled:opacity-30">‹</button>
+            <span className="min-w-[132px] text-center capitalize">{today}</span>
+            <button type="button" aria-label="Jour suivant" disabled={iso >= todayIso} onClick={() => shiftDay(1)} className="flex h-8 w-8 items-center justify-center rounded-full border-[1.5px] border-[var(--border)] text-[16px] font-bold text-[var(--navy)] disabled:opacity-30">›</button>
+            {isPast && (
+              <button type="button" onClick={() => setDayIso(todayIso)} className="ml-1 rounded-[40px] bg-[var(--navy-deep)] px-3 py-1.5 text-[11.5px] font-bold text-[var(--panel-fg)]">
+                Aujourd&apos;hui
+              </button>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2.5">
           <RemonteesLink />
@@ -1187,7 +1222,13 @@ export default function JourneePage() {
             )}
           </div>
 
-          {dayState === "closed" && (
+          {isPast && (
+            <div className="mb-4 rounded-2xl border-[1.5px] border-[var(--warn)] bg-[var(--warn-bg)] px-4 py-3 text-[13px] font-semibold text-[var(--warn)]">
+              Journée passée — tu complètes les arrêts de ce jour-là (jusqu&apos;à {MAX_BACK_DAYS} jours en arrière). Il n&apos;est pas nécessaire de démarrer la journée.
+            </div>
+          )}
+
+          {dayState === "closed" && !isPast && (
             <div className="mb-4 flex items-start gap-2.5 rounded-2xl bg-[var(--good-bg)] px-4 py-3.5 text-[13px] font-semibold text-[var(--good)]">
               <CheckIcon className="mt-px h-[18px] w-[18px] flex-none" />
               <span>
@@ -1198,7 +1239,7 @@ export default function JourneePage() {
 
           {loading && <div className="py-6 text-center text-[13px] text-[var(--slate)]">Chargement de ta journée…</div>}
 
-          {!loading && dayState === "idle" && allChecks.length > 0 && (
+          {!loading && dayState === "idle" && !isPast && allChecks.length > 0 && (
             <div className="mb-[14px] rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-[18px] shadow-[var(--shadow)]">
               <span className="mb-2 inline-block rounded-[40px] bg-[var(--good-bg)] px-2.5 py-1 text-[10.5px] font-bold tracking-[0.03em] text-[var(--good)] uppercase">À faire avant de commencer</span>
               <h3 className="mb-2 font-display text-[17px] font-extrabold">Checklist de départ</h3>
@@ -1237,7 +1278,7 @@ export default function JourneePage() {
             </div>
           )}
 
-          {dayState !== "closed" && (
+          {dayState !== "closed" && !isPast && (
             <div className="mb-[18px] rounded-[20px] bg-[var(--navy-deep)] px-5 py-[18px] text-[var(--panel-fg)] shadow-[var(--shadow)]">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -1314,7 +1355,7 @@ export default function JourneePage() {
                       className={`flex items-center gap-3 ${isPause ? "" : "cursor-pointer"}`}
                       onClick={() => {
                         if (isPause) return;
-                        if (dayState !== "running") {
+                        if (dayState !== "running" && !isPast) {
                           if (dayState === "idle") showToast("Démarrez votre journée pour saisir une collecte.");
                           return;
                         }
@@ -1356,10 +1397,10 @@ export default function JourneePage() {
                           </div>
                         )}
                         <div className="text-[12px] text-[var(--slate)]">{s.cat}</div>
-                        {!isPause && !done && dayState === "running" && openIdx !== i && <div className="mt-1 text-[11.5px] font-bold text-[var(--turquoise)]">Touchez pour saisir cet arrêt</div>}
+                        {!isPause && !done && (dayState === "running" || isPast) && openIdx !== i && <div className="mt-1 text-[11.5px] font-bold text-[var(--turquoise)]">Touchez pour saisir cet arrêt</div>}
                       </span>
                       <span className={`rounded-[40px] px-[9px] py-[5px] text-[10.5px] font-bold tracking-[0.02em] whitespace-nowrap uppercase ${badgeCls}`}>{badge}</span>
-                      {!isPause && !done && dayState !== "closed" && (
+                      {!isPause && !done && (isPast || dayState !== "closed") && (
                         <Icon className={`h-4 w-4 flex-none text-[var(--slate)] transition-transform ${openIdx === i ? "rotate-180" : ""}`} sw={2}><path d="M6 9 L12 15 L18 9" /></Icon>
                       )}
                     </div>
@@ -1425,7 +1466,7 @@ export default function JourneePage() {
                     {s.status === "collecte" && <div className="mt-2 border-t border-[var(--border)] pt-2 text-xs text-[var(--slate)]">{summary(s)}</div>}
                     {s.status === "annule" && <div className="mt-2 border-t border-[var(--border)] pt-2 text-xs text-[var(--slate)]">Motif : <strong className="text-[var(--navy)]">{s.result?.motif || "annulé depuis le planning"}</strong></div>}
 
-                    {!done && dayState === "running" && openIdx === i && <StopPanel stops={stops} index={i} subs={mergeBareme(s.cat, baremes, subList.filter((x) => x.partner_id === s.partnerId))} onDone={(r, st) => finishStop(i, r, st)} onUpload={uploadStopPhoto} />}
+                    {!done && (dayState === "running" || isPast) && openIdx === i && <StopPanel stops={stops} index={i} subs={mergeBareme(s.cat, baremes, subList.filter((x) => x.partner_id === s.partnerId))} onDone={(r, st) => finishStop(i, r, st)} onUpload={uploadStopPhoto} />}
                   </div>
                 </div>
               );
