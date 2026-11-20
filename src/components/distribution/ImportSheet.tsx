@@ -44,6 +44,8 @@ export default function ImportSheet({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tabs, setTabs] = useState<ParsedTab[] | null>(null);
+  const [sheetNames, setSheetNames] = useState<string[]>([]); // tous les onglets du fichier lu, dans l'ordre du fichier
+  const [source, setSource] = useState("");
   const [picked, setPicked] = useState<string>("");
   const [mode, setMode] = useState<"replace" | "append">(hasLines ? "append" : "replace");
   const [withMeta, setWithMeta] = useState(true);
@@ -70,11 +72,16 @@ export default function ImportSheet({
     setBusy(true);
     setError(null);
     setTabs(null);
+    setSheetNames([]);
+    setSource("");
+    setPicked("");
     try {
       const res = await fetch("/api/distributions/import", { method: "POST", body: form });
-      const json = (await res.json().catch(() => ({}))) as { tabs?: ParsedTab[]; error?: string };
+      const json = (await res.json().catch(() => ({}))) as { tabs?: ParsedTab[]; sheetNames?: string[]; source?: string; error?: string };
       if (!res.ok || !json.tabs) throw new Error(json.error ?? "Lecture impossible.");
       setTabs(json.tabs);
+      setSheetNames(json.sheetNames ?? json.tabs.map((t) => t.name));
+      setSource(json.source ?? "");
       const want = tokens(placeName);
       const best = json.tabs
         .filter((t) => t.lines.length > 0)
@@ -161,28 +168,29 @@ export default function ImportSheet({
 
         {tabs && (
           <div className="mt-4">
+            <p className="mb-1.5 text-[12px] text-[var(--slate)]">
+              Fichier lu : <strong className="text-[var(--navy)]">{source || "classeur"}</strong> · {sheetNames.length} onglet(s) · ✓ = onglet de la date de cette distribution
+            </p>
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <label className="text-[12px] font-semibold text-[var(--slate)]">Onglet</label>
               <select value={picked} onChange={(e) => setPicked(e.target.value)} className={`${inputCls} !w-auto min-w-[260px]`}>
                 <option value="">— Choisir —</option>
-                {sameDate.length > 0 && (
-                  <optgroup label={`Onglets du ${fmtDay(date)}`}>
-                    {sameDate.map(({ t }) => (
-                      <option key={t.name} value={t.name}>
-                        {t.name} — {t.meta.distribution || "lieu inconnu"}
+                {sheetNames.map((name) => {
+                  const t = tabs.find((x) => x.name === name);
+                  if (!t || t.lines.length === 0) {
+                    return (
+                      <option key={name} value={name} disabled>
+                        {name} — {t ? "aucune ligne" : "non reconnu"}
                       </option>
-                    ))}
-                  </optgroup>
-                )}
-                <optgroup label="Tous les onglets">
-                  {ranked
-                    .filter((r) => r.t.meta.date !== date)
-                    .map(({ t }) => (
-                      <option key={t.name} value={t.name}>
-                        {t.name} — {t.meta.distribution || "lieu inconnu"} · {fmtDay(t.meta.date)}
-                      </option>
-                    ))}
-                </optgroup>
+                    );
+                  }
+                  return (
+                    <option key={name} value={name}>
+                      {t.meta.date === date ? "✓ " : ""}
+                      {name} — {t.meta.distribution || "lieu inconnu"} · {fmtDay(t.meta.date)}
+                    </option>
+                  );
+                })}
               </select>
               {current && !mismatch && <span className="rounded-[40px] bg-[var(--good-bg)] px-2.5 py-1 text-[11.5px] font-bold text-[var(--good)]">Onglet reconnu : même date</span>}
               {mismatch && <span className="rounded-[40px] bg-[var(--warn-bg)] px-2.5 py-1 text-[11.5px] font-bold text-[var(--warn)]">⚠︎ Cet onglet est daté du {fmtDay(current!.meta.date)}</span>}

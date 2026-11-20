@@ -22,11 +22,13 @@ export async function POST(request: Request) {
   const form = await request.formData().catch(() => null);
   if (!form) return NextResponse.json({ error: "Requête invalide." }, { status: 400 });
   let buf: ArrayBuffer;
+  let source = "Google Sheet";
   const file = form.get("file");
   const url = String(form.get("url") ?? "").trim();
   if (file && typeof file !== "string") {
     if (file.size > MAX_BYTES) return NextResponse.json({ error: "Fichier trop lourd (20 Mo maximum)." }, { status: 400 });
     buf = await file.arrayBuffer();
+    source = file.name || "Fichier Excel";
   } else if (url) {
     // seule l'adresse d'un Google Sheet est acceptée : on reconstruit nous-mêmes l'adresse d'export (pas de requête vers un hôte libre)
     const m = url.match(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9_-]{20,})/);
@@ -48,8 +50,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const tabs = await parseDistribWorkbook(buf);
-    return NextResponse.json({ tabs });
+    const { tabs, sheetNames } = await parseDistribWorkbook(buf);
+    return NextResponse.json({ tabs, sheetNames, source });
   } catch {
     return NextResponse.json({ error: "Fichier illisible : envoie un classeur Excel (.xlsx) ou un Google Sheet." }, { status: 422 });
   }

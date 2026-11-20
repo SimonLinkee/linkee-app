@@ -169,8 +169,8 @@ function parseSheet(ws: ExcelJS.Worksheet): ParsedTab | null {
   return { name: ws.name, meta, lines, skipped };
 }
 
-/** Lit tous les onglets du classeur et renvoie ceux qui ressemblent à une feuille de distribution. */
-export async function parseDistribWorkbook(buf: ArrayBuffer | Buffer): Promise<ParsedTab[]> {
+/** Lit tous les onglets du classeur : la liste complète de ses onglets (dans l'ordre du fichier) et ceux qui ressemblent à une feuille de distribution. */
+export async function parseDistribWorkbook(buf: ArrayBuffer | Buffer): Promise<{ tabs: ParsedTab[]; sheetNames: string[] }> {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buf as ArrayBuffer);
   const out: ParsedTab[] = [];
@@ -182,5 +182,5 @@ export async function parseDistribWorkbook(buf: ArrayBuffer | Buffer): Promise<P
       /* onglet illisible : ignoré */
     }
   });
-  return out;
+  return { tabs: out, sheetNames: wb.worksheets.map((ws) => ws.name) };
 }
