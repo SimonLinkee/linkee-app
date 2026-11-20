@@ -18,6 +18,27 @@ const tokens = (v: string) => new Set(norm(v).split(" ").filter((w) => w.length 
 const fmtDay = (iso: string | null) => (iso ? new Date(iso + "T00:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short", year: "numeric" }) : "date inconnue");
 const STORE_KEY = "linkee.distribSheetUrl";
 
+/** Date lue dans le NOM de l'onglet : « 1304 » = 13/04 (année non précisée), « 15092025 » = 15/09/2025, « 17092025 Trop » idem. */
+function nameDate(name: string): { d: number; m: number; y: number | null } | null {
+  const m = name.trim().match(/^(\d{2})(\d{2})(\d{4})?(?!\d)/);
+  if (!m) return null;
+  const d = +m[1];
+  const mo = +m[2];
+  if (d < 1 || d > 31 || mo < 1 || mo > 12) return null;
+  return { d, m: mo, y: m[3] ? +m[3] : null };
+}
+/** Le nom de l'onglet correspond-il à la date de la distribution ? (à défaut de date dans le nom : la date écrite dans l'onglet) */
+function matchesDate(t: ParsedTab, iso: string): boolean {
+  const nd = nameDate(t.name);
+  if (!nd) return t.meta.date === iso;
+  return nd.d === +iso.slice(8, 10) && nd.m === +iso.slice(5, 7) && (nd.y == null || nd.y === +iso.slice(0, 4));
+}
+const p2 = (n: number) => String(n).padStart(2, "0");
+const tabDateLabel = (t: ParsedTab) => {
+  const nd = nameDate(t.name);
+  return nd ? `${p2(nd.d)}/${p2(nd.m)}${nd.y ? `/${nd.y}` : ""}` : fmtDay(t.meta.date);
+};
+
 export type ImportResult = { lines: ParsedLine[]; meta: ParsedMeta; mode: "replace" | "append"; withMeta: boolean };
 
 export default function ImportSheet({
@@ -61,11 +82,11 @@ export default function ImportSheet({
         const have = tokens(t.meta.distribution);
         let common = 0;
         want.forEach((w) => have.has(w) && common++);
-        return { t, score: (t.meta.date === date ? 100 : 0) + common };
+        return { t, score: (matchesDate(t, date) ? 100 : 0) + common };
       })
-      .sort((a, b) => b.score - a.score || (b.t.meta.date ?? "").localeCompare(a.t.meta.date ?? ""));
+      .sort((a, b) => b.score - a.score);
   }, [tabs, placeName, date]);
-  const sameDate = ranked.filter((r) => r.t.meta.date === date);
+  const sameDate = ranked.filter((r) => matchesDate(r.t, date));
   const current = tabs?.find((t) => t.name === picked) ?? null;
 
   async function read(form: FormData) {
@@ -89,11 +110,11 @@ export default function ImportSheet({
           const have = tokens(t.meta.distribution);
           let common = 0;
           want.forEach((w) => have.has(w) && common++);
-          return { t, score: (t.meta.date === date ? 100 : 0) + common };
+          return { t, score: (matchesDate(t, date) ? 100 : 0) + common };
         })
         .sort((a, b) => b.score - a.score)[0];
-      setPicked(best && best.t.meta.date === date ? best.t.name : "");
-      if (!best || best.t.meta.date !== date) setError(`Aucun onglet daté du ${fmtDay(date)} n'a été trouvé : choisis l'onglet à la main dans la liste.`);
+      setPicked(best && matchesDate(best.t, date) ? best.t.name : "");
+      if (!best || !matchesDate(best.t, date)) setError(`Aucun onglet daté du ${fmtDay(date)} n'a été trouvé : choisis l'onglet à la main dans la liste.`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -117,7 +138,7 @@ export default function ImportSheet({
     void read(f);
   }
 
-  const mismatch = current && current.meta.date && current.meta.date !== date;
+  const mismatch = current && !matchesDate(current, date);
   const totalKg = current ? Math.round(current.lines.reduce((s, l) => s + (parseFloat(l.weight_kg) || 0), 0) * 10) / 10 : 0;
   const inputCls = "w-full rounded-[10px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[13px] font-medium text-[var(--navy)] outline-none focus:border-[var(--turquoise)]";
 
@@ -128,7 +149,7 @@ export default function ImportSheet({
           <div className="min-w-0 flex-1">
             <h3 className="font-display text-[18px] font-extrabold text-[var(--navy)]">Importer depuis le fichier</h3>
             <p className="text-[12px] text-[var(--slate)]">
-              {placeName} · {fmtDay(date)} — l&apos;onglet de cette date est reconnu automatiquement, tu vérifies l&apos;aperçu avant de remplir.
+              {placeName} · {fmtDay(date)} — l&apos;onglet de cette date est reconnu automatiquement d&apos;après le NOM de l&apos;onglet (ex. « 1304 » = 13/04), tu vérifies l&apos;aperçu avant de remplir.
             </p>
           </div>
           <button type="button" onClick={onClose} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-3.5 py-1.5 text-[12.5px] font-semibold text-[var(--slate)]">
@@ -186,14 +207,14 @@ export default function ImportSheet({
                   }
                   return (
                     <option key={name} value={name}>
-                      {t.meta.date === date ? "✓ " : ""}
-                      {name} — {t.meta.distribution || "lieu inconnu"} · {fmtDay(t.meta.date)}
+                      {matchesDate(t, date) ? "✓ " : ""}
+                      {name} — {t.meta.distribution || "lieu inconnu"} · {tabDateLabel(t)}
                     </option>
                   );
                 })}
               </select>
               {current && !mismatch && <span className="rounded-[40px] bg-[var(--good-bg)] px-2.5 py-1 text-[11.5px] font-bold text-[var(--good)]">Onglet reconnu : même date</span>}
-              {mismatch && <span className="rounded-[40px] bg-[var(--warn-bg)] px-2.5 py-1 text-[11.5px] font-bold text-[var(--warn)]">⚠︎ Cet onglet est daté du {fmtDay(current!.meta.date)}</span>}
+              {mismatch && <span className="rounded-[40px] bg-[var(--warn-bg)] px-2.5 py-1 text-[11.5px] font-bold text-[var(--warn)]">⚠︎ Le nom de cet onglet correspond à la date {tabDateLabel(current!)}</span>}
             </div>
 
             {current && (
