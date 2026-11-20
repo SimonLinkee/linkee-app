@@ -42,6 +42,7 @@ type DbStop = {
   planned_items: { id: string; name: string; category: string; colis: number }[] | null;
   stock_direction: string | null;
   scheduled_time: string | null;
+  duration_min?: number | null;
   partners: Rel | Rel[] | null;
   beneficiaries: Rel | Rel[] | null;
   collecte_items: DbItem[] | null;
@@ -69,6 +70,7 @@ type Stop = {
   teamFiles?: TeamFile[]; // fichiers joints par l'équipe depuis le Planning (migration 074)
   passage?: Passage; // partner's "Checklist de passage" (key, isothermal boxes, containers rotation)
   phones: StopPhone[]; // numéros à appeler pour cet arrêt (contacts de la fiche) : un bouton « appeler » chacun
+  duration?: number; // durée prévue sur place (min)
   result?: StopResult;
 };
 type StopPhone = { label: string; tel: string };
@@ -127,6 +129,7 @@ function rowToStop(r: DbStop, all: DbStop[], depotAddress: string): Stop {
     accessDetails: fiche.accessNote || undefined,
     planned: r.planned_items?.map((p) => ({ id: p.id, name: p.name, colis: p.colis })),
     stockIn: r.kind === "stock" && r.stock_direction === "entree",
+    duration: r.duration_min ?? 10,
     passage: ((one(r.partners)?.fiche ?? {}) as { passage?: Passage }).passage,
     phones: rel ? stopPhones(fiche, one(r.partners) ? "Partenaire" : "Association") : [],
     sitePhoto: one(r.partners)?.photo_url || undefined,
@@ -857,7 +860,7 @@ export default function JourneePage() {
         supabase.from("profiles").select("city_id,full_name,email").eq("id", uid).maybeSingle(),
         supabase
           .from("collectes")
-          .select("id,partner_id,kind,stock_direction,label,comment,status,motif,photos_count,photo_paths,planned_items,scheduled_time,partners(name,category,address,fiche,photo_url),beneficiaries(name,category,address,fiche),collecte_items!collecte_id(denree,name,kg,source_collecte_id)")
+          .select("id,partner_id,kind,stock_direction,label,comment,status,motif,photos_count,photo_paths,planned_items,scheduled_time,duration_min,partners(name,category,address,fiche,photo_url),beneficiaries(name,category,address,fiche),collecte_items!collecte_id(denree,name,kg,source_collecte_id)")
           .eq("scheduled_date", iso)
           .eq("source", "planning")
           .order("sort_order"),
@@ -1102,8 +1105,43 @@ export default function JourneePage() {
       );
       if (e2) return showToast("Poids non enregistrés : " + e2.message);
     }
-    setStops((prev) => prev.map((x, idx) => (idx === i ? { ...x, status, result } : x)));
-    setOpenIdx(null);  }
+    const nextStops = stops.map((x, idx) => (idx === i ? { ...x, status, result } : x));
+    setStops(nextStops);
+    setOpenIdx(null);
+    if (isPast) return; // journée passée (rattrapage) : pas de démarrage / clôture automatiques
+    // 1) 1re saisie de la journée : la journée démarre toute seule. Heure de départ estimée = maintenant − (trajet depuis le dépôt + temps sur place)
+    let running = dayState === "running";
+    if (dayState === "idle") running = await autoStartDay(s);
+    // 2) dernier arrêt renseigné (réalisé ou annulé) : la journée se clôture toute seule
+    if (running && nextStops.filter((x) => x.kind !== "pause").every((x) => x.status !== "todo")) {
+      await closeDay();
+      showToast("Tous les arrêts sont renseignés : journée clôturée automatiquement.");
+    }
+  }
+  async function autoStartDay(first: Stop): Promise<boolean> {
+    if (!userId || !cityId) return false;
+    const toMin = (hhmm: string) => {
+      const [h, m] = hhmm.split(":").map(Number);
+      return h * 60 + (m || 0);
+    };
+    const startMin = plannedStart ? toMin(plannedStart) : 540; // départ prévu de l'entrepôt (9h00 par défaut)
+    const trip = first.time ? Math.max(0, toMin(first.time) - startMin) : 0; // trajet depuis le départ (+ attente éventuelle) jusqu'à cet arrêt
+    const total = trip + (first.duration ?? 10); // + temps passé sur place
+    let startDate = new Date(Date.now() - total * 60000);
+    const dayStart = new Date(iso + "T00:00:00");
+    if (startDate < dayStart) startDate = dayStart;
+    const { error } = await supabase
+      .from("day_sessions")
+      .upsert({ city_id: cityId, logisticien_id: userId, day: iso, checklist_done: Array.from(depChecked), started_at: startDate.toISOString(), closed_at: null }, { onConflict: "logisticien_id,day" });
+    if (error) {
+      showToast("Démarrage automatique impossible : " + error.message);
+      return false;
+    }
+    setDayState("running");
+    setStartedAt(hhmm(startDate));
+    showToast(`Journée démarrée automatiquement — départ estimé à ${hhmm(startDate)} (trajet + temps sur place).`);
+    return true;
+  }
   async function logout() {
     await createClient().auth.signOut();
     router.push("/login");
