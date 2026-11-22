@@ -26,14 +26,11 @@ if (typeof window !== "undefined") {
 }
 
 const isStandalone = () => typeof window !== "undefined" && (window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true);
-const isIosSafari = () => {
-  if (typeof navigator === "undefined") return false;
-  const ua = navigator.userAgent;
-  return /iphone|ipad|ipod/i.test(ua) && /safari/i.test(ua) && !/crios|fxios|edgios/i.test(ua);
-};
+const isIos = () => typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent);
+const isIosSafari = () => isIos() && /safari/i.test(navigator.userAgent) && !/crios|fxios|edgios|gsa\//i.test(navigator.userAgent);
 
 // instantané sous forme de texte : sa valeur ne change que si l'état change (requis par useSyncExternalStore)
-const snapshot = () => `${deferred ? "p" : "-"}${installed ? "i" : "-"}${isStandalone() ? "s" : "-"}${isIosSafari() ? "x" : "-"}`;
+const snapshot = () => `${deferred ? "p" : "-"}${installed ? "i" : "-"}${isStandalone() ? "s" : "-"}${isIosSafari() ? "x" : "-"}${isIos() && !isIosSafari() ? "o" : "-"}`;
 const subscribe = (cb: () => void) => {
   listeners.add(cb);
   return () => listeners.delete(cb);
@@ -46,15 +43,18 @@ export type PwaInstall = {
   canPrompt: boolean;
   /** iPhone / iPad (Safari) : installation manuelle via « Partager » */
   ios: boolean;
+  /** iPhone / iPad dans un autre navigateur que Safari : il faut d'abord ouvrir la page dans Safari */
+  iosOther: boolean;
   prompt: () => Promise<"accepted" | "dismissed" | "unavailable">;
 };
 
 export function usePwaInstall(): PwaInstall {
-  const snap = useSyncExternalStore(subscribe, snapshot, () => "----");
+  const snap = useSyncExternalStore(subscribe, snapshot, () => "-----");
   return {
     installed: snap[1] === "i" || snap[2] === "s",
     canPrompt: snap[0] === "p",
     ios: snap[3] === "x",
+    iosOther: snap[4] === "o",
     prompt: async () => {
       if (!deferred) return "unavailable";
       const ev = deferred;

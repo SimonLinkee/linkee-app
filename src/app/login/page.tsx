@@ -49,7 +49,8 @@ export default function LoginPage() {
             Connectez-vous pour accéder à votre espace Linkee.
           </p>
         </div>
-        <form onSubmit={handleSubmit} className="px-7 pt-6 pb-6">
+        <InstallAppButton />
+        <form onSubmit={handleSubmit} className="px-7 pt-5 pb-6">
           <div className="mb-3 flex flex-col gap-1.5">
             <label className="text-[12.5px] font-semibold" htmlFor="email">
               Adresse email
@@ -89,7 +90,6 @@ export default function LoginPage() {
             {loading ? "Connexion…" : "Se connecter"}
           </button>
         </form>
-        <InstallAppButton />
       </div>
     </main>
   );

@@ -140,13 +140,14 @@
   .nav-blink { animation: none; background-color: rgba(79, 193, 214, 0.3); }
 }
 
-/* Bouton « Installer l'appli » (page de connexion) : l'icône Linkee tombe sur l'écran d'accueil d'un petit téléphone */
-@keyframes install-drop {
-  0%, 12% { transform: translate(0, 0) scale(1.7); opacity: 0; }
-  28% { opacity: 1; }
-  58%, 100% { transform: translate(18px, 64px) scale(1); opacity: 1; }
-}
-.install-tile { animation: install-drop 3.2s ease-in-out infinite; }
+/* Bouton « Installer l'appli » (page de connexion) : l'icône Linkee vibre comme une icône d'iPhone, un + pulse, un reflet balaie le bouton */
+@keyframes install-jiggle { from { transform: rotate(-3deg); } to { transform: rotate(3deg); } }
+@keyframes install-plus { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.22); } }
+@keyframes install-shine { 0%, 55% { left: -40px; } 100% { left: 110%; } }
+.install-jiggle { animation: install-jiggle 0.5s ease-in-out infinite alternate; }
+.install-plus { animation: install-plus 1.4s ease-in-out infinite; }
+.install-shine { animation: install-shine 2.8s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .install-tile { animation: none; transform: translate(18px, 64px); opacity: 1; }
+  .install-jiggle, .install-plus, .install-shine { animation: none; }
+  .install-shine { display: none; }
 }
