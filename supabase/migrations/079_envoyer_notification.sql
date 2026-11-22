@@ -3,7 +3,8 @@
 --
 -- Qui peut envoyer : le Superadmin (n'importe quelle ville) et le Responsable d'antenne (SA ville seulement).
 -- Destinataires : une personne précise, tous les logisticiens de la ville, toute l'équipe de la ville
---                 (logisticiens + responsables d'antenne + resp. distribution) ou tous les Linkers de la ville.
+--                 (logisticiens + responsables d'antenne + resp. distribution + le Superadmin, qui est membre de CHAQUE ville)
+--                 ou tous les Linkers de la ville.
 -- La notification apparaît dans la cloche du destinataire (type « message »), avec le nom de l'expéditeur.
 -- L'expéditeur retrouve ses envois (colonne sent_by) dans la page « Notifier ».
 
@@ -46,9 +47,9 @@ begin
       from public.profiles pr
      where pr.active
        and (
-            (p_audience = 'user' and pr.id = p_user and (v_role = 'admin_principal' or pr.city_id = p_city))
+            (p_audience = 'user' and pr.id = p_user and (v_role = 'admin_principal' or pr.city_id = p_city or pr.role::text = 'admin_principal'))
          or (p_audience = 'logisticiens' and pr.role::text = 'logisticien' and pr.city_id = p_city)
-         or (p_audience = 'equipe' and pr.role::text in ('logisticien', 'admin_local', 'resp_distribution') and pr.city_id = p_city)
+         or (p_audience = 'equipe' and pr.id <> auth.uid() and (pr.role::text = 'admin_principal' or (pr.role::text in ('logisticien', 'admin_local', 'resp_distribution') and pr.city_id = p_city)))
          or (p_audience = 'linkers' and exists (select 1 from public.linkers k where k.id = pr.id and k.city_id = p_city))
        )
   loop
