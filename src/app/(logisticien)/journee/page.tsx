@@ -6,7 +6,9 @@ import { windowOf } from "@/lib/timewin";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { openPrivateFile, signedUrls, uploadPrivatePhoto, type TeamFile } from "@/lib/photos";
+import { compressImage, openPrivateFile, signedUrls, uploadPrivatePhoto, type TeamFile } from "@/lib/photos";
+import { clearAllOffline, kvDel, kvGet, kvSet, outboxAdd, outboxList } from "@/lib/offline/idb";
+import { flushOutbox, isNetworkError } from "@/lib/offline/sync";
 import { geocode } from "@/lib/geocode";
 import { BAREME_SELECT, SUBCAT_SELECT, UNIT_LABEL, isBaremSub, itemValue, kgFromQuantity, mergeBareme, subMap, type Bareme, type SubCat } from "@/lib/stats";
 import NotificationBell from "@/components/NotificationBell";
@@ -27,6 +29,21 @@ type Kind = "partner" | "dropoff" | "stock" | "exceptionnel" | "pause" | "dechet
 type ResultItem = { denree?: string; name?: string; kg: number; from?: string; sourceId?: string; stockId?: string; colis?: number; subcategoryId?: string; quantity?: number; unit?: string; valueSnapshot?: number };
 type StopResult = { items?: ResultItem[]; totalKg?: number; photos?: number; photoPaths?: string[]; motif?: string };
 type ChecklistItem = { id: string; label: string };
+// copie de la journée gardée sur le téléphone (mode hors ligne) : on peut rouvrir « Ma journée » sans réseau
+type Snapshot = {
+  savedAt: number;
+  userId: string;
+  cityId: string | null;
+  firstName: string;
+  depotAddr: string;
+  stops: Stop[];
+  checklist: ChecklistItem[];
+  weekRows: WeekRow[];
+  vehicle: { id: string; name: string; plate: string | null; rented: boolean } | null;
+  dayState: "idle" | "running" | "closed";
+  startedAt: string | null;
+  endedAt: string | null;
+};
 type Rel = { name: string; category: string | null; address: string | null; fiche: Record<string, unknown> | null; photo_url?: string | null };
 type DbItem = { denree: string | null; name: string | null; kg: number; source_collecte_id: string | null };
 type DbStop = {
@@ -653,6 +670,12 @@ export default function JourneePage() {
   const [baremes, setBaremes] = useState<Bareme[]>([]); // default sub-categories per partner category (e.g. Boulangerie)
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  // mode hors ligne : saisies gardées sur le téléphone puis envoyées au retour du réseau
+  const [online, setOnline] = useState(true);
+  const [pending, setPending] = useState(0);
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+  const [syncing, setSyncing] = useState(false);
+  const [reloadTick, setReloadTick] = useState(0);
   const [cityId, setCityId] = useState<string | null>(null);
   const [firstName, setFirstName] = useState("");
   const myPhoto = useMyPhoto();
@@ -838,6 +861,75 @@ export default function JourneePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cityId, iso]);
 
+  async function currentUserId(): Promise<string | null> {
+    try {
+      const { data } = await supabase.auth.getUser();
+      if (data.user?.id) return data.user.id;
+    } catch {
+      /* pas de réseau : on se rabat sur la session gardée sur le téléphone */
+    }
+    const { data: ses } = await supabase.auth.getSession();
+    return ses.session?.user?.id ?? null;
+  }
+  async function refreshPending() {
+    const list = await outboxList();
+    setPending(list.length);
+    setPendingIds(new Set(list.filter((e) => e.kind === "stop").map((e) => e.payload.stopId as string)));
+  }
+  /** Remet sur les arrêts les saisies faites hors ligne qui n'ont pas encore été envoyées. */
+  async function mergePending(list: Stop[]): Promise<Stop[]> {
+    const pend = (await outboxList()).filter((e) => e.kind === "stop" && e.payload.day === iso);
+    if (!pend.length) return list;
+    return list.map((st) => {
+      const e = [...pend].reverse().find((x) => x.payload.stopId === st.id);
+      return e ? { ...st, status: e.payload.status, result: e.payload.result } : st;
+    });
+  }
+  async function mergePendingDay() {
+    const pend = (await outboxList()).filter((e) => (e.kind === "day_start" || e.kind === "day_close") && e.payload.day === iso);
+    for (const e of pend) {
+      if (e.kind === "day_start") {
+        setDayState("running");
+        setStartedAt(hhmm(new Date(e.payload.startedAt)));
+      } else {
+        setDayState("closed");
+        setEndedAt(hhmm(new Date(e.payload.closedAt)));
+      }
+    }
+  }
+  async function loadFromSnapshot() {
+    const snap = await kvGet<Snapshot>("journee:" + iso);
+    if (!snap) {
+      showToast("Pas de données hors ligne pour ce jour : ouvre « Ma journée » une fois avec du réseau.");
+      setStops([]);
+      setLoading(false);
+      return;
+    }
+    const bar = await kvGet<Bareme[]>("journee:baremes");
+    const sub = await kvGet<SubCat[]>("journee:subs");
+    const ps = await kvGet<string>("journee:plannedStart:" + iso);
+    setCityId(snap.cityId);
+    setFirstName(snap.firstName);
+    setDepotAddr(snap.depotAddr);
+    setStops(await mergePending(snap.stops));
+    setChecklist(snap.checklist);
+    setWeekRows(snap.weekRows);
+    setVehicle(snap.vehicle);
+    if (bar) setBaremes(bar);
+    if (sub) setSubList(sub);
+    if (ps) setPlannedStart(ps);
+    setDayState(snap.dayState);
+    setStartedAt(snap.startedAt);
+    setEndedAt(snap.endedAt);
+    await mergePendingDay();
+    setLoading(false);
+  }
+  async function queueDay(kind: "day_start" | "day_close", payload: Record<string, unknown>) {
+    if (!userId) return;
+    await outboxAdd({ kind, createdAt: Date.now(), userId, payload: { day: iso, ...payload } });
+    await refreshPending();
+  }
+
   useEffect(() => {
     let cancelled = false; // un changement de jour rapide : la réponse du jour précédent est ignorée
     (async () => {
@@ -846,10 +938,13 @@ export default function JourneePage() {
       setStartedAt(null);
       setEndedAt(null);
       setOpenIdx(null);
-      const { data: auth } = await supabase.auth.getUser();
-      const uid = auth.user?.id;
+      const uid = await currentUserId();
       if (!uid) return;
       setUserId(uid);
+      if (!navigator.onLine) {
+        await loadFromSnapshot();
+        return;
+      }
       const monday = new Date(now);
       monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
       const sunday = new Date(monday);
@@ -879,6 +974,10 @@ export default function JourneePage() {
           .order("sort_order"),
       ]);
       if (cancelled) return;
+      if (col.error && isNetworkError(col.error)) {
+        await loadFromSnapshot();
+        return;
+      }
       setCityId(prof.data?.city_id ?? null);
       setFirstName(((prof.data?.full_name || prof.data?.email?.split("@")[0] || "") as string).split(" ")[0]);
       if (col.error) showToast("Chargement impossible : " + col.error.message);
@@ -892,7 +991,7 @@ export default function JourneePage() {
       const stockAddr = cityAddr?.stock_address || depotAddr; // prise / dépose au stock
       setDepotAddr(depotAddr);
       const builtStops = rows.map((r) => rowToStop(r, rows, stockAddr)).map((s) => (s.kind === "stock" && !s.stockIn ? { ...s, presetItems: presets } : s));
-      setStops(builtStops);
+      setStops(await mergePending(builtStops)); // saisies faites hors ligne et pas encore envoyées : elles restent affichées
       // sitePhoto stocke un chemin privé (coffre collecte-photos) — on le résout en URL signée pour l'affichage
       const sitePhotoPaths = Array.from(new Set(builtStops.map((s) => s.sitePhoto).filter((p): p is string => !!p)));
       if (sitePhotoPaths.length) {
@@ -911,13 +1010,77 @@ export default function JourneePage() {
         setDayState("running");
         setStartedAt(hhmm(new Date(s.started_at)));
       }
+      await mergePendingDay();
+      // copie de la journée sur le téléphone : permet de la rouvrir sans réseau
+      const snapDay: Snapshot["dayState"] = s?.closed_at ? "closed" : s?.started_at ? "running" : "idle";
+      void kvSet("journee:" + iso, {
+        savedAt: Date.now(),
+        userId: uid,
+        cityId: prof.data?.city_id ?? null,
+        firstName: ((prof.data?.full_name || prof.data?.email?.split("@")[0] || "") as string).split(" ")[0],
+        depotAddr,
+        stops: builtStops,
+        checklist: (ovr.data?.items ?? tpl.data?.items ?? []) as ChecklistItem[],
+        weekRows: (wk.data ?? []) as unknown as WeekRow[],
+        vehicle: vd ? { id: vd.id, name: vd.name, plate: vd.plate, rented: !!vd.fiche?.rented } : null,
+        dayState: snapDay,
+        startedAt: s?.started_at ? hhmm(new Date(s.started_at)) : null,
+        endedAt: s?.closed_at ? hhmm(new Date(s.closed_at)) : null,
+      } satisfies Snapshot);
+      void refreshPending();
       setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase, iso]);
+  }, [supabase, iso, reloadTick]);
+
+  // barèmes, sous-catégories et heure de départ prévue : gardés aussi pour le mode hors ligne
+  useEffect(() => {
+    if (baremes.length) void kvSet("journee:baremes", baremes);
+  }, [baremes]);
+  useEffect(() => {
+    if (subList.length) void kvSet("journee:subs", subList);
+  }, [subList]);
+  useEffect(() => {
+    if (plannedStart) void kvSet("journee:plannedStart:" + iso, plannedStart);
+  }, [plannedStart, iso]);
+
+  // envoi des saisies en attente dès que le réseau revient (et régulièrement tant qu'il en reste)
+  async function syncNow() {
+    if (syncing || !navigator.onLine) return;
+    const list = await outboxList();
+    setPending(list.length);
+    if (!list.length) return;
+    setSyncing(true);
+    const names = Object.fromEntries(stops.map((st) => [st.id, st.name]));
+    const r = await flushOutbox(supabase, names);
+    setSyncing(false);
+    await refreshPending();
+    if (r.error) showToast("Envoi en attente : " + r.error);
+    else if (r.conflicts.length) showToast(`Envoyé, sauf : ${r.conflicts.join(" ; ")}.`);
+    else if (r.sent) showToast(`${r.sent} saisie(s) envoyée(s) — tout est à jour.`);
+    if (r.sent || r.conflicts.length) setReloadTick((t) => t + 1);
+  }
+  useEffect(() => {
+    setOnline(navigator.onLine);
+    void refreshPending();
+    const goOnline = () => {
+      setOnline(true);
+      void syncNow();
+    };
+    const goOffline = () => setOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    const t = window.setInterval(() => void syncNow(), 20000);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+      window.clearInterval(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stops, pending]);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -925,9 +1088,16 @@ export default function JourneePage() {
   }
   async function startDay() {
     if (!userId || !cityId) return showToast("Compte sans ville : contacte l'administrateur.");
-    const { error } = await supabase
-      .from("day_sessions")
-      .upsert({ city_id: cityId, logisticien_id: userId, day: iso, checklist_done: allChecks.map((c) => c.id), started_at: new Date().toISOString(), closed_at: null }, { onConflict: "logisticien_id,day" });
+    const startedIso = new Date().toISOString();
+    const { error } = navigator.onLine
+      ? await supabase.from("day_sessions").upsert({ city_id: cityId, logisticien_id: userId, day: iso, checklist_done: allChecks.map((c) => c.id), started_at: startedIso, closed_at: null }, { onConflict: "logisticien_id,day" })
+      : { error: { message: "failed to fetch" } };
+    if (error && isNetworkError(error)) {
+      await queueDay("day_start", { cityId, startedAt: startedIso, checklistDone: allChecks.map((c) => c.id) });
+      setDayState("running");
+      setStartedAt(hhmm(new Date(startedIso)));
+      return showToast("Journée démarrée hors connexion : elle sera enregistrée au retour du réseau.");
+    }
     if (error) return showToast("Démarrage impossible : " + error.message);
     setDayState("running");
     const n = new Date();
@@ -936,7 +1106,17 @@ export default function JourneePage() {
   }
   async function closeDay() {
     if (!userId) return;
-    const { error } = await supabase.from("day_sessions").update({ closed_at: new Date().toISOString() }).eq("logisticien_id", userId).eq("day", iso);
+    const closedIso = new Date().toISOString();
+    const { error } = navigator.onLine
+      ? await supabase.from("day_sessions").update({ closed_at: closedIso }).eq("logisticien_id", userId).eq("day", iso)
+      : { error: { message: "failed to fetch" } };
+    if (error && isNetworkError(error)) {
+      await queueDay("day_close", { closedAt: closedIso });
+      setEndedAt(hhmm(new Date(closedIso)));
+      setDayState("closed");
+      setOpenIdx(null);
+      return;
+    }
     if (error) return showToast("Clôture impossible : " + error.message);
     setEndedAt(hhmm(new Date()));
     setDayState("closed");
@@ -947,9 +1127,19 @@ export default function JourneePage() {
       showToast("Compte sans ville : contacte l'administrateur.");
       return null;
     }
+    // sans réseau : la photo est gardée sur le téléphone et partira avec l'arrêt au retour du réseau
+    const stash = async () => {
+      const blob = await compressImage(file);
+      const path = `${cityId}/${stopId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+      await kvSet("photo:" + path, blob);
+      showToast("Photo gardée sur le téléphone : elle partira au retour du réseau.");
+      return path;
+    };
+    if (!navigator.onLine) return await stash();
     try {
       return await uploadPrivatePhoto(supabase, `${cityId}/${stopId}`, file);
     } catch (e) {
+      if (isNetworkError(e as Error)) return await stash();
       showToast("Photo non envoyée : " + (e as Error).message);
       return null;
     }
@@ -1070,6 +1260,11 @@ export default function JourneePage() {
   async function finishStop(i: number, result: StopResult, status: "collecte" | "annule") {
     const s = stops[i];
     let movementId: string | null = null;
+    if (!navigator.onLine) {
+      // hors ligne : la saisie est gardée sur le téléphone ; seuls les arrêts de stock ont besoin du réseau (le stock se met à jour en direct)
+      if (s.kind === "stock") return showToast("Les arrêts de stock ont besoin du réseau : le stock est mis à jour en direct.");
+      return await finishOffline(i, result, status);
+    }
     if (s.kind === "stock" && s.stockIn && status === "collecte" && result.items?.length) {
       // dépose au stock : une ligne de stock par produit déposé + une entrée dans l'historique (migration 071)
       const add = await supabase.rpc("add_stock", {
@@ -1096,15 +1291,65 @@ export default function JourneePage() {
       .update({ status, motif: result.motif ?? null, photos_count: result.photos ?? 0, photo_paths: result.photoPaths ?? [], done_at: new Date().toISOString(), logisticien_id: userId, ...(movementId ? { stock_movement_id: movementId } : {}) })
       .eq("id", s.id);
     if (error) {
+      if (isNetworkError(error) && s.kind !== "stock" && !movementId) return await finishOffline(i, result, status); // le réseau a lâché en cours de route
       if (movementId) await supabase.rpc("undo_stock_movement", { p_id: movementId }); // pas de ligne de stock sans arrêt validé
       return showToast("Enregistrement impossible : " + error.message);
     }
     if (status === "collecte" && result.items?.length) {
-      const { error: e2 } = await supabase.from("collecte_items").insert(
-        result.items.map((it) => ({ collecte_id: s.id, denree: it.denree ?? null, name: it.name ?? null, kg: it.kg, source_collecte_id: it.sourceId ?? null, subcategory_id: it.subcategoryId ?? null, quantity: it.quantity ?? null, unit: it.unit ?? null, value_snapshot: it.valueSnapshot ?? null })),
-      );
+      const rows = itemRows(s.id, result);
+      const { error: e2 } = await supabase.from("collecte_items").upsert(rows, { onConflict: "id", ignoreDuplicates: true });
+      if (e2 && isNetworkError(e2)) return await finishOffline(i, result, status, true); // l'arrêt est enregistré : il ne reste que les poids à envoyer
       if (e2) return showToast("Poids non enregistrés : " + e2.message);
     }
+    await afterStopDone(i, s, status, result);
+  }
+  /** Lignes de poids d'un arrêt, avec un identifiant fixe (un envoi interrompu peut être repris sans doublon). */
+  function itemRows(stopId: string, result: StopResult) {
+    return (result.items ?? []).map((it) => ({
+      id: crypto.randomUUID(),
+      collecte_id: stopId,
+      denree: it.denree ?? null,
+      name: it.name ?? null,
+      kg: it.kg,
+      source_collecte_id: it.sourceId ?? null,
+      subcategory_id: it.subcategoryId ?? null,
+      quantity: it.quantity ?? null,
+      unit: it.unit ?? null,
+      value_snapshot: it.valueSnapshot ?? null,
+    }));
+  }
+  /** Sans réseau : l'arrêt est enregistré sur le téléphone (avec ses photos) et envoyé au retour du réseau. */
+  async function finishOffline(i: number, result: StopResult, status: "collecte" | "annule", resume = false) {
+    const s = stops[i];
+    if (!userId) return showToast("Session introuvable : reconnecte-toi avec du réseau.");
+    const blobs: { path: string; blob: Blob }[] = [];
+    for (const path of result.photoPaths ?? []) {
+      const blob = await kvGet<Blob>("photo:" + path);
+      if (blob) blobs.push({ path, blob });
+    }
+    await outboxAdd({
+      kind: "stop",
+      createdAt: Date.now(),
+      userId,
+      payload: {
+        stopId: s.id,
+        day: iso,
+        status,
+        motif: result.motif ?? null,
+        photosCount: result.photos ?? 0,
+        photoPaths: result.photoPaths ?? [],
+        doneAt: new Date().toISOString(),
+        items: status === "collecte" ? itemRows(s.id, result) : [],
+        result,
+        resume,
+      },
+      blobs,
+    });
+    await refreshPending();
+    showToast("Hors connexion : saisie gardée sur le téléphone, elle partira au retour du réseau.");
+    await afterStopDone(i, s, status, result);
+  }
+  async function afterStopDone(i: number, s: Stop, status: "collecte" | "annule", result: StopResult) {
     const nextStops = stops.map((x, idx) => (idx === i ? { ...x, status, result } : x));
     setStops(nextStops);
     setOpenIdx(null);
@@ -1130,9 +1375,16 @@ export default function JourneePage() {
     let startDate = new Date(Date.now() - total * 60000);
     const dayStart = new Date(iso + "T00:00:00");
     if (startDate < dayStart) startDate = dayStart;
-    const { error } = await supabase
-      .from("day_sessions")
-      .upsert({ city_id: cityId, logisticien_id: userId, day: iso, checklist_done: Array.from(depChecked), started_at: startDate.toISOString(), closed_at: null }, { onConflict: "logisticien_id,day" });
+    const { error } = navigator.onLine
+      ? await supabase.from("day_sessions").upsert({ city_id: cityId, logisticien_id: userId, day: iso, checklist_done: Array.from(depChecked), started_at: startDate.toISOString(), closed_at: null }, { onConflict: "logisticien_id,day" })
+      : { error: { message: "failed to fetch" } };
+    if (error && isNetworkError(error)) {
+      await queueDay("day_start", { cityId, startedAt: startDate.toISOString(), checklistDone: Array.from(depChecked) });
+      setDayState("running");
+      setStartedAt(hhmm(startDate));
+      showToast(`Journée démarrée (hors connexion) — départ estimé à ${hhmm(startDate)}.`);
+      return true;
+    }
     if (error) {
       showToast("Démarrage automatique impossible : " + error.message);
       return false;
@@ -1143,6 +1395,8 @@ export default function JourneePage() {
     return true;
   }
   async function logout() {
+    if (pending > 0 && !window.confirm(`${pending} saisie(s) ne sont pas encore envoyées (pas de réseau). Si tu te déconnectes maintenant, elles seront perdues. Continuer ?`)) return;
+    await clearAllOffline();
     await createClient().auth.signOut();
     router.push("/login");
     router.refresh();
@@ -1215,6 +1469,20 @@ export default function JourneePage() {
           />
         </div>
       </div>
+
+      {(!online || pending > 0) && (
+        <div className={`mb-3 flex flex-wrap items-center gap-2 rounded-2xl px-3.5 py-2.5 text-[12.5px] font-semibold ${online ? "bg-[var(--warn-bg)] text-[var(--warn)]" : "bg-[var(--navy-deep)] text-[var(--panel-fg)]"}`} role="status">
+          <span className="flex-1">
+            {!online ? "Hors connexion — tu peux continuer à saisir : tout est gardé sur le téléphone et partira au retour du réseau." : syncing ? "Envoi en cours…" : "Des saisies attendent d'être envoyées."}
+            {pending > 0 && ` (${pending} en attente)`}
+          </span>
+          {online && pending > 0 && !syncing && (
+            <button type="button" onClick={() => void syncNow()} className="rounded-[40px] bg-[var(--navy-deep)] px-3.5 py-1.5 text-[12px] font-bold text-[var(--panel-fg)]">
+              Envoyer maintenant
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="mb-4 flex rounded-[40px] border border-[var(--border)] bg-[var(--input-bg)] p-[3px]">
         {(["jour", "semaine", "camion"] as const).map((v) => (
@@ -1434,6 +1702,7 @@ export default function JourneePage() {
                             ))}
                           </div>
                         )}
+                        {pendingIds.has(s.id) && <div className="mt-1 inline-block rounded-lg bg-[var(--warn-bg)] px-2 py-1 text-[11.5px] font-bold text-[var(--warn)]">⏳ En attente d&apos;envoi</div>}
                         <div className="text-[12px] text-[var(--slate)]">{s.cat}</div>
                         {!isPause && !done && (dayState === "running" || isPast) && openIdx !== i && <div className="mt-1 text-[11.5px] font-bold text-[var(--turquoise)]">Touchez pour saisir cet arrêt</div>}
                       </span>

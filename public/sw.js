@@ -2,10 +2,13 @@
  * Rôle volontairement prudent :
  *  - met en cache les fichiers statiques de l'appli (code, polices, icônes) pour qu'elle s'ouvre vite ;
  *  - quand il n'y a pas de réseau, affiche une page « hors connexion » au lieu d'une erreur du navigateur ;
- *  - ne met JAMAIS en cache les pages connectées, l'API ni Supabase : aucune donnée personnelle n'est gardée sur le téléphone.
+ *  - mode hors ligne du logisticien : la coquille de la page « Ma journée » (/journee) est gardée pour pouvoir la rouvrir sans réseau ;
+ *    les DONNÉES, elles, sont gardées par l'appli dans IndexedDB (jamais ici), et effacées à la déconnexion ;
+ *  - ne met JAMAIS en cache les autres pages connectées, l'API ni Supabase.
  * Pour publier une nouvelle version de ce fichier, change VERSION. */
-const VERSION = "linkee-v1";
+const VERSION = "linkee-v2";
 const STATIC_CACHE = `${VERSION}-static`;
+const PAGES_CACHE = `${VERSION}-pages`;
 const OFFLINE_URL = "/offline.html";
 const PRECACHE = [OFFLINE_URL, "/icons/icon-192.png", "/icons/icon-512.png", "/linkee-logo-clair.png", "/linkee-logo.png"];
 
@@ -36,8 +39,23 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return; // Supabase, cartes, Google… : le navigateur s'en charge seul
   if (url.pathname.startsWith("/api/")) return;
 
-  // Ouverture d'une page : toujours depuis le réseau (données à jour) ; sans réseau → page « hors connexion »
+  // Ouverture d'une page : toujours depuis le réseau (à jour) ; sans réseau → page « hors connexion »
   if (req.mode === "navigate") {
+    if (url.pathname === "/journee" || url.pathname.startsWith("/journee/")) {
+      // « Ma journée » : on garde la dernière coquille vue pour pouvoir la rouvrir sans réseau
+      event.respondWith(
+        fetch(req)
+          .then((res) => {
+            if (res.ok) {
+              const copy = res.clone();
+              caches.open(PAGES_CACHE).then((c) => c.put("/journee", copy));
+            }
+            return res;
+          })
+          .catch(() => caches.match("/journee").then((hit) => hit || caches.match(OFFLINE_URL))),
+      );
+      return;
+    }
     event.respondWith(fetch(req).catch(() => caches.match(OFFLINE_URL)));
     return;
   }
