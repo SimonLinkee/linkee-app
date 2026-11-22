@@ -26,6 +26,7 @@ export default function NotifierPage() {
   const supabase = useMemo(() => createClient(), []);
   const { cityId, city } = useCity();
   const [role, setRole] = useState<string | null>(null);
+  const [meId, setMeId] = useState("");
   const [people, setPeople] = useState<Person[]>([]);
   const [audience, setAudience] = useState<Audience>("logisticiens");
   const [userId, setUserId] = useState("");
@@ -38,6 +39,7 @@ export default function NotifierPage() {
   async function load() {
     const { data: auth } = await supabase.auth.getUser();
     if (!auth.user) return;
+    setMeId(auth.user.id);
     const [p, pe, mine] = await Promise.all([
       supabase.from("profiles").select("role").eq("id", auth.user.id).maybeSingle(),
       supabase.from("profiles").select("id,full_name,email,role,city_id").eq("active", true).or(`city_id.eq.${cityId ?? ""},role.eq.admin_principal`).order("full_name"), // le Superadmin est membre de chaque ville
@@ -45,8 +47,7 @@ export default function NotifierPage() {
     ]);
     setRole((p.data?.role as string) ?? null);
     const staff = ((pe.data ?? []) as { id: string; full_name: string | null; email: string | null; role: string }[])
-      .filter((x) => x.id !== auth.user!.id)
-      .map((x) => ({ id: x.id, name: x.full_name || x.email || "Sans nom", role: x.role }));
+      .map((x) => ({ id: x.id, name: (x.full_name || x.email || "Sans nom") + (x.id === auth.user!.id ? " (moi — pour tester)" : ""), role: x.role }));
     setPeople(staff);
     // envois regroupés : même titre + même message envoyés à la même minute = un seul envoi
     const nameOf = new Map(staff.map((x) => [x.id, x.name]));
@@ -68,7 +69,7 @@ export default function NotifierPage() {
   }, [cityId]);
 
   const allowed = role === "admin_principal" || role === "admin_local";
-  const audienceCount = audience === "logisticiens" ? people.filter((p) => p.role === "logisticien").length : audience === "equipe" ? people.filter((p) => ["logisticien", "admin_local", "resp_distribution", "admin_principal"].includes(p.role)).length : audience === "user" ? (userId ? 1 : 0) : null;
+  const audienceCount = audience === "logisticiens" ? people.filter((p) => p.role === "logisticien").length : audience === "equipe" ? people.filter((p) => p.id !== meId && ["logisticien", "admin_local", "resp_distribution", "admin_principal"].includes(p.role)).length : audience === "user" ? (userId ? 1 : 0) : null;
 
   async function send() {
     setMsg(null);
