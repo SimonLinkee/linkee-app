@@ -43,19 +43,22 @@ export default function InstallAppButton() {
         disabled={state === "busy"}
         aria-expanded={help}
         className={`relative flex w-full items-center gap-3.5 overflow-hidden rounded-2xl border-[1.5px] px-3.5 py-3 text-left transition-colors disabled:opacity-70 ${
-          state === "done" ? "border-[var(--good)] bg-[var(--good)] text-white" : "border-[var(--navy-deep)] bg-[var(--card)] text-[var(--navy-deep)]"
+          state === "done" ? "border-[var(--good)] bg-[var(--good)] text-white" : "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-white"
         }`}
       >
         {/* reflet qui balaie le bouton */}
+        {state !== "done" && (
+          <span className="absolute top-0 right-0 rounded-bl-xl bg-[var(--turquoise)] px-2.5 py-[3px] text-[10px] font-extrabold tracking-[0.08em] text-[#04262e] uppercase">Nouveau</span>
+        )}
         <span aria-hidden="true" className="install-shine pointer-events-none absolute top-0 bottom-0 left-[-40px] w-[26px] skew-x-[-20deg] bg-[rgba(79,193,214,0.28)]" />
         <span className="install-jiggle relative flex-none">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/icons/icon-192.png" alt="" width={46} height={46} className="h-[46px] w-[46px] rounded-xl" />
           {state !== "done" && <span aria-hidden="true" className="install-plus absolute -top-1.5 -left-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--turquoise)] text-[16px] leading-none font-medium text-[#04262e]">+</span>}
         </span>
-        <span className="relative min-w-0 flex-1 leading-[1.25]">
-          <span className="block font-display text-[16px] font-extrabold">{state === "done" ? "Linkee est installée" : state === "busy" ? "Installation…" : "Ajouter Linkee à mon écran d'accueil"}</span>
-          <span className={`block text-[12px] ${state === "done" ? "text-white/85" : "text-[var(--slate)]"}`}>{state === "done" ? "Retrouve-la sur ton écran d'accueil." : "Comme une vraie appli, en plein écran."}</span>
+        <span className="relative min-w-0 flex-1 pt-2 leading-[1.25]">
+          <span className="block font-display text-[16px] font-extrabold text-white">{state === "done" ? "Linkee est installée" : state === "busy" ? "Installation…" : "Linkee a maintenant son appli !"}</span>
+          <span className="block text-[13px] font-semibold text-white">{state === "done" ? "Retrouve-la sur ton écran d'accueil." : "Télécharge-la !"}</span>
         </span>
       </button>
 

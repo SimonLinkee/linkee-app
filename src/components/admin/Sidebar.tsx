@@ -156,6 +156,16 @@ export const NAV_ITEMS = [
     ),
   },
   {
+    href: "/notifier",
+    label: "Notifier",
+    icon: (
+      <>
+        <path d="M6 16 V11 A6 6 0 0 1 18 11 V16 L19.5 18 H4.5 Z" />
+        <path d="M10 20.5 A2 2 0 0 0 14 20.5" />
+      </>
+    ),
+  },
+  {
     href: "/comptabilite",
     label: "Cerfa",
     icon: (
