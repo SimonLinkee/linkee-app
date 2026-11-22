@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Barlow_Condensed, Inter_Tight, Pacifico } from "next/font/google";
 import "./globals.css";
 import RouteTracker from "@/components/RouteTracker";
+import PwaRegister from "@/components/PwaRegister";
 
 const barlowCondensed = Barlow_Condensed({
   variable: "--font-barlow-condensed",
@@ -23,9 +24,15 @@ const pacifico = Pacifico({
 
 export const metadata: Metadata = {
   title: "Linkee",
-  description: "Entraide étudiante — logistique anti-gaspi à Lyon.",
+  description: "Linkee — logistique anti-gaspi : collectes, distributions et suivi.",
   applicationName: "Linkee",
-  icons: { icon: "/pwa-icon?size=192", apple: "/pwa-icon?size=180" },
+  icons: {
+    icon: [
+      { url: "/icons/favicon-48.png", sizes: "48x48", type: "image/png" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: "/icons/apple-touch-icon.png",
+  },
   appleWebApp: { capable: true, title: "Linkee", statusBarStyle: "black-translucent" },
 };
 
@@ -42,6 +49,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col bg-[var(--cream)] text-[var(--navy)] font-sans">
         <RouteTracker />
         {children}
+        <PwaRegister />
       </body>
     </html>
   );
