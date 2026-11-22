@@ -1,5 +1,6 @@
 "use client";
 
+import NotificationPopup from "@/components/NotificationPopup";
 import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { CityProvider, useCity } from "@/components/admin/CityContext";
@@ -21,6 +22,7 @@ function Frame({ children }: { children: ReactNode }) {
         {/* thin band in the colour of the city you are browsing */}
         <div className="h-1.5 w-full transition-colors" style={{ background: !ready ? "transparent" : isAll ? "linear-gradient(90deg,#2a78d6,#eb6834,#1baf7a,#B23B72,#7C5CD9)" : (city?.color ?? "transparent") }} />
         {ready && <TopBarV2 />}
+        {ready && <NotificationPopup />}
         {/* key: switching city remounts the page so it reloads that city's data */}
         <main key={isAll ? "all" : (city?.id ?? "none")} className="px-[38px] py-6 pb-[60px]">{!ready ? null : blocked ? (
           <div className="mx-auto mt-10 max-w-[520px] rounded-[20px] border border-dashed border-[var(--border)] bg-[var(--card)] px-6 py-10 text-center">

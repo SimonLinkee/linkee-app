@@ -10,7 +10,7 @@ const VERSION = "linkee-v2";
 const STATIC_CACHE = `${VERSION}-static`;
 const PAGES_CACHE = `${VERSION}-pages`;
 const OFFLINE_URL = "/offline.html";
-const PRECACHE = [OFFLINE_URL, "/icons/icon-192.png", "/icons/icon-512.png", "/linkee-logo-clair.png", "/linkee-logo.png"];
+const PRECACHE = [OFFLINE_URL, "/icons/badge-96.png", "/icons/icon-192.png", "/icons/icon-512.png", "/linkee-logo-clair.png", "/linkee-logo.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -76,4 +76,50 @@ self.addEventListener("fetch", (event) => {
       ),
     );
   }
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Notifications sur le téléphone (migration 080) : bannière + pastille, même appli fermée.
+self.addEventListener("push", (event) => {
+  let d = {};
+  try {
+    d = event.data ? event.data.json() : {};
+  } catch (e) {
+    d = { title: "Linkee", body: event.data ? event.data.text() : "" };
+  }
+  event.waitUntil(
+    (async () => {
+      await self.registration.showNotification(d.title || "Linkee", {
+        body: d.body || "",
+        icon: "/icons/icon-192.png",
+        badge: "/icons/badge-96.png",
+        tag: d.tag || d.id || "linkee",
+        renotify: true,
+        data: { url: d.url || "/" },
+      });
+      // pastille sur l'icône de l'appli : nombre de notifications non lues
+      try {
+        if (typeof d.unread === "number" && self.navigator && self.navigator.setAppBadge) await self.navigator.setAppBadge(d.unread);
+      } catch (e) {
+        /* non supporté */
+      }
+    })(),
+  );
+});
+
+// toucher la bannière : ouvre (ou ramène au premier plan) l'appli sur la bonne page
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if ("focus" in c) {
+          if ("navigate" in c) c.navigate(url).catch(() => {});
+          return c.focus();
+        }
+      }
+      return self.clients.openWindow(url);
+    }),
+  );
 });

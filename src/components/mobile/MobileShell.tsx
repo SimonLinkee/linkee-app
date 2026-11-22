@@ -6,6 +6,8 @@ import { useEffect, type ReactNode } from "react";
 import { CityProvider, useCity } from "@/components/admin/CityContext";
 import { canAdminCity } from "@/lib/roles";
 import LinkeeLogo from "@/components/LinkeeLogo";
+import NotificationBell from "@/components/NotificationBell";
+import NotificationPopup from "@/components/NotificationPopup";
 
 /** Frame of the Superadmin's mobile app: slim header (home, city), one column, no side menu. */
 function Frame({ children }: { children: ReactNode }) {
@@ -48,6 +50,11 @@ function Frame({ children }: { children: ReactNode }) {
           </select>
         )}
       </header>
+      {/* notifications : bien visibles sur téléphone, juste sous la ville */}
+      <div className="-mt-2 mb-3 flex justify-end">
+        <NotificationBell align="right" size="lg" label="Notifications" />
+      </div>
+      <NotificationPopup />
       {/* key: switching city remounts the page so it reloads that city's data */}
       <main key={city?.id ?? "none"}>{!ready ? <p className="py-10 text-center text-[14px] text-[var(--slate)]">Chargement…</p> : children}</main>
     </div>
