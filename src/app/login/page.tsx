@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import LinkeeLogo from "@/components/LinkeeLogo";
+import InstallAppButton from "@/components/InstallAppButton";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -88,6 +89,7 @@ export default function LoginPage() {
             {loading ? "Connexion…" : "Se connecter"}
           </button>
         </form>
+        <InstallAppButton />
       </div>
     </main>
   );
