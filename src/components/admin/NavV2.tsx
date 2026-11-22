@@ -26,7 +26,7 @@ const GROUPS: { key: string; label: string; hrefs: string[] }[] = [
   { key: "res", label: "Réseau", hrefs: ["/prospection", "/village-associatif", "/comptabilite"] },
   { key: "pil", label: "Pilotage", hrefs: ["/valeur-des-dons"] },
 ];
-const SHORTCUTS = ["/calendrier", "/projets", "/todo", "/documents-utiles"]; // icônes de la barre du haut
+const SHORTCUTS = ["/calendrier", "/projets", "/todo", "/notifier", "/documents-utiles"]; // icônes de la barre du haut
 const NATIONAL_BG = "linear-gradient(120deg,#2a78d6,#7C5CD9 45%,#eb6834)";
 const PRESENCE_ROLES = ["admin_principal", "comptabilite", "admin_local", "resp_distribution", "resp_rh"];
 const ROLE_SHORT: Record<string, string> = { admin_principal: "Superadmin", comptabilite: "Comptabilité", admin_local: "Responsable d'antenne", resp_distribution: "Resp. Distribution", resp_rh: "Responsable RH", logisticien: "Logisticien" };
@@ -207,7 +207,8 @@ export function TopBarV2() {
 
   const items = navFor(role);
   const by = new Map<string, NavItem>(items.map((n) => [n.href, n]));
-  const shortcuts = SHORTCUTS.map((h) => by.get(h)).filter((x): x is NavItem => !!x);
+  // « Notifier » : réservé au Superadmin et au Responsable d'antenne
+  const shortcuts = SHORTCUTS.filter((h) => h !== "/notifier" || role === "admin_principal" || role === "admin_local").map((h) => by.get(h)).filter((x): x is NavItem => !!x);
   const menuItems = ["/profil", "/organigramme", "/remontees"].map((h) => by.get(h)).filter((x): x is NavItem => !!x);
   const logout = async () => {
     await createClient().auth.signOut();
