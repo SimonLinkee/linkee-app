@@ -215,8 +215,8 @@ export default function StockPage() {
     }
     for (const line of validLines) {
       const it = stock.find((x) => x.id === line.productId)!;
-      if (line.colisCount > it.colis) {
-        setOutError(`Il ne reste que ${it.colis} colis pour ${it.produit}.`);
+      if (it.colis < 1) {
+        setOutError(`Il ne reste plus aucun colis pour ${it.produit}.`);
         return;
       }
     }
@@ -230,8 +230,9 @@ export default function StockPage() {
     const time = outTime || null;
     const planned = validLines.map((l) => {
       const it = stock.find((x) => x.id === l.productId)!;
-      const units = l.colisCount * it.upc;
-      return { id: it.id, name: it.produit, category: it.categorie, colis: l.colisCount, unites: units, kg: Math.round((units * it.grammage) / 10) / 100 };
+      const colis = outLineDerived(l).colisCount; // la quantité affichée (jamais plus que le stock disponible)
+      const units = colis * it.upc;
+      return { id: it.id, name: it.produit, category: it.categorie, colis, unites: units, kg: Math.round((units * it.grammage) / 10) / 100 };
     });
     const totalUnits = planned.reduce((s, x) => s + x.unites, 0);
     const totalKg = planned.reduce((s, x) => s + x.kg, 0);
@@ -394,12 +395,12 @@ export default function StockPage() {
                     min={1}
                     max={maxColis}
                     value={colisCount}
-                    onChange={(e) => updateOutLine(line.uid, { colisCount: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+                    onChange={(e) => updateOutLine(line.uid, { colisCount: Math.min(maxColis || 1, Math.max(1, parseInt(e.target.value, 10) || 1)) })}
                     className="w-[46px] rounded-[8px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-1 py-1.5 text-center text-[12.5px] font-bold text-[var(--navy)]"
                   />
                   <button
                     type="button"
-                    onClick={() => updateOutLine(line.uid, { colisCount: colisCount + 1 })}
+                    onClick={() => updateOutLine(line.uid, { colisCount: Math.min(maxColis || 1, colisCount + 1) })}
                     className="flex h-[26px] w-[26px] items-center justify-center rounded-full border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] text-sm font-bold text-[var(--navy)] hover:border-[var(--turquoise)] hover:text-[var(--turquoise)]"
                   >
                     +
