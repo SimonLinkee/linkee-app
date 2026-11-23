@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
-import webpush from "web-push";
+import { sendNotification, setVapidDetails } from "web-push"; // import nommé : le module n'a pas d'export par défaut (Turbopack)
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -26,14 +26,14 @@ export async function POST(request: Request) {
   ]);
   if (!subs?.length) return NextResponse.json({ sent: 0 });
 
-  webpush.setVapidDetails(process.env.VAPID_SUBJECT || "mailto:contact@linkee.co", pub, priv);
+  setVapidDetails(process.env.VAPID_SUBJECT || "mailto:contact@linkee.co", pub, priv);
   const payload = JSON.stringify({ id: n.id, title: n.title, body: n.body ?? "", url: n.link || "/", unread: count ?? 1, tag: n.type === "message" ? "msg-" + n.id : "linkee-" + n.type });
   let sent = 0;
   const dead: string[] = [];
   await Promise.all(
     subs.map(async (s) => {
       try {
-        await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, { TTL: 60 * 60 * 24 });
+        await sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, { TTL: 60 * 60 * 24 });
         sent++;
       } catch (e) {
         const code = (e as { statusCode?: number }).statusCode;
