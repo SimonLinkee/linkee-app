@@ -71,6 +71,43 @@ export default function NotifierPage() {
   const allowed = role === "admin_principal" || role === "admin_local";
   const audienceCount = audience === "logisticiens" ? people.filter((p) => p.role === "logisticien").length : audience === "equipe" ? people.filter((p) => p.id !== meId && ["logisticien", "admin_local", "resp_distribution", "admin_principal"].includes(p.role)).length : audience === "user" ? (userId ? 1 : 0) : null;
 
+  const [diag, setDiag] = useState<{ lines: string[]; ok: boolean } | null>(null);
+  const [diagBusy, setDiagBusy] = useState(false);
+  async function testPhone() {
+    setDiagBusy(true);
+    setDiag(null);
+    try {
+      const res = await fetch("/api/push/test", { method: "POST" });
+      const j = (await res.json()) as {
+        error?: string;
+        subs: number;
+        env?: { publicKey: boolean; privateKey: boolean; subject: string; subjectValid: boolean; webhookSecret: boolean; serviceRole: boolean; keysMatch: boolean | null };
+        results: { phone: string; ok: boolean; status?: number; detail?: string }[];
+      };
+      const lines: string[] = [];
+      if (!j.env) lines.push(j.error ?? "Erreur inconnue.");
+      else {
+        const e = j.env;
+        if (!e.publicKey) lines.push("Il manque NEXT_PUBLIC_VAPID_PUBLIC_KEY dans Vercel (puis Redeploy).");
+        if (!e.privateKey) lines.push("Il manque VAPID_PRIVATE_KEY dans Vercel.");
+        if (e.publicKey && e.privateKey && e.keysMatch === false) lines.push("La clé publique et la clé privée ne vont pas ensemble : elles doivent venir de la MÊME exécution de la commande generate-vapid-keys. Remets les deux dans Vercel, fais un Redeploy, puis réactive les notifications sur le téléphone.");
+        if (!e.subjectValid) lines.push(`VAPID_SUBJECT n'est pas valide (« ${e.subject} ») : il doit ressembler à mailto:ton-adresse@exemple.fr, sans espace.`);
+        if (!e.webhookSecret) lines.push("Il manque PUSH_WEBHOOK_SECRET dans Vercel : sans lui, les envois automatiques sont refusés.");
+        if (!e.serviceRole) lines.push("SUPABASE_SERVICE_ROLE_KEY est absente de Vercel.");
+        if (j.error) lines.push(j.error);
+        if (j.subs === 0) lines.push("Aucun téléphone n'est abonné à ton compte : ouvre la cloche sur le téléphone et touche Activer.");
+        for (const r of j.results) {
+          const hint = r.status === 403 || r.status === 401 ? " — clés ou adresse de contact invalides." : r.status === 410 || r.status === 404 ? " — abonnement périmé : réactive les notifications sur le téléphone." : "";
+          lines.push(r.ok ? `${r.phone} : envoyé (code ${r.status}). La bannière doit arriver sur le téléphone.` : `${r.phone} : refusé (code ${r.status ?? "?"}) ${r.detail ?? ""}${hint}`);
+        }
+      }
+      setDiag({ lines, ok: !!j.results?.length && j.results.every((r) => r.ok) });
+    } catch (e) {
+      setDiag({ lines: ["Test impossible : " + (e as Error).message], ok: false });
+    }
+    setDiagBusy(false);
+  }
+
   async function send() {
     setMsg(null);
     if (!cityId) return setMsg({ ok: false, text: "Aucune ville sélectionnée." });
@@ -149,6 +186,19 @@ export default function NotifierPage() {
             {audience !== "user" && audienceCount === 0 ? " — personne dans cette ville" : ""}
           </span>
         </div>
+      </div>
+
+      <div className="mt-5 rounded-[18px] border border-[var(--border)] bg-[var(--card)] p-5 shadow-[var(--shadow)]">
+        <h2 className="font-display text-[16px] font-extrabold text-[var(--navy)]">Tester les notifications sur mon téléphone</h2>
+        <p className="mt-0.5 mb-3 text-[12.5px] text-[var(--slate)]">Envoie une bannière de test à ton téléphone (verrouille-le avant de cliquer) et indique précisément ce qui coince si elle n&apos;arrive pas.</p>
+        <button type="button" disabled={diagBusy} onClick={() => void testPhone()} className="rounded-[40px] border-[1.5px] border-[var(--navy-deep)] px-5 py-2.5 font-display text-[13.5px] font-bold text-[var(--navy-deep)] disabled:opacity-60">
+          {diagBusy ? "Test en cours…" : "Envoyer une bannière de test"}
+        </button>
+        {diag && (
+          <ul className={`mt-3 flex flex-col gap-1.5 rounded-xl px-3.5 py-3 text-[12.5px] font-semibold ${diag.ok ? "bg-[var(--good-bg)] text-[var(--good)]" : "bg-[var(--warn-bg)] text-[var(--warn)]"}`}>
+            {diag.lines.length === 0 ? <li>Aucun problème détecté.</li> : diag.lines.map((l, i) => <li key={i}>{l}</li>)}
+          </ul>
+        )}
       </div>
 
       <h2 className="mt-8 mb-2.5 font-display text-[18px] font-extrabold text-[var(--navy)]">Mes derniers envois</h2>

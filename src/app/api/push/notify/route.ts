@@ -38,6 +38,7 @@ export async function POST(request: Request) {
       } catch (e) {
         const code = (e as { statusCode?: number }).statusCode;
         if (code === 404 || code === 410) dead.push(s.id); // téléphone désinscrit : on nettoie
+        else console.error("push: envoi refusé", code, (e as { body?: string }).body ?? (e as Error).message);
       }
     }),
   );
