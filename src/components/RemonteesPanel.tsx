@@ -363,17 +363,16 @@ function Thread({ item, uid, t, onBack, onChanged }: { item: RemonteeRow; uid: s
         ))}
       </div>
 
-      {item.status === "traite" ? (
-        <p className="mt-3.5 rounded-xl bg-[var(--good-bg)] px-3.5 py-2.5 text-[12.5px] font-semibold text-[var(--good)]">
-          {t("Cette remontée est traitée. Si besoin, fais-en une nouvelle.", "Cette remontée est traitée. Si besoin, créez-en une nouvelle.")}
-        </p>
-      ) : (
-        <div className="mt-3.5">
-          <textarea className={field} rows={3} maxLength={5000} placeholder={t("Répondre ou donner des précisions…", "Répondre ou donner des précisions…")} value={reply} onChange={(e) => setReply(e.target.value)} />
-          {err && <div className="mt-2 rounded-xl bg-[var(--critical-bg)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--critical)]">{err}</div>}
-          <button type="button" disabled={busy || !reply.trim()} onClick={send} className={`${magentaBtn} mt-2`} style={{ background: REMONTEE_COLOR }}>{busy ? "Envoi…" : "Envoyer"}</button>
-        </div>
-      )}
+      <div className="mt-3.5">
+        {item.status === "traite" && (
+          <p className="mb-2 rounded-xl bg-[var(--good-bg)] px-3.5 py-2.5 text-[12.5px] font-semibold text-[var(--good)]">
+            {t("Cette remontée est traitée. Si le sujet n'est pas totalement clos, réponds ici : elle sera rouverte.", "Cette remontée est traitée. Si le sujet n'est pas totalement clos, répondez ici : elle sera rouverte.")}
+          </p>
+        )}
+        <textarea className={field} rows={3} maxLength={5000} placeholder={t("Répondre ou donner des précisions…", "Répondre ou donner des précisions…")} value={reply} onChange={(e) => setReply(e.target.value)} />
+        {err && <div className="mt-2 rounded-xl bg-[var(--critical-bg)] px-3.5 py-2 text-[12.5px] font-semibold text-[var(--critical)]">{err}</div>}
+        <button type="button" disabled={busy || !reply.trim()} onClick={send} className={`${magentaBtn} mt-2`} style={{ background: REMONTEE_COLOR }}>{busy ? "Envoi…" : item.status === "traite" ? t("Répondre et rouvrir", "Répondre et rouvrir") : "Envoyer"}</button>
+      </div>
     </div>
   );
 }
