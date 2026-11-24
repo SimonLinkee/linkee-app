@@ -199,6 +199,17 @@ export const NAV_ITEMS = [
     ),
   },
   {
+    href: "/mon-antenne",
+    label: "Mon antenne",
+    icon: (
+      <>
+        <path d="M4 11 L12 4 L20 11" />
+        <path d="M6 10 V20 H18 V10" />
+        <path d="M10 20 V14 H14 V20" />
+      </>
+    ),
+  },
+  {
     href: "/organigramme",
     label: "Organigramme",
     icon: (
@@ -237,7 +248,7 @@ export const NAV_ITEMS = [
 const PINNED = ["/documents-utiles", "/calendrier", "/todo"];
 // Groupes d'onglets, séparés par un trait discret : pilotage · opérations de terrain · réseau de partenaires · équipe
 const NAV_GROUPS: string[][] = [
-  ["/dashboard", "/valeur-des-dons"],
+  ["/dashboard", "/valeur-des-dons", "/mon-antenne"],
   ["/planning", "/distributions", "/stock", "/flotte", "/links-benevoles"],
   ["/partenaires", "/prospection", "/village-associatif", "/comptabilite"],
   ["/organigramme", "/remontees", "/profil"],

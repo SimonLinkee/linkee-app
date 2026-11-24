@@ -24,7 +24,7 @@ const PRIORITY = ["/planning", "/distributions", "/partenaires"];
 const GROUPS: { key: string; label: string; hrefs: string[] }[] = [
   { key: "coll", label: "Collecte et logistique", hrefs: ["/stock", "/flotte", "/links-benevoles"] },
   { key: "res", label: "Réseau", hrefs: ["/prospection", "/village-associatif", "/comptabilite"] },
-  { key: "pil", label: "Pilotage", hrefs: ["/valeur-des-dons"] },
+  { key: "pil", label: "Pilotage", hrefs: ["/valeur-des-dons", "/mon-antenne"] },
 ];
 const SHORTCUTS = ["/calendrier", "/projets", "/todo", "/notifier", "/documents-utiles"]; // icônes de la barre du haut
 const NATIONAL_BG = "linear-gradient(120deg,#2a78d6,#7C5CD9 45%,#eb6834)";

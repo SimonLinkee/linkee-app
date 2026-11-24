@@ -17,7 +17,7 @@ const ROLE_LABEL: Record<string, string> = { admin_principal: "Superadmin", comp
 const PAGES: [string, string][] = [
   ["/dashboard", "le tableau de bord"], ["/partenaires", "Partenaires"], ["/prospection", "Prospection"], ["/village-associatif", "le Village associatif"], ["/planning", "le Planning"],
   ["/calendrier", "Calendrier et actu"], ["/distributions", "Distributions"], ["/stock", "le Stock"], ["/flotte", "la Flotte"], ["/todo", "TODO"], ["/comptabilite", "Cerfa"],
-  ["/links-benevoles", "Link citoyen"], ["/valeur-des-dons", "la Valeur des dons"], ["/organigramme", "l'Organigramme"], ["/remontees", "Remontées"], ["/profil", "son profil"],
+  ["/links-benevoles", "Link citoyen"], ["/valeur-des-dons", "la Valeur des dons"], ["/mon-antenne", "Mon antenne"], ["/organigramme", "l'Organigramme"], ["/remontees", "Remontées"], ["/profil", "son profil"],
   ["/villes-comptes", "Villes et comptes"], ["/historique", "l'Historique"], ["/journee", "Ma journée"],
 ];
 const pageLabel = (path: string) => PAGES.find(([p]) => path === p || path.startsWith(p + "/"))?.[1] ?? "la plateforme";
