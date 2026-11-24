@@ -24,7 +24,7 @@ const PRIORITY = ["/planning", "/distributions", "/partenaires"];
 const GROUPS: { key: string; label: string; hrefs: string[] }[] = [
   { key: "coll", label: "Collecte et logistique", hrefs: ["/stock", "/flotte", "/links-benevoles"] },
   { key: "res", label: "Réseau", hrefs: ["/prospection", "/village-associatif", "/comptabilite"] },
-  { key: "pil", label: "Pilotage", hrefs: ["/valeur-des-dons", "/mon-antenne"] },
+  { key: "pil", label: "Pilotage", hrefs: ["/valeur-des-dons"] },
 ];
 const SHORTCUTS = ["/calendrier", "/projets", "/todo", "/notifier", "/documents-utiles"]; // icônes de la barre du haut
 const NATIONAL_BG = "linear-gradient(120deg,#2a78d6,#7C5CD9 45%,#eb6834)";
@@ -220,6 +220,16 @@ export function TopBarV2() {
   return (
     <header className="sticky top-0 z-40 flex flex-wrap items-center gap-2.5 border-b border-[var(--border)] bg-[var(--card)] px-[26px] py-2.5 shadow-[0_6px_16px_-14px_rgba(0,0,0,0.5)]">
       <CitySwitcher />
+      {!isAll && by.get("/mon-antenne") && (
+        <Link
+          href="/mon-antenne"
+          title="La fiche d'identité de l'antenne : adresses, contact, jours de tournée"
+          className={`flex h-[40px] items-center gap-2 rounded-full border px-4 text-[13.5px] font-bold ${isActive(pathname, "/mon-antenne") ? "border-[var(--navy-deep)] bg-[var(--navy-deep)] text-[var(--panel-fg)]" : "border-[var(--border)] bg-[var(--card)] text-[var(--navy)] hover:border-[var(--turquoise)]"}`}
+        >
+          <Svg>{by.get("/mon-antenne")!.icon}</Svg>
+          <span>Mon antenne</span>
+        </Link>
+      )}
       <div className="flex-1" />
       {shortcuts.map((it) => {
         const on = isActive(pathname, it.href);
