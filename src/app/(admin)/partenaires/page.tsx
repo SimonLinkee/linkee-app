@@ -81,6 +81,7 @@ type PartnerEntity = {
   linkSystematique?: boolean;
   aussiDepose?: boolean; // lieu de collecte ET de dépose avec une seule fiche (apparaît aussi en « dépose » dans le Planning)
   cerfaFrequency?: CerfaFrequency;
+  declareMailAuto?: boolean; // mail « déclarez votre don » 30 min avant chaque collecte (migration 088 ; désactivé par défaut)
   cerfaAutoSend?: boolean; // envoi automatique du Cerfa par mail à l'échéance (par défaut : oui dès qu'il y a une fréquence)
   cerfaSendTo?: string; // adresse choisie ; vide = contact administratif
   history: HistoryEntry[];
@@ -811,6 +812,21 @@ export default function PartenairesPage() {
             </div>
           )}
           {current.kind === "partner" && !readOnly && <PartnerAccessBox key={"acc" + current.id} partnerId={current.id} />}
+          {current.kind === "partner" && (
+            <label className="mb-3 flex items-start gap-2.5 rounded-[14px] border-[1.5px] border-[var(--border)] p-3">
+              <input
+                type="checkbox"
+                disabled={readOnly}
+                checked={!!current.declareMailAuto}
+                onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, declareMailAuto: e.target.checked } : entity))}
+                className="mt-0.5 h-[16px] w-[16px] accent-[#eb6834]"
+              />
+              <span>
+                <span className="block text-[12.5px] font-bold text-[var(--navy)]">Envoyer automatiquement le mail « déclarez votre don »</span>
+                <span className="block text-[11.5px] leading-[1.4] text-[var(--slate)]">30 minutes avant le créneau de chaque collecte, ses contacts reçoivent un mail avec le lien de déclaration. À laisser décoché pour un partenaire qui ne fonctionne pas comme ça.</span>
+              </span>
+            </label>
+          )}
           {current.kind === "partner" && <DeclareLinkBox key={current.id} partnerId={current.id} name={current.name} logoUrl={current.logoUrl} readOnly={readOnly} />}
           {current.kind === "partner" && (
             <label className="mb-4 flex items-start gap-2.5 rounded-[14px] border-[1.5px] border-[var(--border)] p-3">

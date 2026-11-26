@@ -30,10 +30,10 @@ const smtpConfigured = () => !!process.env.SMTP_HOST && !!process.env.SMTP_USER 
 const resendConfigured = () => !!process.env.RESEND_API_KEY && !!process.env.MAIL_FROM;
 export const mailConfigured = () => smtpConfigured() || resendConfigured();
 
-type Mail = { to: string[]; subject: string; html: string; text: string; filename: string; contentBase64: string };
+type Mail = { to: string[]; subject: string; html: string; text: string; filename?: string; contentBase64?: string };
 
 /** Envoie le mail par la boîte SMTP si elle est configurée, sinon par Resend. */
-async function deliver(m: Mail): Promise<{ ok: true; id: string | null } | { ok: false; error: string }> {
+export async function deliver(m: Mail): Promise<{ ok: true; id: string | null } | { ok: false; error: string }> {
   if (smtpConfigured()) {
     const port = Number(process.env.SMTP_PORT) || 465;
     const message = {
@@ -43,7 +43,7 @@ async function deliver(m: Mail): Promise<{ ok: true; id: string | null } | { ok:
       subject: m.subject,
       text: m.text,
       html: m.html,
-      attachments: [{ filename: m.filename, content: Buffer.from(m.contentBase64, "base64"), contentType: "application/pdf" }],
+      ...(m.filename && m.contentBase64 ? { attachments: [{ filename: m.filename, content: Buffer.from(m.contentBase64, "base64"), contentType: "application/pdf" }] } : {}),
     };
     // Les erreurs réseau passagères (résolution DNS occupée « EBUSY », « EAI_AGAIN », coupure…) sont réessayées jusqu'à 3 fois ;
     // une vraie erreur (mauvais mot de passe, adresse refusée) est renvoyée tout de suite.
@@ -74,7 +74,7 @@ async function deliver(m: Mail): Promise<{ ok: true; id: string | null } | { ok:
         subject: m.subject,
         html: m.html,
         text: m.text,
-        attachments: [{ filename: m.filename, content: m.contentBase64 }],
+        ...(m.filename && m.contentBase64 ? { attachments: [{ filename: m.filename, content: m.contentBase64 }] } : {}),
       }),
       signal: AbortSignal.timeout(20000),
     });
@@ -86,7 +86,7 @@ async function deliver(m: Mail): Promise<{ ok: true; id: string | null } | { ok:
   }
 }
 
-const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+export const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 type Result = { ok: true; to: string } | { ok: false; error: string; code: "not_configured" | "invalid" | "not_found" | "not_issued" | "provider" };
 
