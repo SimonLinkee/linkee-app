@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import SupportQrButtons from "@/components/partner/SupportQrButtons";
 
 // Le lien de déclaration d'un partenaire (page publique /p/<jeton>, sans connexion) : à copier et à lui transmettre.
 // Visible par le Superadmin et le Responsable d'antenne de la ville (la Comptabilité le voit sans pouvoir le changer).
 
 type Link = { token: string; enabled: boolean };
 
-export default function DeclareLinkBox({ partnerId, readOnly = false }: { partnerId: string; readOnly?: boolean }) {
+export default function DeclareLinkBox({ partnerId, name, logoUrl, readOnly = false }: { partnerId: string; name: string; logoUrl?: string | null; readOnly?: boolean }) {
   const supabase = useMemo(() => createClient(), []);
   const [link, setLink] = useState<Link | null>(null);
   const [state, setState] = useState<"loading" | "ok" | "missing" | "error">("loading");
@@ -97,6 +98,10 @@ export default function DeclareLinkBox({ partnerId, readOnly = false }: { partne
             </div>
           )}
           {msg && <p className="mt-1.5 text-[12px] text-[var(--slate)]">{msg}</p>}
+          <div className="mt-3 border-t border-[var(--border)] pt-2.5">
+            <div className="mb-1.5 text-[11.5px] text-[var(--slate)]">Support A4 à afficher : un seul QR code vers ce lien, avec le logo Linkee et celui du partenaire{logoUrl ? "" : " (ses initiales à défaut de logo : ajoute-le plus bas dans sa fiche)"}.</div>
+            <SupportQrButtons token={link.token} name={name} logoUrl={logoUrl} />
+          </div>
         </>
       )}
     </div>

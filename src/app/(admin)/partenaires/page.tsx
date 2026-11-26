@@ -2,6 +2,7 @@
 
 import HalfHourSelect from "@/components/HalfHourSelect";
 import DeclareLinkBox from "@/components/partner/DeclareLinkBox";
+import AllSupportsZip from "@/components/partner/AllSupportsZip";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
@@ -430,7 +431,7 @@ export default function PartenairesPage() {
   const [partners, setPartners] = useState<PartnerEntity[]>([]);
   const [beneficiaires, setBeneficiaires] = useState<BeneficiaireEntity[]>([]);
   const [loading, setLoading] = useState(true);
-  const { cityId, role } = useCity(); // the page remounts when the city changes
+  const { cityId, role, city } = useCity(); // the page remounts when the city changes
   const readOnly = !canAdminCity(role); // filet de sécurité : consultation seule pour tout rôle qui ne pilote pas sa ville (voir ReadOnlyCtx)
   const saveTimers = useRef<Record<string, number>>({});
   const [tab, setTab] = useState<"partner" | "beneficiaire">("partner");
@@ -808,7 +809,7 @@ export default function PartenairesPage() {
               )}
             </div>
           )}
-          {current.kind === "partner" && <DeclareLinkBox key={current.id} partnerId={current.id} readOnly={readOnly} />}
+          {current.kind === "partner" && <DeclareLinkBox key={current.id} partnerId={current.id} name={current.name} logoUrl={current.logoUrl} readOnly={readOnly} />}
           {current.kind === "partner" && (
             <label className="mb-4 flex items-start gap-2.5 rounded-[14px] border-[1.5px] border-[var(--border)] p-3">
               <input
@@ -1494,6 +1495,7 @@ export default function PartenairesPage() {
           <option value="nom">Trier par nom</option>
           {tab === "partner" ? <option value="statut">Trier par statut</option> : <option value="typologie">Trier par typologie</option>}
         </select>
+        {tab === "partner" && !readOnly && <AllSupportsZip cityName={city?.name ?? ""} partners={partners.filter((p) => p.active).map((p) => ({ id: p.id, name: p.name, logoUrl: p.logoUrl }))} />}
         {!readOnly && (
           <button
             type="button"

@@ -15,6 +15,7 @@ import BetaNote from "@/components/BetaNote";
 import RemonteesLink, { RemonteeBadgePill } from "@/components/RemonteesLink";
 import PartnerValuation from "@/components/partner/PartnerValuation";
 import PartnerLinks from "@/components/partner/PartnerLinks";
+import SupportQrCard from "@/components/partner/SupportQrCard";
 import { formatCreneaux, type Creneaux } from "@/lib/creneaux";
 import { CERFA_FREQUENCIES, cerfaFrequencyOf, type CerfaFrequency } from "@/lib/cerfa";
 import LinkeeLogo from "@/components/LinkeeLogo";
@@ -829,6 +830,7 @@ export default function EspacePartenairePage() {
                 </div>
                 {site.adminInfo.comment && <div className="mt-3.5 rounded-xl border border-dashed border-[var(--border)] bg-[var(--input-bg)] px-[13px] py-[11px] text-xs leading-[1.5] text-[var(--slate)]">{site.adminInfo.comment}</div>}
               </Card>
+              <SupportQrCard key={site.id} partnerId={site.id} name={site.name} logoUrl={site.logo} />
               <Card title="Demande exceptionnelle" icon={CAL} note="Un volume en plus, hors de votre créneau habituel ? Demandez-le ici. Vos prochaines collectes sont dans « Mon activité » ci-dessous.">
                 {requests.filter((r) => r.site === siteKey).map((r, i) => <CollectRow key={"r" + i} req date={r.date} time={r.time} note={`${r.denree} · ${r.volume || "?"} kg estimés`} badge="Demande client" />)}
                 <ExcForm key={siteKey} siteName={site.name} onSubmit={addRequest} pro={site.benevoleOnly} />
