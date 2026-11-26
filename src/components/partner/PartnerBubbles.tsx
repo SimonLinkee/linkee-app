@@ -11,16 +11,16 @@ export const FlatCtx = createContext(false);
 export type Bubble = { key: string; icon: string; title: string; summary: string; bg: string; warn?: boolean };
 export type Fact = { label: string; value: string };
 
-export function PartnerCrumb({ name, onBack, onPrev, onNext }: { name: string; onBack: () => void; onPrev: () => void; onNext: () => void }) {
+export function PartnerCrumb({ listLabel = "Partenaires", name, onBack, onPrev, onNext }: { listLabel?: string; name: string; onBack: () => void; onPrev: () => void; onNext: () => void }) {
   const btn = "rounded-[40px] border-[1.5px] border-[var(--border)] bg-[var(--card)] px-3.5 py-1.5 text-[13px] font-bold text-[var(--navy)] hover:border-[var(--turquoise)]";
   return (
     <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
-      <button type="button" onClick={onBack} className={btn}>← Partenaires</button>
+      <button type="button" onClick={onBack} className={btn}>← {listLabel}</button>
       <span className="text-[var(--slate)]">/</span>
       <span className="text-[14px] font-bold text-[var(--navy)]">{name}</span>
       <span className="flex-1" />
-      <button type="button" onClick={onPrev} title="Partenaire précédent" className={btn}>‹</button>
-      <button type="button" onClick={onNext} title="Partenaire suivant" className={btn}>›</button>
+      <button type="button" onClick={onPrev} title="Fiche précédente" className={btn}>‹</button>
+      <button type="button" onClick={onNext} title="Fiche suivante" className={btn}>›</button>
     </div>
   );
 }

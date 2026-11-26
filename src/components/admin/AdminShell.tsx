@@ -8,7 +8,7 @@ import { SidebarV2, TopBarV2 } from "@/components/admin/NavV2";
 
 // Pages qui ne s'ouvrent que pour une ville : en vue « Toutes les villes », on propose de choisir la ville au lieu d'une page vide.
 // Le menu, lui, reste identique partout.
-export const CITY_ONLY_PATHS = ["/partenaires", "/planning", "/stock", "/todo", "/distributions", "/village-associatif", "/prospection", "/links-benevoles"];
+export const CITY_ONLY_PATHS = ["/partenaires", "/associations", "/planning", "/stock", "/todo", "/distributions", "/village-associatif", "/prospection", "/links-benevoles"];
 
 function Frame({ children }: { children: ReactNode }) {
   const { ready, isAll, city, cities, select } = useCity();

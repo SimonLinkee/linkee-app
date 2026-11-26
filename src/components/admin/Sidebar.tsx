@@ -38,12 +38,21 @@ export const NAV_ITEMS = [
   },
   {
     href: "/partenaires",
-    label: "Partenaires & bénéficiaires",
+    label: "Partenaires",
     icon: (
       <>
         <path d="M4 8 L8 4 H16 L20 8" />
         <rect x="4" y="8" width="16" height="11" rx="1.5" />
         <path d="M4 8 H20" />
+      </>
+    ),
+  },
+  {
+    href: "/associations",
+    label: "Associations",
+    icon: (
+      <>
+        <path d="M12 20 C 5 15, 3.5 11.5, 3.5 9 A4 4 0 0 1 12 7.5 A4 4 0 0 1 20.5 9 C 20.5 11.5, 19 15, 12 20 Z" />
       </>
     ),
   },
@@ -250,7 +259,7 @@ const PINNED = ["/documents-utiles", "/calendrier", "/todo"];
 const NAV_GROUPS: string[][] = [
   ["/dashboard", "/valeur-des-dons", "/mon-antenne"],
   ["/planning", "/distributions", "/stock", "/flotte", "/links-benevoles"],
-  ["/partenaires", "/prospection", "/village-associatif", "/comptabilite"],
+  ["/partenaires", "/associations", "/prospection", "/village-associatif", "/comptabilite"],
   ["/organigramme", "/remontees", "/profil"],
 ];
 export type NavItem = (typeof NAV_ITEMS)[number];

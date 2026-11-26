@@ -20,7 +20,7 @@ import LinkeeLogo from "@/components/LinkeeLogo";
 // Nouveau menu (proposition A) : la barre du haut porte les raccourcis et les outils, le menu de gauche ne garde que le travail
 // (Planning, Distributions, Partenaires en grand, puis des groupes repliables).
 
-const PRIORITY = ["/planning", "/distributions", "/partenaires"];
+const PRIORITY = ["/planning", "/distributions", "/partenaires", "/associations"];
 const GROUPS: { key: string; label: string; hrefs: string[] }[] = [
   { key: "coll", label: "Collecte et logistique", hrefs: ["/stock", "/flotte", "/links-benevoles"] },
   { key: "res", label: "Réseau", hrefs: ["/prospection", "/village-associatif", "/comptabilite"] },

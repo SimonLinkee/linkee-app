@@ -15,7 +15,7 @@ const COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#B23B72", "#7C5CD9", "#0e9aa7"
 const colorOf = (id: string) => COLORS[Array.from(id).reduce((h, c) => (h * 31 + c.charCodeAt(0)) % COLORS.length, 0)];
 const ROLE_LABEL: Record<string, string> = { admin_principal: "Superadmin", comptabilite: "Comptabilité", admin_local: "Responsable d'antenne", resp_distribution: "Resp. Distribution", resp_rh: "Responsable RH", logisticien: "Logisticien", linker: "Linker" };
 const PAGES: [string, string][] = [
-  ["/dashboard", "le tableau de bord"], ["/partenaires", "Partenaires"], ["/prospection", "Prospection"], ["/village-associatif", "le Village associatif"], ["/planning", "le Planning"],
+  ["/dashboard", "le tableau de bord"], ["/partenaires", "Partenaires"], ["/associations", "Associations"], ["/prospection", "Prospection"], ["/village-associatif", "le Village associatif"], ["/planning", "le Planning"],
   ["/calendrier", "Calendrier et actu"], ["/distributions", "Distributions"], ["/stock", "le Stock"], ["/flotte", "la Flotte"], ["/todo", "TODO"], ["/comptabilite", "Cerfa"],
   ["/links-benevoles", "Link citoyen"], ["/valeur-des-dons", "la Valeur des dons"], ["/mon-antenne", "Mon antenne"], ["/organigramme", "l'Organigramme"], ["/remontees", "Remontées"], ["/profil", "son profil"],
   ["/villes-comptes", "Villes et comptes"], ["/historique", "l'Historique"], ["/journee", "Ma journée"],
