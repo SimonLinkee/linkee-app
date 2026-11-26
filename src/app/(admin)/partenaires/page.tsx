@@ -3,6 +3,8 @@
 import HalfHourSelect from "@/components/HalfHourSelect";
 import DeclareLinkBox from "@/components/partner/DeclareLinkBox";
 import AllSupportsZip from "@/components/partner/AllSupportsZip";
+import PartnerAccessBox from "@/components/partner/PartnerAccessBox";
+import PartnerAccessBulk from "@/components/partner/PartnerAccessBulk";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
@@ -18,7 +20,7 @@ import BetaBadge from "@/components/BetaBadge";
 import SirenField from "@/components/partner/SirenField";
 import type { SirenInfo } from "@/lib/siren";
 import { formatCreneaux, type Creneaux, type Slot as CreneauSlot } from "@/lib/creneaux";
-import { CERFA_FREQUENCIES, cerfaAutoSendOf, cerfaRecipients, isAutoFrequency, type CerfaFrequency } from "@/lib/cerfa";
+import { CERFA_FREQUENCIES, cerfaAutoSendOf, cerfaRecipients, cerfaTargets, isAutoFrequency, type CerfaFrequency } from "@/lib/cerfa";
 
 type FicheTab = "fiche" | "documents" | "valorisation" | "collectes";
 
@@ -44,7 +46,7 @@ const SECTION_COLOR: Record<string, string> = {
 
 type AccessKey = "digicode" | "quai" | "camion" | "etage" | "horaire";
 type AccessFlags = Record<AccessKey, boolean>;
-type Contact = { type: string; nom: string; tel: string; mail: string };
+type Contact = { type: string; nom: string; tel: string; mail: string; cerfa?: boolean };
 type HistoryEntry = { date: string; denree: string; kg: number; status: "ok" | "annulee" };
 type DenreeFlags = Record<string, boolean>;
 type Hours = { open: string; close: string } | null;
@@ -808,6 +810,7 @@ export default function PartenairesPage() {
               )}
             </div>
           )}
+          {current.kind === "partner" && !readOnly && <PartnerAccessBox key={"acc" + current.id} partnerId={current.id} />}
           {current.kind === "partner" && <DeclareLinkBox key={current.id} partnerId={current.id} name={current.name} logoUrl={current.logoUrl} readOnly={readOnly} />}
           {current.kind === "partner" && (
             <label className="mb-4 flex items-start gap-2.5 rounded-[14px] border-[1.5px] border-[var(--border)] p-3">
@@ -935,10 +938,14 @@ export default function PartenairesPage() {
                         <option value="oui">Oui, dès que le Cerfa est déposé</option>
                         <option value="non">Non, à la main</option>
                       </select>
-                      <select className={inputCls} disabled={!auto.enabled} value={auto.to} onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, cerfaSendTo: e.target.value } : entity))}>
-                        <option value="">Contact administratif (par défaut)</option>
-                        {options.map((o) => <option key={o.email} value={o.email}>{o.label} · {o.email}</option>)}
-                      </select>
+                      <div className="rounded-[11px] bg-[var(--input-bg)] px-3 py-2.5 text-[12px] text-[var(--slate)]">
+                        {options.length === 0
+                          ? "Aucune adresse e-mail dans les contacts : ajoute-en une et coche « Reçoit les Cerfa »."
+                          : cerfaTargets(rec).map((o) => o.email).join(", ")
+                            ? <>Destinataires (un seul mail) : <strong className="text-[var(--navy)]">{cerfaTargets(rec).map((o) => o.email).join(", ")}</strong></>
+                            : ""}
+                        <div className="mt-0.5 text-[11px]">Coche « Reçoit les Cerfa » sur les contacts concernés (section Contacts) ; sinon, le contact administratif.</div>
+                      </div>
                     </div>
                     <p className="mt-1.5 text-[11.5px] text-[var(--slate)]">
                       {auto.enabled
@@ -1280,7 +1287,8 @@ export default function PartenairesPage() {
           <AccordionSection title="Contacts" sectionKey="contacts" open={openSections.has("contacts")} onToggle={toggleSection}>
             <div className="mb-2.5 flex flex-col gap-2.5">
               {current.contacts.map((c, idx) => (
-                <div key={idx} className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[110px_1fr_1fr_1fr_30px]">
+                <div key={idx}>
+                <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[110px_1fr_1fr_1fr_30px]">
                   <select
                     className="rounded-[11px] border-[1.5px] border-[var(--border)] bg-[var(--input-bg)] px-2.5 py-2 text-[12.5px] text-[var(--navy)] outline-none focus:border-[var(--turquoise)]"
                     value={c.type}
@@ -1319,6 +1327,19 @@ export default function PartenairesPage() {
                       <path d="M6 6 L18 18 M18 6 L6 18" />
                     </svg>
                   </button>
+                </div>
+                {current.kind === "partner" && (
+                  <label className="mt-1 flex items-center gap-2 text-[12px] font-semibold text-[var(--slate)] sm:ml-[118px]">
+                    <input
+                      type="checkbox"
+                      disabled={readOnly}
+                      checked={!!c.cerfa}
+                      onChange={(e) => updateEntity((entity) => ({ ...entity, contacts: entity.contacts.map((row, i) => (i === idx ? { ...row, cerfa: e.target.checked } : row)) }))}
+                      className="h-[15px] w-[15px] accent-[#eb6834]"
+                    />
+                    Reçoit les Cerfa
+                  </label>
+                )}
                 </div>
               ))}
             </div>
@@ -1491,6 +1512,7 @@ export default function PartenairesPage() {
           <option value="nom">Trier par nom</option>
           {tab === "partner" ? <option value="statut">Trier par statut</option> : <option value="typologie">Trier par typologie</option>}
         </select>
+        {tab === "partner" && !readOnly && <PartnerAccessBulk cityId={cityId ?? null} cityName={city?.name ?? ""} />}
         {tab === "partner" && !readOnly && <AllSupportsZip cityName={city?.name ?? ""} partners={partners.filter((p) => p.active).map((p) => ({ id: p.id, name: p.name, logoUrl: p.logoUrl }))} />}
         {!readOnly && (
           <button

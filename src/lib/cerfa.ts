@@ -65,11 +65,14 @@ export async function openCerfa(supabase: import("@supabase/supabase-js").Supaba
 
 /* ---------- Envoi des Cerfa par mail (migration 064) ---------- */
 
-type FicheContact = { type?: string; nom?: string; mail?: string };
+type FicheContact = { type?: string; nom?: string; mail?: string; cerfa?: boolean };
 export type CerfaRecipient = { email: string; label: string };
 
 const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
 export const isEmail = (s: string) => EMAIL_RE.test(s.trim());
+/** Une ou plusieurs adresses valides, séparées par des virgules ou des points-virgules. */
+export const splitEmails = (s: string) => s.split(/[;,]/).map((x) => x.trim()).filter(Boolean);
+export const areEmails = (s: string) => splitEmails(s).length > 0 && splitEmails(s).every(isEmail);
 
 /** Adresses où envoyer le Cerfa d'un partenaire : contact « administratif » d'abord, puis comptable / financier, puis les autres, puis l'adresse du compte. */
 export function cerfaRecipients(fiche: Record<string, unknown> | null | undefined): CerfaRecipient[] {
@@ -94,11 +97,27 @@ export function cerfaAutoSendOf(fiche: Record<string, unknown> | null | undefine
   return { enabled: isAutoFrequency(cerfaFrequencyOf(fiche)) && explicit !== false, to: typeof fiche?.cerfaSendTo === "string" ? fiche.cerfaSendTo : "" };
 }
 
-/** Adresse choisie pour l'envoi : celle de la fiche si elle est valide, sinon le premier contact administratif disponible. */
+/** Adresses qui reçoivent le Cerfa : les contacts de la fiche cochés « Reçoit les Cerfa » ; à défaut, le contact administratif (puis comptable, puis un autre). */
+export function cerfaTargets(fiche: Record<string, unknown> | null | undefined): CerfaRecipient[] {
+  const contacts = (Array.isArray(fiche?.contacts) ? fiche!.contacts : []) as FicheContact[];
+  const seen = new Set<string>();
+  const checked: CerfaRecipient[] = [];
+  for (const c of contacts) {
+    const e = (c.mail ?? "").trim();
+    if (!c.cerfa || !e || !isEmail(e) || seen.has(e.toLowerCase())) continue;
+    seen.add(e.toLowerCase());
+    checked.push({ email: e, label: [c.nom, c.type].filter(Boolean).join(" · ") || "Contact" });
+  }
+  if (checked.length > 0) return checked;
+  const first = cerfaRecipients(fiche)[0];
+  return first ? [first] : [];
+}
+
+/** Destinataires de l'envoi : toutes les adresses sur un seul mail (« a@x.fr, b@y.fr »), ou null s'il n'y en a aucune. */
 export function cerfaDefaultRecipient(fiche: Record<string, unknown> | null | undefined): CerfaRecipient | null {
-  const all = cerfaRecipients(fiche);
-  const wanted = cerfaAutoSendOf(fiche).to;
-  return all.find((r) => wanted && r.email.toLowerCase() === wanted.toLowerCase()) ?? all[0] ?? null;
+  const all = cerfaTargets(fiche);
+  if (all.length === 0) return null;
+  return { email: all.map((r) => r.email).join(", "), label: all.map((r) => r.label).join(" ; ") };
 }
 
 /** Date AAAA-MM-JJ à Paris d'un instant (émission, jour courant). */

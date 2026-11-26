@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
 import { isSuper } from "@/lib/roles";
 import { openDocument } from "@/lib/documents";
-import { CERFA_STATUS_LABEL, CERFA_STATUS_STYLE, cerfaAutoSendOf, cerfaDefaultRecipient, cerfaRecipients, defaultCerfaMessage, fmtEuro, fmtLongDate, isEmail, openCerfa, type CerfaMailRow, type CerfaRecipient, type CerfaStatus } from "@/lib/cerfa";
+import { CERFA_STATUS_LABEL, CERFA_STATUS_STYLE, cerfaAutoSendOf, cerfaDefaultRecipient, cerfaRecipients, cerfaTargets, defaultCerfaMessage, fmtEuro, fmtLongDate, areEmails, openCerfa, type CerfaMailRow, type CerfaRecipient, type CerfaStatus } from "@/lib/cerfa";
 
 type Rel<T> = T | T[] | null;
 type Row = {
@@ -182,12 +182,14 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
   }
   function openMail(row: Row) {
     const fiche = first(row.partners)?.fiche ?? null;
-    const options = cerfaRecipients(fiche);
+    const targets = cerfaTargets(fiche);
+    // plusieurs contacts cochés « Reçoit les Cerfa » : un seul mail à tous, proposé en premier
+    const options = [...(targets.length > 1 ? [{ email: targets.map((t) => t.email).join(", "), label: "Tous les contacts cochés" }] : []), ...cerfaRecipients(fiche)];
     const def = cerfaDefaultRecipient(fiche);
     setMailDlg({ row, to: def?.email ?? "", custom: !def, message: defaultCerfaMessage(row.total_value, row.issued_at), options, busy: false, error: null });
   }
   async function sendMail() {
-    if (!mailDlg || !isEmail(mailDlg.to)) return;
+    if (!mailDlg || !areEmails(mailDlg.to)) return;
     setMailDlg({ ...mailDlg, busy: true, error: null });
     try {
       const res = await fetch("/api/cerfa/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId: mailDlg.row.id, to: mailDlg.to.trim(), message: mailDlg.message }) });
@@ -337,7 +339,7 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
             {mailDlg.error && <div className="mt-2 rounded-lg bg-[var(--critical-bg)] px-3 py-2 text-[12.5px] font-semibold text-[var(--critical)]">{mailDlg.error}</div>}
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" disabled={mailDlg.busy} onClick={() => setMailDlg(null)} className="rounded-[40px] border-[1.5px] border-[var(--border)] px-4 py-2 font-display text-[12.5px] font-bold text-[var(--slate)]">Annuler</button>
-              <button type="button" disabled={mailDlg.busy || !isEmail(mailDlg.to)} onClick={sendMail} className="rounded-[40px] bg-[var(--navy-deep)] px-4 py-2 font-display text-[12.5px] font-bold text-[var(--panel-fg)] disabled:opacity-50">{mailDlg.busy ? "Envoi…" : "Envoyer"}</button>
+              <button type="button" disabled={mailDlg.busy || !areEmails(mailDlg.to)} onClick={sendMail} className="rounded-[40px] bg-[var(--navy-deep)] px-4 py-2 font-display text-[12.5px] font-bold text-[var(--panel-fg)] disabled:opacity-50">{mailDlg.busy ? "Envoi…" : "Envoyer"}</button>
             </div>
           </div>
         </div>

@@ -1,7 +1,7 @@
 import { createClient as createAdminClient, type SupabaseClient } from "@supabase/supabase-js";
 import nodemailer from "nodemailer";
 import { promises as dnsPromises } from "dns";
-import { defaultCerfaMessage, isEmail } from "@/lib/cerfa";
+import { areEmails, defaultCerfaMessage, splitEmails } from "@/lib/cerfa";
 
 // Envoi d'un Cerfa émis par mail. SERVEUR UNIQUEMENT : utilise la clé de service et les identifiants d'envoi.
 // Deux moyens d'envoi, au choix (le premier configuré est utilisé) :
@@ -30,7 +30,7 @@ const smtpConfigured = () => !!process.env.SMTP_HOST && !!process.env.SMTP_USER 
 const resendConfigured = () => !!process.env.RESEND_API_KEY && !!process.env.MAIL_FROM;
 export const mailConfigured = () => smtpConfigured() || resendConfigured();
 
-type Mail = { to: string; subject: string; html: string; text: string; filename: string; contentBase64: string };
+type Mail = { to: string[]; subject: string; html: string; text: string; filename: string; contentBase64: string };
 
 /** Envoie le mail par la boîte SMTP si elle est configurée, sinon par Resend. */
 async function deliver(m: Mail): Promise<{ ok: true; id: string | null } | { ok: false; error: string }> {
@@ -38,7 +38,7 @@ async function deliver(m: Mail): Promise<{ ok: true; id: string | null } | { ok:
     const port = Number(process.env.SMTP_PORT) || 465;
     const message = {
       from: process.env.MAIL_FROM || `Linkee <${process.env.SMTP_USER}>`,
-      to: m.to,
+      to: m.to.join(", "),
       ...(process.env.MAIL_REPLY_TO ? { replyTo: process.env.MAIL_REPLY_TO } : {}),
       subject: m.subject,
       text: m.text,
@@ -69,7 +69,7 @@ async function deliver(m: Mail): Promise<{ ok: true; id: string | null } | { ok:
       headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         from: process.env.MAIL_FROM,
-        to: [m.to],
+        to: m.to,
         ...(process.env.MAIL_REPLY_TO ? { reply_to: process.env.MAIL_REPLY_TO } : {}),
         subject: m.subject,
         html: m.html,
@@ -93,9 +93,10 @@ type Result = { ok: true; to: string } | { ok: false; error: string; code: "not_
 /** Envoie le Cerfa PDF d'une demande émise ; enregistre le résultat dans cerfa_mails. */
 export async function sendCerfaMail(opts: { admin: SupabaseClient; requestId: string; to: string; message?: string; mode: "manuel" | "auto"; sentBy: string | null }): Promise<Result> {
   const { admin, requestId, mode, sentBy } = opts;
-  const to = opts.to.trim();
+  const list = splitEmails(opts.to); // un seul mail pour toutes les adresses
+  const to = list.join(", ");
   if (!mailConfigured()) return { ok: false, error: "L'envoi de mails n'est pas encore configuré (à renseigner dans Vercel : une boîte mail SMTP_HOST / SMTP_USER / SMTP_PASS, ou RESEND_API_KEY et MAIL_FROM).", code: "not_configured" };
-  if (!isEmail(to)) return { ok: false, error: "Adresse e-mail invalide.", code: "invalid" };
+  if (!areEmails(opts.to)) return { ok: false, error: "Adresse e-mail invalide.", code: "invalid" };
 
   const { data: req } = await admin.from("cerfa_requests").select("id,status,total_value,issued_at,cerfa_path,cerfa_name,partners(name)").eq("id", requestId).maybeSingle();
   if (!req) return { ok: false, error: "Demande introuvable.", code: "not_found" };
@@ -119,7 +120,7 @@ export async function sendCerfaMail(opts: { admin: SupabaseClient; requestId: st
   const filename = (r.cerfa_name || `Cerfa-${partner}.pdf`).replace(/[^\w.\- ()]/g, "_");
 
   const subject = `Votre reçu fiscal Linkee${r.issued_at ? " — Cerfa du " + new Date(r.issued_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Paris" }) : ""}`;
-  const out = await deliver({ to, subject, html, text, filename, contentBase64: content });
+  const out = await deliver({ to: list, subject, html, text, filename, contentBase64: content });
   if (!out.ok) {
     await log("erreur", out.error, null);
     return { ok: false, error: out.error, code: "provider" };

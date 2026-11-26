@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { CITY_PALETTE, DEFAULT_DEPOT, useCity } from "@/components/admin/CityContext";
 import AddressSearch from "@/components/AddressSearch";
+import { partnerPassword } from "@/lib/partnerPassword";
 
 /** Adresse de l'entrepôt d'une ville : recherche BAN, enregistrée dès qu'une suggestion est choisie, ou au blur en repli. */
 function DepotAddressField({ value, onSave }: { value: string; onSave: (v: string) => void }) {
@@ -291,7 +292,9 @@ export default function VillesComptesPage() {
   }
 
   async function resetPassword(a: Account) {
-    const password = randomPassword();
+    // un compte partenaire : « NomDuPartenaireLinkee2027 » (le premier partenaire par nom) ; les autres rôles : mot de passe aléatoire
+    const names = a.role === "partenaire" ? a.partnerIds.map((id) => partners.find((p) => p.id === id)?.name).filter((n): n is string => !!n).sort((x, y) => x.localeCompare(y, "fr")) : [];
+    const password = names[0] ? partnerPassword(names[0]) : randomPassword();
     setBusy(true);
     try {
       await callApi("PATCH", { id: a.id, password });
@@ -503,6 +506,19 @@ export default function VillesComptesPage() {
                 <button type="button" onClick={() => setForm({ ...form, password: randomPassword() })} className="flex-none rounded-[10px] border-[1.5px] border-[var(--border)] px-3 text-[12px] font-bold text-[var(--slate)]">
                   Générer
                 </button>
+                {form.role === "partenaire" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const names = form.partner_ids.map((id) => partners.find((p) => p.id === id)?.name).filter((n): n is string => !!n).sort((x, y) => x.localeCompare(y, "fr"));
+                      if (!names[0]) return showToast("Choisis d'abord le partenaire du compte.");
+                      setForm({ ...form, password: partnerPassword(names[0]) });
+                    }}
+                    className="flex-none rounded-[10px] border-[1.5px] border-[var(--border)] px-3 text-[12px] font-bold text-[var(--slate)]"
+                  >
+                    Nom + Linkee2027
+                  </button>
+                )}
               </div>
             </div>
           </div>
