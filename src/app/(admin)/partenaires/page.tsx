@@ -5,6 +5,7 @@ import DeclareLinkBox from "@/components/partner/DeclareLinkBox";
 import AllSupportsZip from "@/components/partner/AllSupportsZip";
 import PartnerAccessBox from "@/components/partner/PartnerAccessBox";
 import PartnerAccessBulk from "@/components/partner/PartnerAccessBulk";
+import { BubbleGrid, FlatCtx, PartnerCrumb, PartnerDrawer, PartnerFacts, type Bubble } from "@/components/partner/PartnerBubbles";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
@@ -387,14 +388,19 @@ function AccordionSection({
   open,
   onToggle,
   children,
+  hide = false,
 }: {
   title: string;
   sectionKey: string;
   open: boolean;
   onToggle: (k: string) => void;
   children: React.ReactNode;
+  hide?: boolean;
 }) {
   const readOnly = useContext(ReadOnlyCtx);
+  const flat = useContext(FlatCtx); // fiche partenaire en bulles : la section s'affiche à plat dans le volet, sans en-tête
+  if (hide) return null;
+  if (flat) return <div className="mb-3">{children}</div>;
   return (
     <div className="mb-2.5 overflow-hidden rounded-[14px] border border-[var(--border)]" style={{ borderTop: `4px solid ${SECTION_COLOR[sectionKey] ?? "var(--turquoise)"}` }}>
       <button
@@ -438,7 +444,7 @@ export default function PartenairesPage() {
   const saveTimers = useRef<Record<string, number>>({});
   const [tab, setTab] = useState<"partner" | "beneficiaire">("partner");
   const [ficheTab, setFicheTab] = useState<FicheTab>("fiche");
-  const [currentId, setCurrentId] = useState("");
+  const [currentId, setCurrentId] = useState(() => (typeof window === "undefined" ? "" : (new URL(window.location.href).searchParams.get("fiche") ?? ""))); // adresse ?fiche=<id> : ouvre directement cette fiche
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [activeFilter, setActiveFilter] = useState<"" | "actif" | "inactif">("actif"); // par défaut : seulement les actifs (les inactifs se retrouvent via le filtre)
@@ -449,11 +455,34 @@ export default function PartenairesPage() {
   const [deleting, setDeleting] = useState(false);
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(["identite"]));
   useEffect(() => setFicheTab("fiche"), [currentId]);
+  // volet ouvert (fiche partenaire en bulles) : il n'est valable que pour la fiche affichée, il se referme donc quand on change de partenaire
+  const [bubbleState, setBubbleState] = useState<{ id: string; key: string | null }>({ id: "", key: null });
+  const bubble = bubbleState.id === currentId ? bubbleState.key : null;
+  const setBubble = (key: string | null) => setBubbleState({ id: currentId, key });
   const [autosaveVisible, setAutosaveVisible] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
   const list: Entity[] = tab === "partner" ? partners : beneficiaires;
   const current = useMemo(() => list.find((e) => e.id === currentId), [list, currentId]);
+  const detailMode = tab === "partner" && !!current; // un partenaire ouvert : la fiche remplace la liste (page à part, adresse ?fiche=…)
+
+  // L'adresse de la page suit le partenaire ouvert (?fiche=<id>) : on peut la copier, la mettre en favori, et le bouton « précédent » revient à la liste.
+  const urlFirst = useRef(true);
+  useEffect(() => {
+    const onPop = () => setCurrentId(new URL(window.location.href).searchParams.get("fiche") ?? "");
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  useEffect(() => {
+    if (urlFirst.current) {
+      urlFirst.current = false;
+      return;
+    }
+    const url = new URL(window.location.href);
+    if (tab === "partner" && currentId) url.searchParams.set("fiche", currentId);
+    else url.searchParams.delete("fiche");
+    if (url.href !== window.location.href) window.history.pushState({}, "", url.href);
+  }, [currentId, tab]);
 
   function flashAutosave() {
     setAutosaveVisible(true);
@@ -677,7 +706,45 @@ export default function PartenairesPage() {
   }
 
   // La fiche s'ouvre juste sous la ligne cliquée (accordéon) ; en cliquer une autre la referme.
-  const renderFiche = () => (
+  const renderFiche = () => {
+    const pm = !!current && current.kind === "partner"; // fiche partenaire en bulles
+    const show = (g: string) => !pm || bubble === g; // un bloc ne s'affiche que dans le volet de sa bulle
+    const BUBBLE_META: Record<string, { icon: string; title: string }> = {
+      info: { icon: "🏪", title: "Informations" }, rythme: { icon: "🗓️", title: "Rythme et créneaux" }, den: { icon: "🥖", title: "Denrées et logistique" },
+      contacts: { icon: "👥", title: "Contacts" }, acces: { icon: "🔑", title: "Accès plateforme" }, decl: { icon: "📦", title: "Déclaration du don" },
+      cerfa: { icon: "🧾", title: "Cerfa" }, val: { icon: "💶", title: "Valorisation" }, docs: { icon: "📁", title: "Documents" },
+      hist: { icon: "📈", title: "Historique des collectes" }, options: { icon: "⚙️", title: "Options" },
+    };
+    const pc = current && current.kind === "partner" ? current : null;
+    const nCren = pc ? Object.values(pc.creneaux ?? {}).reduce((n, l) => n + l.length, 0) : 0;
+    const typesDon = pc ? Object.entries(pc.denrees ?? {}).filter(([, on]) => on).map(([k]) => k) : [];
+    const nCerfaContacts = pc ? pc.contacts.filter((c) => (c as Contact).cerfa).length : 0;
+    const bubbles: Bubble[] = pc
+      ? ([
+          { key: "info", bg: "#e3f5f9", summary: pc.address ? pc.address : "Adresse à renseigner", warn: !pc.address },
+          { key: "rythme", bg: "#fdf1d6", summary: `${rythmeLabel(pc.rythme) || "Rythme non défini"}${nCren ? ` · ${nCren} créneau${nCren > 1 ? "x" : ""}` : ""}`, warn: !pc.rythme },
+          { key: "den", bg: "#fbe6e5", summary: typesDon.length ? typesDon.join(", ") : "Types de dons à renseigner", warn: typesDon.length === 0 },
+          { key: "contacts", bg: "#e9e4fa", summary: `${pc.contacts.length} contact${pc.contacts.length > 1 ? "s" : ""} · ${nCerfaContacts} reçoi${nCerfaContacts > 1 ? "vent" : "t"} les Cerfa`, warn: pc.contacts.length === 0 },
+          { key: "acces", bg: "#e4f4e1", summary: "Compte et mot de passe de son espace" },
+          { key: "decl", bg: "#ffe6d9", summary: `Lien de déclaration · mail auto : ${pc.declareMailAuto ? "oui" : "non"}` },
+          { key: "cerfa", bg: "#e9e4fa", summary: `Fréquence : ${CERFA_FREQUENCIES.find((f) => f.k === (pc.cerfaFrequency || "inconnu"))?.l.split(" (")[0] ?? "inconnue"}`, warn: (pc.cerfaFrequency || "inconnu") === "inconnu" },
+          ...(readOnly ? [] : [{ key: "val", bg: "#e4f4e1", summary: "Prix par produit, valeur des dons" }]),
+          { key: "docs", bg: "#e3f5f9", summary: "Porte-documents partagé" },
+          { key: "hist", bg: "#fdf1d6", summary: "Collectes passées, poids, valeurs" },
+          { key: "options", bg: "#f1ebe0", summary: [pc.aussiDepose ? "lieu de dépose" : "", pc.benevoleOnly ? "collecte bénévole" : ""].filter(Boolean).join(" · ") || "Dépose, collecte bénévole, cadre partenaire" },
+        ] as Omit<Bubble, "icon" | "title">[]).map((b) => ({ ...b, ...BUBBLE_META[b.key] }))
+      : [];
+    const facts = pc
+      ? [
+          { label: "Créneaux habituels", value: formatCreneaux(pc.creneaux) || "Aucun créneau renseigné" },
+          { label: "Types de dons", value: typesDon.join(", ") || "—" },
+          { label: "Rythme", value: rythmeLabel(pc.rythme) || "Non défini" },
+          { label: "Adresse", value: pc.address || "—" },
+        ]
+      : [];
+    const idx = filteredList.findIndex((e) => e.id === currentId);
+    const goRel = (d: number) => filteredList.length > 1 && setCurrentId(filteredList[(idx + d + filteredList.length) % filteredList.length].id);
+    return (
     <div ref={ficheRef} className="scroll-mt-4 rounded-[20px] border border-[var(--border)] bg-[var(--card)] px-7 pt-[26px] pb-[30px] shadow-[var(--shadow)]">
       {!current ? (
         <div className="flex flex-col items-center gap-2.5 py-[60px] text-center text-[var(--slate)]">
@@ -685,6 +752,7 @@ export default function PartenairesPage() {
         </div>
       ) : (
         <>
+          {pm && <PartnerCrumb name={current.name} onBack={() => setCurrentId("")} onPrev={() => goRel(-1)} onNext={() => goRel(1)} />}
           <div className="mb-2 flex items-start gap-[18px]">
             <div
               onClick={() => (readOnly ? undefined : current.kind === "partner" ? logoInput.current?.click() : showToast("Le logo est disponible pour les partenaires."))}
@@ -762,7 +830,11 @@ export default function PartenairesPage() {
               </button>
             </div>
           </div>
-          {current.kind === "partner" && current.active && (
+          {pm && <PartnerFacts facts={facts} />}
+          {pm && <BubbleGrid bubbles={bubbles} onOpen={(k) => setBubble(k)} />}
+          <PartnerDrawer inline={!pm} open={pm && !!bubble} icon={BUBBLE_META[bubble ?? ""]?.icon ?? ""} title={BUBBLE_META[bubble ?? ""]?.title ?? ""} subtitle={current.name} saved={autosaveVisible} onClose={() => setBubble(null)}>
+          <FlatCtx.Provider value={pm}>
+          {show("rythme") && current.kind === "partner" && current.active && (
             <div className="mb-3 rounded-[14px] border-[1.5px] border-[var(--border)] bg-[var(--card)] p-3">
               <div className="flex flex-wrap items-center gap-2.5">
                 <span className="text-[13px] font-bold text-[var(--navy)]">Rythme</span>
@@ -811,8 +883,8 @@ export default function PartenairesPage() {
               )}
             </div>
           )}
-          {current.kind === "partner" && !readOnly && <PartnerAccessBox key={"acc" + current.id} partnerId={current.id} />}
-          {current.kind === "partner" && (
+          {show("acces") && current.kind === "partner" && !readOnly && <PartnerAccessBox key={"acc" + current.id} partnerId={current.id} />}
+          {show("decl") && current.kind === "partner" && (
             <label className="mb-3 flex items-start gap-2.5 rounded-[14px] border-[1.5px] border-[var(--border)] p-3">
               <input
                 type="checkbox"
@@ -827,8 +899,8 @@ export default function PartenairesPage() {
               </span>
             </label>
           )}
-          {current.kind === "partner" && <DeclareLinkBox key={current.id} partnerId={current.id} name={current.name} logoUrl={current.logoUrl} readOnly={readOnly} />}
-          {current.kind === "partner" && (
+          {show("decl") && current.kind === "partner" && <DeclareLinkBox key={current.id} partnerId={current.id} name={current.name} logoUrl={current.logoUrl} readOnly={readOnly} />}
+          {show("options") && current.kind === "partner" && (
             <label className="mb-4 flex items-start gap-2.5 rounded-[14px] border-[1.5px] border-[var(--border)] p-3">
               <input
                 type="checkbox"
@@ -843,7 +915,7 @@ export default function PartenairesPage() {
               </span>
             </label>
           )}
-          {current.kind === "partner" && (
+          {show("options") && current.kind === "partner" && (
             <label className="mb-4 flex items-start gap-2.5 rounded-[14px] border-[1.5px] p-3" style={{ borderColor: current.benevoleOnly ? "#eb6834" : "var(--border)", background: current.benevoleOnly ? "rgba(235,104,52,.08)" : "var(--card)" }}>
               <input
                 type="checkbox"
@@ -860,14 +932,14 @@ export default function PartenairesPage() {
               </span>
             </label>
           )}
-          <div className={`mb-4 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--good)] transition-opacity ${autosaveVisible ? "opacity-100" : "opacity-0"}`}>
+          <div className={`mb-4 ${pm ? "hidden" : "flex"} items-center gap-1.5 text-[11.5px] font-semibold text-[var(--good)] transition-opacity ${autosaveVisible ? "opacity-100" : "opacity-0"}`}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" className="h-[13px] w-[13px]">
               <path d="M20 6 L9 17 L4 12" />
             </svg>
             Modifications enregistrées
           </div>
 
-          <div className="mb-4 grid grid-cols-2 gap-1.5 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-1.5 sm:grid-cols-4">
+          <div className={`mb-4 ${pm ? "hidden" : "grid"} grid-cols-2 gap-1.5 rounded-[14px] border border-[var(--border)] bg-[var(--card)] p-1.5 sm:grid-cols-4`}>
             {(current.kind === "partner" ? FICHE_TABS : BENEFICIAIRE_FICHE_TABS).filter((t) => !(readOnly && t.k === "valorisation")).map((t) => {
               const on = ficheTab === t.k;
               return (
@@ -887,15 +959,15 @@ export default function PartenairesPage() {
             })}
           </div>
           <div>
-          {current.kind === "partner" && ficheTab === "documents" && <PartnerDocuments key={current.id} partnerId={current.id} role="admin" readOnly={readOnly} />}
+          {current.kind === "partner" && (pm ? bubble === "docs" : ficheTab === "documents") && <PartnerDocuments key={current.id} partnerId={current.id} role="admin" readOnly={readOnly} />}
           {current.kind === "beneficiaire" && ficheTab === "documents" && <PartnerDocuments key={current.id} beneficiaryId={current.id} role="admin" readOnly={readOnly} />}
-          {current.kind === "partner" && ficheTab === "valorisation" && !readOnly && <PartnerValuation key={current.id} partnerId={current.id} category={current.cat} />}
-          {current.kind === "partner" && ficheTab === "collectes" && <PartnerCollectes key={current.id} partnerId={current.id} cityId={cityId} category={current.cat} readOnly={readOnly} />}
+          {current.kind === "partner" && (pm ? bubble === "val" : ficheTab === "valorisation") && !readOnly && <PartnerValuation key={current.id} partnerId={current.id} category={current.cat} />}
+          {current.kind === "partner" && (pm ? bubble === "hist" : ficheTab === "collectes") && <PartnerCollectes key={current.id} partnerId={current.id} cityId={cityId} category={current.cat} readOnly={readOnly} />}
 
-          {ficheTab === "fiche" && (
+          {(pm || ficheTab === "fiche") && (
           <>
-          <AccordionSection title="Adresse & accès" sectionKey="identite" open={openSections.has("identite")} onToggle={toggleSection}>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <AccordionSection hide={pm && bubble !== "info" && bubble !== "cerfa"} title="Adresse & accès" sectionKey="identite" open={openSections.has("identite")} onToggle={toggleSection}>
+            <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${pm && bubble === "cerfa" ? "[&>*:not([data-cerfa])]:hidden" : pm ? "[&>[data-cerfa]]:hidden" : ""}`}>
               <div className="sm:col-span-2">
                 <label className={labelCls}>Adresse</label>
                 <AddressSearch
@@ -933,7 +1005,7 @@ export default function PartenairesPage() {
                 </div>
               )}
               {current.kind === "partner" && (
-                <div>
+                <div data-cerfa>
                   <label className={labelCls}>Fréquence d&apos;émission Cerfa <span className="font-normal text-[var(--muted)]">(mensuelle, trimestrielle ou annuelle : la demande de Cerfa est créée toute seule à la fin de chaque période)</span></label>
                   <select className={inputCls} value={current.cerfaFrequency || "inconnu"} onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, cerfaFrequency: e.target.value as CerfaFrequency } : entity))}>
                     {CERFA_FREQUENCIES.map((f) => (
@@ -947,7 +1019,7 @@ export default function PartenairesPage() {
                 const auto = cerfaAutoSendOf(rec);
                 const options = cerfaRecipients(rec);
                 return (
-                  <div className="sm:col-span-2 rounded-xl border border-dashed border-[var(--border)] p-3">
+                  <div data-cerfa className="sm:col-span-2 rounded-xl border border-dashed border-[var(--border)] p-3">
                     <label className={labelCls}>Envoi automatique des Cerfa par mail</label>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <select className={inputCls} value={auto.enabled ? "oui" : "non"} onChange={(e) => updateEntity((entity) => (entity.kind === "partner" ? { ...entity, cerfaAutoSend: e.target.value === "oui" } : entity))}>
@@ -1017,7 +1089,7 @@ export default function PartenairesPage() {
           </AccordionSection>
 
           {current.kind === "partner" && (
-            <AccordionSection title="Créneaux de collecte" sectionKey="creneaux" open={openSections.has("creneaux")} onToggle={toggleSection}>
+            <AccordionSection hide={pm && bubble !== "rythme"} title="Créneaux de collecte" sectionKey="creneaux" open={openSections.has("creneaux")} onToggle={toggleSection}>
               <p className="mb-3 text-[11.5px] text-[var(--slate)]">
                 Jour + heure de début + heure de fin — utilisés pour planifier les collectes. Plusieurs créneaux possibles, y compris plusieurs le même jour.
               </p>
@@ -1030,7 +1102,7 @@ export default function PartenairesPage() {
           )}
 
           {current.kind === "partner" && (
-            <AccordionSection title="Denrées & logistique" sectionKey="logistics" open={openSections.has("logistics")} onToggle={toggleSection}>
+            <AccordionSection hide={pm && bubble !== "den"} title="Denrées & logistique" sectionKey="logistics" open={openSections.has("logistics")} onToggle={toggleSection}>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="sm:col-span-2">
                   <label className={labelCls}>Types de denrées gérés</label>
@@ -1070,7 +1142,7 @@ export default function PartenairesPage() {
           )}
 
           {current.kind === "partner" && (
-            <AccordionSection title="Checklist de passage" sectionKey="passage" open={openSections.has("passage")} onToggle={toggleSection}>
+            <AccordionSection hide={pm && bubble !== "den"} title="Checklist de passage" sectionKey="passage" open={openSections.has("passage")} onToggle={toggleSection}>
               <p className="mb-3 text-[11.5px] text-[var(--slate)]">
                 Ce qui est coché apparaît dans la checklist d&apos;Akram les jours où ce partenaire est au planning, et sous forme d&apos;icône après son nom dans le Planning.
               </p>
@@ -1114,7 +1186,7 @@ export default function PartenairesPage() {
           )}
 
           {current.kind === "partner" && (
-            <AccordionSection title='Cadre "Informations de collecte" (visible côté partenaire)' sectionKey="partnerspace" open={openSections.has("partnerspace")} onToggle={toggleSection}>
+            <AccordionSection title='Cadre "Informations de collecte" (visible côté partenaire)' hide={pm && bubble !== "options"} sectionKey="partnerspace" open={openSections.has("partnerspace")} onToggle={toggleSection}>
               <p className="mb-3 text-[11.5px] text-[var(--slate)]">Ces champs s&apos;affichent en lecture seule dans l&apos;espace du partenaire — lui seul ne peut pas les modifier.</p>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="sm:col-span-2">
@@ -1300,7 +1372,7 @@ export default function PartenairesPage() {
             </AccordionSection>
           )}
 
-          <AccordionSection title="Contacts" sectionKey="contacts" open={openSections.has("contacts")} onToggle={toggleSection}>
+          <AccordionSection hide={pm && bubble !== "contacts"} title="Contacts" sectionKey="contacts" open={openSections.has("contacts")} onToggle={toggleSection}>
             <div className="mb-2.5 flex flex-col gap-2.5">
               {current.contacts.map((c, idx) => (
                 <div key={idx}>
@@ -1372,7 +1444,7 @@ export default function PartenairesPage() {
           </AccordionSection>
 
           {current.kind === "partner" && (
-            <AccordionSection title="Accès espace partenaire" sectionKey="portal" open={openSections.has("portal")} onToggle={toggleSection}>
+            <AccordionSection hide={pm && bubble !== "acces"} title="Accès espace partenaire" sectionKey="portal" open={openSections.has("portal")} onToggle={toggleSection}>
               <div className="grid grid-cols-1 gap-3">
                 <div>
                   <label className={labelCls}>Email de connexion à l&apos;espace partenaire</label>
@@ -1448,14 +1520,20 @@ export default function PartenairesPage() {
           </>
           )}
           </div>
+          </FlatCtx.Provider>
+          </PartnerDrawer>
         </>
       )}
     </div>
-  );
+    );
+  };
 
   return (
     <ReadOnlyCtx.Provider value={readOnly}>
     <div>
+      {detailMode && renderFiche()}
+      {!detailMode && (
+      <>
       <h1 className="font-display text-[32px] leading-none font-black">{tab === "partner" ? "Partenaires" : "Bénéficiaires"}</h1>
       <p className="mb-[18px] text-[13.5px] text-[var(--slate)]">
         {tab === "partner"
@@ -1598,6 +1676,8 @@ export default function PartenairesPage() {
           ))}
         </div>
       </div>
+      </>
+      )}
 
       {toast && (
         <div className="fixed bottom-[26px] left-1/2 z-[999] max-w-[360px] -translate-x-1/2 rounded-[14px] bg-[var(--navy-deep)] px-[18px] py-3 text-center text-[13px] font-semibold text-[var(--panel-fg)] shadow-[var(--shadow)]">
