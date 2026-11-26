@@ -85,6 +85,7 @@ type Stop = {
   teamNote?: string | null; // commentaire d'équipe « à la volée » écrit depuis le Planning (migration 073)
   teamNoteAt?: string | null;
   teamFiles?: TeamFile[]; // fichiers joints par l'équipe depuis le Planning (migration 074)
+  declared?: { items: { denree: string; kg: number }[]; note?: string | null; files: TeamFile[] }; // don déclaré par le partenaire depuis son lien (migration 085) : pré-remplit la saisie
   passage?: Passage; // partner's "Checklist de passage" (key, isothermal boxes, containers rotation)
   phones: StopPhone[]; // numéros à appeler pour cet arrêt (contacts de la fiche) : un bouton « appeler » chacun
   duration?: number; // durée prévue sur place (min)
@@ -297,7 +298,10 @@ function StopPanel({ stops, index, subs, onDone, onUpload }: { stops: Stop[]; in
   const s = stops[index];
   const [pick, setPick] = useState<"collecte" | "annule" | null>(null);
   // kg holds the typed quantity: kg, or the sub-category's unit (unité / litre) when one is chosen
-  const [rows, setRows] = useState<{ denree: string; kg: string; sub: string; note?: string }[]>([{ denree: "", kg: "", sub: "" }]);
+  // si le partenaire a déclaré son don depuis son lien, ses quantités sont pré-remplies (à revalider ou corriger)
+  const [rows, setRows] = useState<{ denree: string; kg: string; sub: string; note?: string }[]>(() =>
+    s.declared?.items.length ? s.declared.items.map((i) => ({ denree: DENREE_OPTIONS.includes(i.denree) ? i.denree : "Autres", kg: String(i.kg), sub: "" })) : [{ denree: "", kg: "", sub: "" }],
+  );
   const subOf = (r: { sub: string }) => subs.find((x) => x.id === r.sub);
   const rowKg = (r: { kg: string; sub: string }): number => {
     const q = parseFloat(r.kg) || 0;
@@ -990,7 +994,19 @@ export default function JourneePage() {
       const depotAddr = cityAddr?.depot_address || DEFAULT_DEPOT_ADDRESS;
       const stockAddr = cityAddr?.stock_address || depotAddr; // prise / dépose au stock
       setDepotAddr(depotAddr);
-      const builtStops = rows.map((r) => rowToStop(r, rows, stockAddr)).map((s) => (s.kind === "stock" && !s.stockIn ? { ...s, presetItems: presets } : s));
+      // dons déclarés par les partenaires depuis leur lien : la saisie est pré-remplie, le logisticien n'a qu'à revalider
+      const declMap = new Map<string, NonNullable<Stop["declared"]>>();
+      const pickIds = rows.filter((r) => r.status !== "collecte" && ["partner", "exceptionnel", "demande_client"].includes(r.kind)).map((r) => r.id);
+      if (pickIds.length) {
+        const d = await supabase.from("partner_declarations").select("collecte_id,items,note,files,created_at").in("collecte_id", pickIds).order("created_at", { ascending: false });
+        for (const x of (d.data ?? []) as { collecte_id: string | null; items: { denree: string; kg: number }[] | null; note: string | null; files: TeamFile[] | null }[]) {
+          if (x.collecte_id && !declMap.has(x.collecte_id)) declMap.set(x.collecte_id, { items: x.items ?? [], note: x.note, files: x.files ?? [] });
+        }
+      }
+      const builtStops = rows
+        .map((r) => rowToStop(r, rows, stockAddr))
+        .map((s) => (s.kind === "stock" && !s.stockIn ? { ...s, presetItems: presets } : s))
+        .map((s) => (declMap.has(s.id) ? { ...s, declared: declMap.get(s.id) } : s));
       setStops(await mergePending(builtStops)); // saisies faites hors ligne et pas encore envoyées : elles restent affichées
       // sitePhoto stocke un chemin privé (coffre collecte-photos) — on le résout en URL signée pour l'affichage
       const sitePhotoPaths = Array.from(new Set(builtStops.map((s) => s.sitePhoto).filter((p): p is string => !!p)));
@@ -1700,6 +1716,31 @@ export default function JourneePage() {
                                 <span className="truncate">{f.name}</span>
                               </button>
                             ))}
+                          </div>
+                        )}
+                        {!isPause && s.declared && s.status !== "collecte" && (
+                          <div className="mt-1 rounded-lg border border-[var(--border)] bg-[#e3f5f9] px-2.5 py-1.5 text-[13px] leading-[1.35] text-[#04262e]">
+                            <b>📦 Don déclaré par le partenaire</b>
+                            {s.declared.items.length > 0 && <span> : {s.declared.items.map((i) => `${i.denree} ${i.kg} kg`).join(" · ")} — à revalider à la collecte.</span>}
+                            {s.declared.note && <div className="mt-0.5 italic">« {s.declared.note} »</div>}
+                            {s.declared.files.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1.5">
+                                {s.declared.files.map((f) => (
+                                  <button
+                                    key={f.path}
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void openPrivateFile(supabase, f.path).then((err) => err && showToast("Ouverture impossible : " + err));
+                                    }}
+                                    className="flex max-w-full min-h-[40px] items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1.5 text-left text-[13px] font-semibold text-[var(--navy)]"
+                                  >
+                                    <span>📎</span>
+                                    <span className="truncate">{f.name}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                         {pendingIds.has(s.id) && <div className="mt-1 inline-block rounded-lg bg-[var(--warn-bg)] px-2 py-1 text-[11.5px] font-bold text-[var(--warn)]">⏳ En attente d&apos;envoi</div>}

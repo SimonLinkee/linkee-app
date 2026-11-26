@@ -42,6 +42,7 @@ type Stop = {
   stockIn?: boolean; // arrêt « Dépôt stock » = dépose au stock (et non prise)
   teamNote?: string | null; // commentaire d'équipe « à la volée », visible tout de suite par le logisticien (migration 073)
   teamNoteAt?: string | null;
+  declared?: { text: string; files: number }; // don déclaré par le partenaire depuis son lien (migration 085)
   teamFiles?: TeamFile[]; // fichiers joints à l'arrêt par l'équipe (migration 074)
   fixedTime?: string | null; // heure d'arrivée fixée à la main (« HH:MM »), vide = calculée (migration 077)
 };
@@ -463,6 +464,7 @@ export default function PlanningPage() {
     setStops(list);
     setStopsIso(forIso);
     void loadTeamNotes(forIso);
+    void loadDeclarations(list.map((x) => x.id), forIso);
     void loadTeamFiles(forIso);
     void loadStopExtras(forIso);
     // rows that were never scheduled (fresh copies) get their times written once
@@ -476,6 +478,19 @@ export default function PlanningPage() {
     if (error || !data || isoRef.current !== forIso) return; // sans la migration 073, pas de commentaires : le planning fonctionne comme avant
     const m = new Map((data as { id: string; team_note: string | null; team_note_at: string | null }[]).map((r) => [r.id, r]));
     setStops((prev) => prev.map((s) => (m.has(s.id) ? { ...s, teamNote: m.get(s.id)!.team_note, teamNoteAt: m.get(s.id)!.team_note_at } : s)));
+  }
+  // Dons déclarés par les partenaires depuis leur lien (migration 085) : requête à part, le planning marche comme avant sans elle
+  async function loadDeclarations(ids: string[], forIso: string) {
+    if (!ids.length) return;
+    const { data, error } = await supabase.from("partner_declarations").select("collecte_id,items,files,created_at").in("collecte_id", ids).order("created_at", { ascending: false });
+    if (error || !data || isoRef.current !== forIso) return;
+    const m = new Map<string, { text: string; files: number }>();
+    for (const r of data as { collecte_id: string | null; items: { denree: string; kg: number }[] | null; files: unknown[] | null }[]) {
+      if (!r.collecte_id || m.has(r.collecte_id)) continue;
+      const items = r.items ?? [];
+      m.set(r.collecte_id, { text: items.length ? items.map((i) => `${i.denree} ${i.kg} kg`).join(" · ") : "fichier joint", files: (r.files ?? []).length });
+    }
+    if (m.size) setStops((prev) => prev.map((x) => (m.has(x.id) ? { ...x, declared: m.get(x.id) } : x)));
   }
   // Adresse des missions et heures fixées à la main (migration 077) : requête à part, le planning marche comme avant sans elle
   async function loadStopExtras(forIso: string) {
@@ -1437,6 +1452,11 @@ export default function PlanningPage() {
                           </button>
                         )}
                       </div>
+                      {s.declared && (
+                        <div className="mt-1 inline-block max-w-full rounded-lg bg-[var(--turquoise-bg,#e3f5f9)] px-2 py-1 text-[12px] leading-[1.3] font-semibold text-[#0e6b7a]" title="Déclaré par le partenaire depuis son lien : le logisticien le retrouve pré-rempli">
+                          📦 Déclaré par le partenaire : {s.declared.text}{s.declared.files > 0 ? ` · ${s.declared.files} fichier${s.declared.files > 1 ? "s" : ""}` : ""}
+                        </div>
+                      )}
                       {s.teamNote && noteEdit?.id !== s.id && (
                         <div
                           className="mt-1 inline-block max-w-full rounded-lg border border-[#e2b93b] bg-[#fff4c9] px-2 py-1 text-[12px] leading-[1.3] font-semibold text-[#5b4300]"

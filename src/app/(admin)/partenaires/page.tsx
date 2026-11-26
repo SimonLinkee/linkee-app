@@ -1,6 +1,7 @@
 "use client";
 
 import HalfHourSelect from "@/components/HalfHourSelect";
+import DeclareLinkBox from "@/components/partner/DeclareLinkBox";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
@@ -807,6 +808,7 @@ export default function PartenairesPage() {
               )}
             </div>
           )}
+          {current.kind === "partner" && <DeclareLinkBox key={current.id} partnerId={current.id} readOnly={readOnly} />}
           {current.kind === "partner" && (
             <label className="mb-4 flex items-start gap-2.5 rounded-[14px] border-[1.5px] border-[var(--border)] p-3">
               <input

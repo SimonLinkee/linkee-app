@@ -34,6 +34,8 @@ export async function updateSession(request: NextRequest) {
   if (path.startsWith('/api/cron/')) return supabaseResponse
   // appelé par la base de données (pas de session) : protégé par son propre mot de passe partagé
   if (path === '/api/push/notify') return supabaseResponse
+  // la page publique d'un partenaire (/p/<jeton>) et ses appels : pas de session, le lien secret fait office de clé
+  if (path.startsWith('/p/') || path.startsWith('/api/p/')) return supabaseResponse
   // installable-app files must be readable without a session (the browser fetches them before login)
   if (path === '/manifest.webmanifest' || path === '/pwa-icon' || path === '/sw.js' || path === '/offline.html' || path.startsWith('/icons/')) return supabaseResponse
   const redirectTo = (to: string) => {
