@@ -16,7 +16,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
 
   const form = await req.formData().catch(() => null);
   if (!form) return NextResponse.json({ error: "Envoi illisible." }, { status: 400 });
-  let payload: { collecteId?: string | null; items?: { denree?: string; kg?: number; note?: string }[]; note?: string; contact?: string };
+  let payload: { collecteId?: string | null; items?: { denree?: string; kg?: number; note?: string }[]; value?: number | null; note?: string; contact?: string };
   try {
     payload = JSON.parse(String(form.get("payload") ?? "{}"));
   } catch {
@@ -29,7 +29,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     .slice(0, 20)
     .map((i) => (i.note ? i : { denree: i.denree, kg: i.kg }));
   const files = form.getAll("files").filter((f): f is File => typeof f !== "string" && f.size > 0).slice(0, 5);
-  if (!items.length && !files.length) return NextResponse.json({ error: "Indiquez au moins une quantité ou joignez un fichier." }, { status: 400 });
+  const value = Math.round(Number(payload.value) * 100) / 100;
+  const hasValue = Number.isFinite(value) && value > 0 && value <= 1000000;
+  if (!items.length && !files.length && !hasValue) return NextResponse.json({ error: "Indiquez au moins une quantité, la valeur du don ou joignez un fichier." }, { status: 400 });
   for (const f of files) {
     if (f.size > MAX_DECLARE_FILE) return NextResponse.json({ error: `« ${f.name} » dépasse 10 Mo.` }, { status: 400 });
     if (!OK_EXT.test(f.name)) return NextResponse.json({ error: `« ${f.name} » : format non accepté (PDF, Excel, photo).` }, { status: 400 });
@@ -55,9 +57,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     stored.push({ path, name: f.name, size: f.size, mime: f.type || "", at: new Date().toISOString() });
   }
 
-  const { error } = await admin.from("partner_declarations").insert({
-    partner_id: p.id, city_id: p.city_id, collecte_id: collecteId, items, note: clean(payload.note, 500) || null, contact: clean(payload.contact, 80) || null, files: stored,
-  });
+  const row = { partner_id: p.id, city_id: p.city_id, collecte_id: collecteId, items, note: clean(payload.note, 500) || null, contact: clean(payload.contact, 80) || null, files: stored };
+  let { error } = await admin.from("partner_declarations").insert({ ...row, ...(hasValue ? { value } : {}) });
+  if (error && hasValue && /value/i.test(error.message)) {
+    // migration 089 pas encore passée : on garde la valeur dans le commentaire plutôt que de la perdre
+    ({ error } = await admin.from("partner_declarations").insert({ ...row, note: [row.note, `Valeur déclarée : ${value} €`].filter(Boolean).join(" · ") }));
+  }
   if (error) return NextResponse.json({ error: "Déclaration non enregistrée, réessayez dans un instant." }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

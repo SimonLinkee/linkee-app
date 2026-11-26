@@ -285,6 +285,7 @@ function DonForm({ token, info, onSent }: { token: string; info: Info; onSent: (
   const [collecteId, setCollecteId] = useState<string>(() => info.recent[0]?.id ?? info.upcoming[0]?.id ?? "");
   const first = toCategory(info.denrees[0] ?? "");
   const [lines, setLines] = useState<Line[]>([{ denree: first, kg: "" }]);
+  const [value, setValue] = useState(""); // valeur totale du don, en euros
   const [files, setFiles] = useState<File[]>([]);
   const [note, setNote] = useState("");
   const [contact, setContact] = useState("");
@@ -297,17 +298,18 @@ function DonForm({ token, info, onSent }: { token: string; info: Info; onSent: (
     e.preventDefault();
     setErr(null);
     const items = lines.map((l) => ({ denree: l.denree, kg: parseFloat(l.kg.replace(",", ".")) || 0 })).filter((l) => l.kg > 0);
-    if (!items.length && !files.length) return setErr("Indiquez au moins une quantité ou joignez un fichier.");
+    const val = parseFloat(value.replace(",", ".").replace(/\s/g, "")) || 0;
+    if (!items.length && !files.length && !(val > 0)) return setErr("Indiquez au moins une quantité, la valeur du don ou joignez un fichier.");
     setBusy(true);
     const fd = new FormData();
-    fd.set("payload", JSON.stringify({ collecteId: collecteId || null, items, note, contact }));
+    fd.set("payload", JSON.stringify({ collecteId: collecteId || null, items, value: val > 0 ? val : null, note, contact }));
     files.forEach((f) => fd.append("files", f));
     const r = await fetch(`/api/p/${token}/don`, { method: "POST", body: fd }).catch(() => null);
     setBusy(false);
     const j = r ? await r.json().catch(() => ({})) : {};
     if (!r || !r.ok) return setErr(j.error ?? "Envoi impossible. Vérifiez votre connexion et réessayez.");
     const total = items.reduce((s, i) => s + i.kg, 0);
-    onSent(`Votre don est déclaré${total > 0 ? ` (${Math.round(total * 10) / 10} kg)` : ""}${files.length ? `, avec ${files.length} fichier${files.length > 1 ? "s" : ""}` : ""}. Le logisticien retrouvera ces quantités à la collecte.`);
+    onSent(`Votre don est déclaré${total > 0 ? ` (${Math.round(total * 10) / 10} kg` : ""}${val > 0 ? `${total > 0 ? ", " : " ("}valeur ${Math.round(val * 100) / 100} €` : ""}${total > 0 || val > 0 ? ")" : ""}${files.length ? `, avec ${files.length} fichier${files.length > 1 ? "s" : ""}` : ""}. Le logisticien retrouvera ces quantités à la collecte.`);
   }
 
   return (
@@ -344,6 +346,14 @@ function DonForm({ token, info, onSent }: { token: string; info: Info; onSent: (
           + Ajouter un type de produit
         </button>
         <p className="mt-2 text-[12px] text-[var(--slate)]">Poids en kilos. Une estimation suffit : le logisticien vérifie à la collecte.</p>
+      </section>
+      <section className={`${boxCls} !border-[var(--good)]`}>
+        <h2 className="mb-1 text-[11px] font-bold tracking-[0.07em] text-[var(--slate)] uppercase">Valeur totale du don</h2>
+        <div className="relative">
+          <input inputMode="decimal" placeholder="0" value={value} onChange={(e) => setValue(e.target.value)} className={`${fieldCls} pr-10 text-[18px] font-bold`} aria-label="Valeur totale du don en euros" />
+          <span className="pointer-events-none absolute top-1/2 right-3.5 -translate-y-1/2 text-[16px] font-bold text-[var(--slate)]">€</span>
+        </div>
+        <p className="mt-1.5 text-[12px] text-[var(--slate)]">La valeur estimée de l&apos;ensemble du don, en euros (prix d&apos;achat ou prix de vente). Elle sert à établir votre reçu fiscal (Cerfa).</p>
       </section>
       <section className={boxCls}>
         <h2 className="mb-2 text-[11px] font-bold tracking-[0.07em] text-[var(--slate)] uppercase">Bon de livraison ou fichier Excel</h2>

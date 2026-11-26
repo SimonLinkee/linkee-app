@@ -85,7 +85,7 @@ type Stop = {
   teamNote?: string | null; // commentaire d'équipe « à la volée » écrit depuis le Planning (migration 073)
   teamNoteAt?: string | null;
   teamFiles?: TeamFile[]; // fichiers joints par l'équipe depuis le Planning (migration 074)
-  declared?: { items: { denree: string; kg: number }[]; note?: string | null; files: TeamFile[] }; // don déclaré par le partenaire depuis son lien (migration 085) : pré-remplit la saisie
+  declared?: { items: { denree: string; kg: number }[]; note?: string | null; files: TeamFile[]; value?: number | null }; // don déclaré par le partenaire depuis son lien (migration 085) : pré-remplit la saisie
   passage?: Passage; // partner's "Checklist de passage" (key, isothermal boxes, containers rotation)
   phones: StopPhone[]; // numéros à appeler pour cet arrêt (contacts de la fiche) : un bouton « appeler » chacun
   duration?: number; // durée prévue sur place (min)
@@ -998,9 +998,10 @@ export default function JourneePage() {
       const declMap = new Map<string, NonNullable<Stop["declared"]>>();
       const pickIds = rows.filter((r) => r.status !== "collecte" && ["partner", "exceptionnel", "demande_client"].includes(r.kind)).map((r) => r.id);
       if (pickIds.length) {
-        const d = await supabase.from("partner_declarations").select("collecte_id,items,note,files,created_at").in("collecte_id", pickIds).order("created_at", { ascending: false });
-        for (const x of (d.data ?? []) as { collecte_id: string | null; items: { denree: string; kg: number }[] | null; note: string | null; files: TeamFile[] | null }[]) {
-          if (x.collecte_id && !declMap.has(x.collecte_id)) declMap.set(x.collecte_id, { items: x.items ?? [], note: x.note, files: x.files ?? [] });
+        let d = await supabase.from("partner_declarations").select("collecte_id,items,note,files,value,created_at").in("collecte_id", pickIds).order("created_at", { ascending: false });
+        if (d.error) d = (await supabase.from("partner_declarations").select("collecte_id,items,note,files,created_at").in("collecte_id", pickIds).order("created_at", { ascending: false })) as typeof d; // avant la migration 089
+        for (const x of (d.data ?? []) as unknown as { collecte_id: string | null; items: { denree: string; kg: number }[] | null; note: string | null; files: TeamFile[] | null; value?: number | string | null }[]) {
+          if (x.collecte_id && !declMap.has(x.collecte_id)) declMap.set(x.collecte_id, { items: x.items ?? [], note: x.note, files: x.files ?? [], value: x.value == null ? null : Number(x.value) });
         }
       }
       const builtStops = rows
@@ -1721,7 +1722,8 @@ export default function JourneePage() {
                         {!isPause && s.declared && s.status !== "collecte" && (
                           <div className="mt-1 rounded-lg border border-[var(--border)] bg-[#e3f5f9] px-2.5 py-1.5 text-[13px] leading-[1.35] text-[#04262e]">
                             <b>📦 Don déclaré par le partenaire</b>
-                            {s.declared.items.length > 0 && <span> : {s.declared.items.map((i) => `${i.denree} ${i.kg} kg`).join(" · ")} — à revalider à la collecte.</span>}
+                            {s.declared.items.length > 0 && <span> : {s.declared.items.map((i) => `${i.denree} ${i.kg} kg`).join(" · ")}{s.declared.value ? ` · valeur ${s.declared.value} €` : ""} — à revalider à la collecte.</span>}
+                            {s.declared.items.length === 0 && s.declared.value ? <span> : valeur {s.declared.value} €.</span> : null}
                             {s.declared.note && <div className="mt-0.5 italic">« {s.declared.note} »</div>}
                             {s.declared.files.length > 0 && (
                               <div className="mt-1 flex flex-wrap gap-1.5">

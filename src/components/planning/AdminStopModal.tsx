@@ -69,6 +69,14 @@ export default function AdminStopModal({ stop, cityId, date, current = "todo", m
           if (Math.abs(saved - auto) > 0.01) setValueOverride(String(Math.round(saved * 100) / 100));
         }
       }
+      // le partenaire a déclaré son don depuis son lien : poids et valeur totale pré-remplis (à revalider ou corriger)
+      if (isPickup && current !== "collecte") {
+        let dec = await supabase.from("partner_declarations").select("items,value").eq("collecte_id", stop.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+        if (dec.error) dec = (await supabase.from("partner_declarations").select("items").eq("collecte_id", stop.id).order("created_at", { ascending: false }).limit(1).maybeSingle()) as typeof dec; // avant la migration 089
+        const d = dec.data as { items?: { denree: string; kg: number }[] | null; value?: number | string | null } | null;
+        if (d?.items?.length) setRows(d.items.map((i) => ({ denree: i.denree, note: "", sub: "", qty: String(i.kg) })));
+        if (d?.value && Number(d.value) > 0) setValueOverride(String(Math.round(Number(d.value) * 100) / 100));
+      }
       if (stockIn) {
         const mv = await supabase.from("collectes").select("stock_movement_id").eq("id", stop.id).maybeSingle();
         setMovementId((mv.data as { stock_movement_id: string | null } | null)?.stock_movement_id ?? null);
