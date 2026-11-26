@@ -17,6 +17,7 @@ import PartnerValuation from "@/components/partner/PartnerValuation";
 import PartnerLinks from "@/components/partner/PartnerLinks";
 import SupportQrCard from "@/components/partner/SupportQrCard";
 import DeclareDonButton from "@/components/partner/DeclareDonButton";
+import BigBlock from "@/components/partner/BigBlock";
 import { formatCreneaux, type Creneaux } from "@/lib/creneaux";
 import { CERFA_FREQUENCIES, cerfaFrequencyOf, type CerfaFrequency } from "@/lib/cerfa";
 import LinkeeLogo from "@/components/LinkeeLogo";
@@ -835,6 +836,18 @@ export default function EspacePartenairePage() {
             <div>
               <PanelHead title="Mon activité" sub="Vos prochaines collectes, votre historique et votre tableau de bord." />
               <SupportQrCard key={site.id} partnerId={site.id} name={site.name} logoUrl={site.logo} />
+              <BigBlock
+                title="Demande exceptionnelle"
+                sub="Un volume en plus, hors de votre créneau habituel ? Demandez-le ici."
+                icon="📅"
+                color="#7c5cd9"
+                badge={requests.filter((r) => r.site === siteKey).length > 0 ? `${requests.filter((r) => r.site === siteKey).length} en cours` : undefined}
+                defaultOpen={requests.filter((r) => r.site === siteKey).length > 0}
+              >
+                {requests.filter((r) => r.site === siteKey).map((r, i) => <CollectRow key={"r" + i} req date={r.date} time={r.time} note={`${r.denree} · ${r.volume || "?"} kg estimés`} badge="Demande client" />)}
+                <ExcForm key={siteKey} siteName={site.name} onSubmit={addRequest} pro={site.benevoleOnly} />
+                {site.benevoleOnly && <AntenneContactNote cityId={site.cityId} />}
+              </BigBlock>
               <Card locked title="Informations de collecte" icon={LOCK} tag="Défini par Linkee" note="Ces informations sont renseignées par votre référent Linkee — contactez-le pour toute mise à jour.">
                 <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
                   <Info label="Créneau habituel" value={site.adminInfo.slot} />
@@ -850,12 +863,6 @@ export default function EspacePartenairePage() {
                 </div>
                 {site.adminInfo.comment && <div className="mt-3.5 rounded-xl border border-dashed border-[var(--border)] bg-[var(--input-bg)] px-[13px] py-[11px] text-xs leading-[1.5] text-[var(--slate)]">{site.adminInfo.comment}</div>}
               </Card>
-              <Card title="Demande exceptionnelle" icon={CAL} note="Un volume en plus, hors de votre créneau habituel ? Demandez-le ici. Vos prochaines collectes sont dans « Mon activité » ci-dessous.">
-                {requests.filter((r) => r.site === siteKey).map((r, i) => <CollectRow key={"r" + i} req date={r.date} time={r.time} note={`${r.denree} · ${r.volume || "?"} kg estimés`} badge="Demande client" />)}
-                <ExcForm key={siteKey} siteName={site.name} onSubmit={addRequest} pro={site.benevoleOnly} />
-                {site.benevoleOnly && <AntenneContactNote cityId={site.cityId} />}
-              </Card>
-              <DeclareDonButton key={"don" + site.id} partnerId={site.id} />
               {siteKey && <EntityActivity key={siteKey} kind="partner" id={siteKey} />}
               <div className="mt-8 mb-3.5 flex items-center gap-3.5">
                 <h2 className="font-display text-[20px] font-black whitespace-nowrap text-[var(--navy)]">Tableau de bord</h2>
