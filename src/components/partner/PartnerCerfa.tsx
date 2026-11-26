@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import PartnerDocuments from "@/components/partner/PartnerDocuments";
 import {
   CERFA_REQUEST_SELECT,
+  CERFA_REQUEST_SELECT_BASE,
   CERFA_STATUS_LABEL,
   CERFA_STATUS_STYLE,
   cerfaDocNames,
@@ -27,7 +28,11 @@ export default function PartnerCerfa({ partnerId }: { partnerId: string }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const fetchRequests = () => supabase.from("cerfa_requests").select(CERFA_REQUEST_SELECT).eq("partner_id", partnerId).order("created_at", { ascending: false });
+  const fetchRequests = async () => {
+    const r = await supabase.from("cerfa_requests").select(CERFA_REQUEST_SELECT).eq("partner_id", partnerId).order("created_at", { ascending: false });
+    if (!r.error) return r;
+    return await supabase.from("cerfa_requests").select(CERFA_REQUEST_SELECT_BASE).eq("partner_id", partnerId).order("created_at", { ascending: false }); // avant la migration 087
+  };
   function apply({ data, error }: Awaited<ReturnType<typeof fetchRequests>>) {
     if (error) return setMsg({ ok: false, text: "Chargement des demandes impossible : " + error.message + " (la migration 044 est-elle passée ?)" });
     setRequests((data ?? []) as unknown as CerfaRequestRow[]);
@@ -110,13 +115,17 @@ export default function PartnerCerfa({ partnerId }: { partnerId: string }) {
                 <div key={r.id} className="rounded-xl border border-[var(--border)] bg-[var(--input-bg)] px-3.5 py-3">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span className="text-[13px] font-bold text-[var(--navy)]">{fmtEuro(r.total_value)}</span>
-                    <span className="text-[11.5px] text-[var(--slate)]">demandé le {fmtDay(r.created_at)}</span>
+                    <span className="text-[11.5px] text-[var(--slate)]">{r.auto && r.period_start && r.period_end ? `préparé automatiquement · du ${new Date(r.period_start + "T12:00:00").toLocaleDateString("fr-FR")} au ${new Date(r.period_end + "T12:00:00").toLocaleDateString("fr-FR")}` : `demandé le ${fmtDay(r.created_at)}`}</span>
                     <span className="flex-1" />
                     <span className="rounded-[40px] px-2.5 py-1 text-[10.5px] font-bold uppercase" style={{ background: st.bg, color: st.fg }}>{CERFA_STATUS_LABEL[r.status]}</span>
                   </div>
-                  <div className="mt-1 truncate text-[11.5px] text-[var(--slate)]" title={names.join(", ")}>
-                    {names.length} document{names.length > 1 ? "s" : ""} : {names.join(", ")}
-                  </div>
+                  {r.auto ? (
+                    <div className="mt-1 text-[11.5px] text-[var(--slate)]">Calculé à partir de vos collectes de la période, validées par Linkee.</div>
+                  ) : (
+                    <div className="mt-1 truncate text-[11.5px] text-[var(--slate)]" title={names.join(", ")}>
+                      {names.length} document{names.length > 1 ? "s" : ""} : {names.join(", ")}
+                    </div>
+                  )}
                   {r.status === "refusee" && (
                     <div className="mt-2 rounded-lg bg-[var(--critical-bg)] px-3 py-2 text-[12px] text-[var(--critical)]">
                       <strong>Motif du refus :</strong> {r.refusal_comment}

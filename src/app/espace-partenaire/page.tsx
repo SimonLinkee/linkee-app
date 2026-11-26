@@ -962,7 +962,7 @@ export default function EspacePartenairePage() {
                 </div>
               </Card>
 
-              <Card title="Reçus fiscaux (Cerfa)" icon={DOC} note="À quelle fréquence souhaitez-vous recevoir un reçu fiscal ? Aucune demande n'est créée automatiquement : c'est vous qui la lancez depuis « Mes documents ». Ce choix sert seulement à vous rappeler quand une demande est attendue.">
+              <Card title="Reçus fiscaux (Cerfa)" icon={DOC} note="À quelle fréquence souhaitez-vous recevoir un reçu fiscal ? Avec une fréquence mensuelle, trimestrielle ou annuelle, votre reçu est préparé automatiquement à la fin de chaque période, puis vous le recevez par mail dès qu'il est émis. Tant que la fréquence est « inconnue », votre référent Linkee la définit avec vous.">
                 <label className={labelCls}>Fréquence d&apos;émission</label>
                 <select className={fieldCls} value={cerfaFrequencyOf(site.fiche)} onChange={(e) => patch({ cerfaFrequency: e.target.value as CerfaFrequency })}>
                   {CERFA_FREQUENCIES.map((f) => <option key={f.k} value={f.k}>{f.l}</option>)}

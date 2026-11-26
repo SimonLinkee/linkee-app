@@ -1,17 +1,21 @@
 // Reçus fiscaux (Cerfa) : vocabulaire partagé entre l'espace partenaire, la fiche admin et la page Comptabilité.
 
-export type CerfaFrequency = "ponctuel" | "mensuel" | "trimestriel" | "annuel";
+export type CerfaFrequency = "inconnu" | "ponctuel" | "mensuel" | "trimestriel" | "annuel";
 export const CERFA_FREQUENCIES: { k: CerfaFrequency; l: string }[] = [
+  { k: "inconnu", l: "Inconnue (à définir avec le partenaire)" },
   { k: "ponctuel", l: "Ponctuel" },
   { k: "mensuel", l: "Mensuel" },
   { k: "trimestriel", l: "Trimestriel" },
   { k: "annuel", l: "Annuel" },
 ];
 
-/** Fréquence d'émission d'une fiche partenaire (clé "cerfaFrequency" du jsonb) ; "ponctuel" par défaut. */
+/** Une fréquence qui déclenche la création automatique des demandes de Cerfa (mois, trimestre, année civils). */
+export const isAutoFrequency = (f: CerfaFrequency) => f === "mensuel" || f === "trimestriel" || f === "annuel";
+
+/** Fréquence d'émission d'une fiche partenaire (clé "cerfaFrequency" du jsonb) ; « inconnue » tant qu'elle n'est pas définie avec le partenaire. */
 export function cerfaFrequencyOf(fiche: Record<string, unknown> | null | undefined): CerfaFrequency {
   const v = fiche?.cerfaFrequency;
-  return CERFA_FREQUENCIES.some((f) => f.k === v) ? (v as CerfaFrequency) : "ponctuel";
+  return CERFA_FREQUENCIES.some((f) => f.k === v) ? (v as CerfaFrequency) : "inconnu";
 }
 
 export type CerfaStatus = "soumise" | "validee" | "emise" | "refusee";
@@ -39,9 +43,13 @@ export type CerfaRequestRow = {
   issued_at: string | null;
   cerfa_path: string | null;
   cerfa_name: string | null;
+  period_start?: string | null; // demande automatique (migration 087)
+  period_end?: string | null;
+  auto?: boolean;
   cerfa_request_documents: { document_id: string; active: boolean; documents: { name: string } | { name: string }[] | null }[] | null;
 };
-export const CERFA_REQUEST_SELECT = "id,partner_id,total_value,status,refusal_comment,created_at,issued_at,cerfa_path,cerfa_name,cerfa_request_documents(document_id,active,documents(name))";
+export const CERFA_REQUEST_SELECT_BASE = "id,partner_id,total_value,status,refusal_comment,created_at,issued_at,cerfa_path,cerfa_name,cerfa_request_documents(document_id,active,documents(name))";
+export const CERFA_REQUEST_SELECT = CERFA_REQUEST_SELECT_BASE + ",period_start,period_end,auto";
 
 export const cerfaDocNames = (r: CerfaRequestRow): string[] =>
   (r.cerfa_request_documents ?? []).map((d) => (Array.isArray(d.documents) ? d.documents[0]?.name : d.documents?.name) ?? "Document");
@@ -56,8 +64,6 @@ export async function openCerfa(supabase: import("@supabase/supabase-js").Supaba
 }
 
 /* ---------- Envoi des Cerfa par mail (migration 064) ---------- */
-
-export const CERFA_SEND_DAY_DEFAULT = 10; // jour du mois d'envoi automatique, si rien n'est réglé sur la fiche
 
 type FicheContact = { type?: string; nom?: string; mail?: string };
 export type CerfaRecipient = { email: string; label: string };
@@ -82,12 +88,10 @@ export function cerfaRecipients(fiche: Record<string, unknown> | null | undefine
   return out;
 }
 
-/** Réglage d'envoi automatique d'une fiche : activé par défaut dès qu'il y a une fréquence (mensuel, trimestriel, annuel), sauf si désactivé. */
-export function cerfaAutoSendOf(fiche: Record<string, unknown> | null | undefined): { enabled: boolean; day: number; to: string } {
-  const freq = cerfaFrequencyOf(fiche);
+/** Réglage d'envoi automatique d'une fiche : le Cerfa part par mail dès que la comptabilité l'a déposé. Activé par défaut pour une fréquence mensuelle, trimestrielle ou annuelle, sauf si désactivé. */
+export function cerfaAutoSendOf(fiche: Record<string, unknown> | null | undefined): { enabled: boolean; to: string } {
   const explicit = fiche?.cerfaAutoSend;
-  const day = Math.min(28, Math.max(1, Number(fiche?.cerfaSendDay) || CERFA_SEND_DAY_DEFAULT));
-  return { enabled: freq !== "ponctuel" && explicit !== false, day, to: typeof fiche?.cerfaSendTo === "string" ? fiche.cerfaSendTo : "" };
+  return { enabled: isAutoFrequency(cerfaFrequencyOf(fiche)) && explicit !== false, to: typeof fiche?.cerfaSendTo === "string" ? fiche.cerfaSendTo : "" };
 }
 
 /** Adresse choisie pour l'envoi : celle de la fiche si elle est valide, sinon le premier contact administratif disponible. */
@@ -95,28 +99,6 @@ export function cerfaDefaultRecipient(fiche: Record<string, unknown> | null | un
   const all = cerfaRecipients(fiche);
   const wanted = cerfaAutoSendOf(fiche).to;
   return all.find((r) => wanted && r.email.toLowerCase() === wanted.toLowerCase()) ?? all[0] ?? null;
-}
-
-const ymd = (y: number, m: number, d: number) => `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-
-/**
- * Prochaine échéance d'envoi automatique, à partir de la date d'émission (AAAA-MM-JJ) :
- * mensuel = le « jour d'envoi » de chaque mois · trimestriel = ce jour en janvier, avril, juillet, octobre · annuel = ce jour en janvier.
- * C'est la première échéance qui tombe le jour de l'émission ou après. « Ponctuel » : jamais d'envoi automatique (null).
- */
-export function nextCerfaDue(issuedYmd: string, freq: CerfaFrequency, day: number): string | null {
-  if (freq === "ponctuel") return null;
-  const [y0, m0] = issuedYmd.split("-").map(Number);
-  const d = Math.min(28, Math.max(1, day));
-  const months = freq === "mensuel" ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] : freq === "trimestriel" ? [0, 3, 6, 9] : [0];
-  for (let y = y0; y <= y0 + 2; y++) {
-    for (const m of months) {
-      if (y === y0 && m < m0 - 1) continue;
-      const cand = ymd(y, m, d);
-      if (cand >= issuedYmd) return cand;
-    }
-  }
-  return null;
 }
 
 /** Date AAAA-MM-JJ à Paris d'un instant (émission, jour courant). */

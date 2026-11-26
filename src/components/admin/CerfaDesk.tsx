@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useCity } from "@/components/admin/CityContext";
 import { isSuper } from "@/lib/roles";
 import { openDocument } from "@/lib/documents";
-import { CERFA_STATUS_LABEL, CERFA_STATUS_STYLE, cerfaAutoSendOf, cerfaDefaultRecipient, cerfaFrequencyOf, cerfaRecipients, defaultCerfaMessage, fmtEuro, fmtLongDate, isEmail, nextCerfaDue, openCerfa, parisYmd, type CerfaMailRow, type CerfaRecipient, type CerfaStatus } from "@/lib/cerfa";
+import { CERFA_STATUS_LABEL, CERFA_STATUS_STYLE, cerfaAutoSendOf, cerfaDefaultRecipient, cerfaRecipients, defaultCerfaMessage, fmtEuro, fmtLongDate, isEmail, openCerfa, type CerfaMailRow, type CerfaRecipient, type CerfaStatus } from "@/lib/cerfa";
 
 type Rel<T> = T | T[] | null;
 type Row = {
@@ -19,11 +19,20 @@ type Row = {
   issued_at: string | null;
   cerfa_path: string | null;
   cerfa_name: string | null;
+  period_start?: string | null; // demande automatique (migration 087) : la période couverte
+  period_end?: string | null;
+  auto?: boolean;
+  cerfa_request_collectes?: { value: number | string; active: boolean; collectes: Rel<{ scheduled_date: string }> }[] | null;
   partners: Rel<{ name: string; fiche: Record<string, unknown> | null }>;
   cities: Rel<{ name: string }>;
   cerfa_request_documents: { document_id: string; documents: Rel<{ name: string; storage_path: string }> }[] | null;
 };
-const SELECT = "id,partner_id,city_id,total_value,status,refusal_comment,created_at,issued_at,cerfa_path,cerfa_name,partners(name,fiche),cities(name),cerfa_request_documents(document_id,documents(name,storage_path))";
+const SELECT_BASE = "id,partner_id,city_id,total_value,status,refusal_comment,created_at,issued_at,cerfa_path,cerfa_name,partners(name,fiche),cities(name),cerfa_request_documents(document_id,documents(name,storage_path))";
+const SELECT = SELECT_BASE + ",period_start,period_end,auto,cerfa_request_collectes(value,active,collectes(scheduled_date))";
+
+// Périodes qui attendent des valeurs avant de créer leur Cerfa automatique (migration 087)
+type Waiting = { partner_id: string; city_id: string; period_start: string; period_end: string; missing: { collecte_id: string; date: string; reason: string }[]; partners: Rel<{ name: string }> };
+const REASON_LABEL: Record<string, string> = { non_saisie: "collecte non renseignée", sans_ligne: "aucune ligne de poids", valeur_manquante: "valeur manquante" };
 
 type Late = { partner_id: string; partner_name: string; city_id: string; frequency: string; period_start: string; period_end: string; due_date: string; doc_count: number };
 
@@ -72,6 +81,7 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
   const [refusing, setRefusing] = useState<{ id: string; comment: string } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [late, setLate] = useState<Late[]>([]);
+  const [waiting, setWaiting] = useState<Waiting[]>([]);
   const [mails, setMails] = useState<CerfaMailRow[]>([]);
   const [mailDlg, setMailDlg] = useState<{ row: Row; to: string; custom: boolean; message: string; options: CerfaRecipient[]; busy: boolean; error: string | null } | null>(null);
   const [cityNames, setCityNames] = useState<Record<string, string>>({});
@@ -79,7 +89,11 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const lateBox = useRef<HTMLDivElement>(null);
 
-  const fetchRows = () => supabase.from("cerfa_requests").select(SELECT).order("created_at", { ascending: false }).limit(2000);
+  const fetchRows = async () => {
+    const r = await supabase.from("cerfa_requests").select(SELECT).order("created_at", { ascending: false }).limit(2000);
+    if (!r.error) return r;
+    return await supabase.from("cerfa_requests").select(SELECT_BASE).order("created_at", { ascending: false }).limit(2000); // avant la migration 087
+  };
   function apply({ data, error }: Awaited<ReturnType<typeof fetchRows>>) {
     if (error) setMsg({ ok: false, text: "Chargement impossible : " + error.message + " (la migration 044 est-elle passée ?)" });
     else setRows((data ?? []) as unknown as Row[]);
@@ -88,6 +102,7 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
   useEffect(() => {
     fetchRows().then(apply);
     supabase.rpc("cerfa_late_partners").then(({ data }) => setLate((data ?? []) as Late[]));
+    supabase.from("cerfa_periods").select("partner_id,city_id,period_start,period_end,missing,partners(name)").eq("status", "attente").order("period_start").then(({ data, error }) => !error && setWaiting((data ?? []) as unknown as Waiting[]));
     loadMails();
     supabase.from("cities").select("id,name").then(({ data }) => setCityNames(Object.fromEntries((data ?? []).map((c) => [c.id as string, c.name as string]))));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -98,6 +113,7 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
   const cityId = isAll ? pickedCity : (headerCity ?? "");
   const inScope = useMemo(() => (isAll ? rows : rows.filter((r) => r.city_id === headerCity)), [rows, isAll, headerCity]);
   const lateScoped = isAll ? late : late.filter((l) => l.city_id === headerCity);
+  const waitingScoped = isAll ? waiting : waiting.filter((w) => w.city_id === headerCity);
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
   const toValidate = inScope.filter((r) => r.status === "soumise").length;
   const toProcess = inScope.filter((r) => r.status === "validee").length;
@@ -150,6 +166,14 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
       return setMsg({ ok: false, text: error.message });
     }
     setMsg({ ok: true, text: "Cerfa téléversé : le partenaire le retrouve dans « Mes Cerfa »." });
+    // envoi par mail tout de suite (si la fiche du partenaire l'autorise) ; en cas d'échec, un nouvel essai part chaque matin
+    if (cerfaAutoSendOf(first(row.partners)?.fiche ?? null).enabled) {
+      const res = await fetch("/api/cerfa/send-auto", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId: row.id }) }).catch(() => null);
+      const j = res ? await res.json().catch(() => ({})) : {};
+      setMsg(res?.ok && j.sent
+        ? { ok: true, text: `Cerfa téléversé et envoyé par mail à ${j.to}.` }
+        : { ok: false, text: "Cerfa téléversé, mais l'envoi par mail n'a pas abouti : " + (j.error ?? "réseau indisponible") + ". Un nouvel essai part chaque matin ; tu peux aussi l'envoyer à la main depuis la ligne." });
+    }
     apply(await fetchRows());
   }
 
@@ -199,6 +223,34 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
         {canIssue && !compact && <Counter label="En retard" value={lateScoped.length} sub="partenaires sans demande" onClick={() => lateBox.current?.scrollIntoView({ behavior: "smooth" })} />}
         <Counter label={compact ? "Émis (mois)" : "Émis ce mois-ci"} value={issuedThisMonth} sub={compact ? "" : "Cerfa téléversés"} onClick={() => setStatus("emise")} active={status === "emise"} />
       </div>
+
+      {!compact && waitingScoped.length > 0 && (
+        <div className="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 shadow-[var(--shadow)]">
+          <h2 className="font-display text-[16px] font-black text-[var(--navy)]">Cerfa automatiques en attente de valeurs ({waitingScoped.length})</h2>
+          <p className="mb-2.5 text-[11.5px] text-[var(--slate)]">Le Cerfa d&apos;une période n&apos;est créé que lorsque toutes ses collectes sont renseignées et valorisées. Complète-les dans le Planning (« Compléter les infos ») : la demande apparaît toute seule le lendemain matin.</p>
+          <div className="flex flex-col gap-1.5">
+            {waitingScoped.map((w) => {
+              const by: Record<string, string[]> = {};
+              for (const m of w.missing) (by[m.reason] ??= []).push(new Date(m.date + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" }));
+              return (
+                <details key={w.partner_id + w.period_start} className="rounded-xl bg-[var(--input-bg)] px-3.5 py-2.5 text-[12.5px]">
+                  <summary className="flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-1">
+                    <span className="min-w-[150px] flex-1 font-bold text-[var(--navy)]">{first(w.partners)?.name ?? "Partenaire"}</span>
+                    <span className="text-[var(--slate)]">{cityNames[w.city_id] ?? ""}</span>
+                    <span className="text-[var(--slate)]">du {new Date(w.period_start + "T12:00:00").toLocaleDateString("fr-FR")} au {new Date(w.period_end + "T12:00:00").toLocaleDateString("fr-FR")}</span>
+                    <span className="font-semibold text-[var(--warn)]">{w.missing.length} collecte{w.missing.length > 1 ? "s" : ""} à compléter</span>
+                  </summary>
+                  <ul className="mt-1.5 ml-4 list-disc text-[var(--slate)]">
+                    {Object.entries(by).map(([reason, dates]) => (
+                      <li key={reason}>{REASON_LABEL[reason] ?? reason} : {dates.join(", ")}</li>
+                    ))}
+                  </ul>
+                </details>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {canIssue && !compact && lateScoped.length > 0 && (
         <div ref={lateBox} className="mb-5 rounded-2xl border border-[var(--warn)] bg-[var(--warn-bg)] p-4">
@@ -305,7 +357,7 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                   <span className="font-display text-[16px] font-black text-[var(--navy)]">{first(r.partners)?.name ?? "Partenaire"}</span>
                   <span className="text-[12px] font-semibold text-[var(--slate)]">{first(r.cities)?.name ?? ""}</span>
-                  <span className="text-[12px] text-[var(--slate)]">demandé le {fmtDay(r.created_at)}</span>
+                  {r.auto && r.period_start && r.period_end ? <span className="rounded-[40px] bg-[var(--turq-bg,#e3f5f9)] px-2.5 py-0.5 text-[11.5px] font-semibold text-[#0e6b7a]">Automatique · du {new Date(r.period_start + "T12:00:00").toLocaleDateString("fr-FR")} au {new Date(r.period_end + "T12:00:00").toLocaleDateString("fr-FR")}</span> : <span className="text-[12px] text-[var(--slate)]">demandé le {fmtDay(r.created_at)}</span>}
                   <span className="flex-1" />
                   <span className="font-display text-[16px] font-black text-[var(--navy)]">{fmtEuro(r.total_value)}</span>
                   <span className="rounded-[40px] px-2.5 py-1 text-[10.5px] font-bold uppercase" style={{ background: st.bg, color: st.fg }}>{CERFA_STATUS_LABEL[r.status]}</span>
@@ -319,6 +371,18 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
                   ))}
                 </div>
 
+                {r.auto && (r.cerfa_request_collectes ?? []).length > 0 && (
+                  <details className="mt-2 text-[12px]">
+                    <summary className="cursor-pointer text-[var(--slate)]">Récapitulatif : {(r.cerfa_request_collectes ?? []).length} collecte{(r.cerfa_request_collectes ?? []).length > 1 ? "s" : ""} de la période</summary>
+                    <ul className="mt-1 ml-4 list-disc text-[var(--slate)]">
+                      {[...(r.cerfa_request_collectes ?? [])]
+                        .sort((a, b) => (first(a.collectes)?.scheduled_date ?? "").localeCompare(first(b.collectes)?.scheduled_date ?? ""))
+                        .map((c, i) => (
+                          <li key={i}>{first(c.collectes)?.scheduled_date ? new Date(first(c.collectes)!.scheduled_date + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "long" }) : "Collecte"} · {fmtEuro(c.value)}</li>
+                        ))}
+                    </ul>
+                  </details>
+                )}
                 {r.status === "refusee" && r.refusal_comment && (
                   <div className="mt-2.5 rounded-lg bg-[var(--critical-bg)] px-3 py-2 text-[12px] text-[var(--critical)]"><strong>Motif du refus :</strong> {r.refusal_comment}</div>
                 )}
@@ -353,19 +417,18 @@ export default function CerfaDesk({ compact = false }: { compact?: boolean }) {
                   const lastOk = ml.find((m) => m.status === "envoye");
                   const lastErr = ml[0]?.status === "erreur" ? ml[0] : null;
                   const auto = cerfaAutoSendOf(fiche);
-                  const due = !lastOk && auto.enabled && r.issued_at ? nextCerfaDue(parisYmd(r.issued_at), cerfaFrequencyOf(fiche), auto.day) : null;
                   const dest = cerfaDefaultRecipient(fiche);
                   const when = (iso: string) => new Date(iso).toLocaleString("fr-FR", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" });
                   return (
                     <div className="mt-2.5 text-[12px]">
                       {lastOk ? (
                         <span className="inline-block rounded-[40px] bg-[rgba(42,120,214,.14)] px-2.5 py-1 font-semibold text-[#2a78d6]">✉ Envoyé le {when(lastOk.sent_at)} à {lastOk.to_email}{lastOk.mode === "auto" ? " (envoi automatique)" : ""}</span>
-                      ) : due ? (
+                      ) : auto.enabled ? (
                         <span className={dest ? "text-[var(--slate)]" : "font-semibold text-[var(--critical)]"}>
-                          ✉ Envoi automatique prévu le <strong>{fmtLongDate(due)}</strong>{dest ? <> à {dest.email}</> : " — mais aucune adresse e-mail n'est renseignée sur la fiche du partenaire"}.
+                          ✉ Envoi automatique dès l&apos;émission{dest ? <> à {dest.email}</> : " — mais aucune adresse e-mail n'est renseignée sur la fiche du partenaire"} (nouvel essai chaque matin en cas d&apos;échec).
                         </span>
                       ) : (
-                        <span className="text-[var(--slate)]">✉ Pas encore envoyé par mail{cerfaFrequencyOf(fiche) === "ponctuel" ? " (partenaire ponctuel : envoi à la main)" : auto.enabled ? "" : " (envoi automatique désactivé)"}.</span>
+                        <span className="text-[var(--slate)]">✉ Pas encore envoyé par mail (envoi à la main, ou périodicité non automatique sur la fiche du partenaire).</span>
                       )}
                       {lastErr && <div className="mt-1 font-semibold text-[var(--critical)]">Dernier essai en échec ({when(lastErr.sent_at)}) : {lastErr.error}</div>}
                       {ml.length > 0 && (

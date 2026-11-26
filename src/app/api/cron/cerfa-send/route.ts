@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { adminClient, mailConfigured, sendCerfaMail } from "@/lib/cerfaMail";
-import { cerfaAutoSendOf, cerfaDefaultRecipient, cerfaFrequencyOf, nextCerfaDue, parisYmd } from "@/lib/cerfa";
+import { cerfaAutoSendOf, cerfaDefaultRecipient, parisYmd } from "@/lib/cerfa";
 
 export const dynamic = "force-dynamic";
 
-// Appelée chaque matin par Vercel Cron (voir vercel.json) : envoie par mail les Cerfa ÉMIS dont l'échéance d'envoi est arrivée
-// (réglage « envoi automatique » de la fiche partenaire : fréquence + jour d'envoi). Un Cerfa déjà envoyé (à la main ou
+// Appelée chaque matin par Vercel Cron (voir vercel.json) : filet de sécurité de l'envoi automatique. Le Cerfa part normalement
+// tout de suite, au moment où la comptabilité le dépose (/api/cerfa/send-auto) ; ici on réessaie ceux émis depuis moins de 3 jours
+// qui n'ont pas pu partir (adresse manquante corrigée depuis, panne du service de mail…). Un Cerfa déjà envoyé (à la main ou
 // automatiquement) n'est jamais renvoyé. Vercel envoie « Authorization: Bearer <CRON_SECRET> ».
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -15,7 +16,7 @@ export async function GET(request: Request) {
   if (!mailConfigured()) return NextResponse.json({ skipped: "envoi de mails non configuré (RESEND_API_KEY / MAIL_FROM)" });
 
   const today = parisYmd(new Date());
-  const { data: reqs, error } = await admin.from("cerfa_requests").select("id,issued_at,partners(fiche)").eq("status", "emise").not("cerfa_path", "is", null).order("issued_at").limit(500);
+  const { data: reqs, error } = await admin.from("cerfa_requests").select("id,issued_at,partners(fiche)").eq("status", "emise").not("cerfa_path", "is", null).gte("issued_at", new Date(Date.now() - 3 * 86400000).toISOString()).order("issued_at").limit(500);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const ids = (reqs ?? []).map((r) => r.id as string);
   const { data: logs } = ids.length ? await admin.from("cerfa_mails").select("request_id,status,sent_at").in("request_id", ids) : { data: [] };
@@ -29,8 +30,6 @@ export async function GET(request: Request) {
     const fiche = (Array.isArray(r.partners) ? r.partners[0] : r.partners)?.fiche ?? null;
     const auto = cerfaAutoSendOf(fiche);
     if (!auto.enabled) { skipped++; continue; }
-    const due = nextCerfaDue(parisYmd(r.issued_at), cerfaFrequencyOf(fiche), auto.day);
-    if (!due || due > today) { skipped++; continue; }
     const to = cerfaDefaultRecipient(fiche);
     if (!to) {
       await admin.from("cerfa_mails").insert({ request_id: r.id, to_email: "-", mode: "auto", status: "erreur", error: "Aucune adresse e-mail disponible sur la fiche du partenaire." });
