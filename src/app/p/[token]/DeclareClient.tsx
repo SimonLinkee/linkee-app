@@ -45,7 +45,10 @@ export default function DeclareClient({ token }: { token: string }) {
         const j = await r.json().catch(() => ({}));
         if (off) return;
         if (!r.ok) setError(j.error ?? "Ce lien n'est pas valable.");
-        else setInfo(j as Info);
+        else {
+          setInfo(j as Info);
+          if (window.location.hash === "#don") setView("don"); // lien direct depuis l'espace du partenaire
+        }
       })
       .catch(() => !off && setError("Impossible de charger la page. Vérifiez votre connexion."));
     return () => {
