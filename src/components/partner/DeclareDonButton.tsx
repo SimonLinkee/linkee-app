@@ -27,14 +27,14 @@ export default function DeclareDonButton({ partnerId }: { partnerId: string }) {
       href={`/p/${token}#don`}
       target="_blank"
       rel="noopener noreferrer"
-      className="mb-4 flex min-h-[64px] items-center gap-3.5 rounded-[18px] bg-[var(--navy-deep)] px-5 py-3.5 text-[var(--panel-fg)] shadow-[var(--shadow)]"
+      className="mb-5 flex min-h-[84px] items-center gap-4 rounded-[20px] bg-[#eb6834] px-6 py-4 text-white shadow-[0_10px_24px_-10px_rgba(235,104,52,0.8)] hover:brightness-95"
     >
-      <span className="flex h-[42px] w-[42px] flex-none items-center justify-center rounded-full bg-white/20 text-[21px]">📦</span>
+      <span className="flex h-[52px] w-[52px] flex-none items-center justify-center rounded-full bg-white/25 text-[26px]">📦</span>
       <span className="flex-1">
-        <strong className="block font-display text-[17px]">Déclarer un don</strong>
-        <span className="text-[12.5px] opacity-90">Types de produits, poids, valeur du don, bon de livraison : en une minute, sans compte.</span>
+        <strong className="block font-display text-[24px] leading-tight">Déclarer un don</strong>
+        <span className="text-[13px] opacity-95">Types de produits, poids, valeur du don, bon de livraison : en une minute, sans compte.</span>
       </span>
-      <span className="text-[20px]" aria-hidden="true">→</span>
+      <span className="text-[26px]" aria-hidden="true">→</span>
     </a>
   );
 }

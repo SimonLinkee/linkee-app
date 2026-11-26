@@ -405,6 +405,24 @@ export default function EspacePartenairePage() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("choice");
   const [tab, setTab] = useState<Tab>("activite");
+  // Espace partenaire : toujours le thème clair (même si le téléphone / l'ordinateur est en mode sombre), sur un fond beige plus soutenu
+  // que les cartes blanches, avec des bordures plus marquées : on distingue bien chaque case.
+  useEffect(() => {
+    const root = document.documentElement;
+    const prevTheme = root.getAttribute("data-theme");
+    const prevBorder = root.style.getPropertyValue("--border");
+    const prevBg = document.body.style.background;
+    root.setAttribute("data-theme", "light");
+    root.style.setProperty("--border", "#d6c4ac");
+    document.body.style.background = "#f1e6d6";
+    return () => {
+      if (prevTheme === null) root.removeAttribute("data-theme");
+      else root.setAttribute("data-theme", prevTheme);
+      if (prevBorder) root.style.setProperty("--border", prevBorder);
+      else root.style.removeProperty("--border");
+      document.body.style.background = prevBg;
+    };
+  }, []);
   const supabase = useMemo(() => createClient(), []);
   const [loading, setLoading] = useState(true);
   const [partnerRows, setPartnerRows] = useState<PartnerRow[]>([]);
@@ -710,6 +728,7 @@ export default function EspacePartenairePage() {
           <button type="button" onClick={logout} className="text-xs font-semibold text-[var(--panel-fg-dim)] hover:text-[var(--panel-fg)]">Déconnexion</button>
         </div>
         <div className="mx-auto max-w-[520px] px-4 pt-[18px] pb-12">
+          <DeclareDonButton key={"don" + site.id} partnerId={site.id} />
           <div className="mb-[18px] flex items-center gap-3">
             <Avatar site={site} size={42} />
             <div>
@@ -774,7 +793,6 @@ export default function EspacePartenairePage() {
     { k: "fiche", l: "Ma fiche", icon: STORE },
     { k: "documents", l: "Mes documents", icon: DOC },
     { k: "valorisation", l: "Valorisation RSE", icon: GRID },
-    { k: "links", l: "Links Bénévoles", icon: LINKS_ICON },
     { k: "remontees", l: "Remontées", icon: CHAT },
   ];
   const maxPct = Math.max(...dash.denrees.map((x) => x.pct), 1);
@@ -816,6 +834,7 @@ export default function EspacePartenairePage() {
           {tab === "activite" && (
             <div>
               <PanelHead title="Mon activité" sub="Vos prochaines collectes, votre historique et votre tableau de bord." />
+              <DeclareDonButton key={"don" + site.id} partnerId={site.id} />
               <SupportQrCard key={site.id} partnerId={site.id} name={site.name} logoUrl={site.logo} />
               <Card locked title="Informations de collecte" icon={LOCK} tag="Défini par Linkee" note="Ces informations sont renseignées par votre référent Linkee — contactez-le pour toute mise à jour.">
                 <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
@@ -832,7 +851,6 @@ export default function EspacePartenairePage() {
                 </div>
                 {site.adminInfo.comment && <div className="mt-3.5 rounded-xl border border-dashed border-[var(--border)] bg-[var(--input-bg)] px-[13px] py-[11px] text-xs leading-[1.5] text-[var(--slate)]">{site.adminInfo.comment}</div>}
               </Card>
-              <DeclareDonButton key={"don" + site.id} partnerId={site.id} />
               <Card title="Demande exceptionnelle" icon={CAL} note="Un volume en plus, hors de votre créneau habituel ? Demandez-le ici. Vos prochaines collectes sont dans « Mon activité » ci-dessous.">
                 {requests.filter((r) => r.site === siteKey).map((r, i) => <CollectRow key={"r" + i} req date={r.date} time={r.time} note={`${r.denree} · ${r.volume || "?"} kg estimés`} badge="Demande client" />)}
                 <ExcForm key={siteKey} siteName={site.name} onSubmit={addRequest} pro={site.benevoleOnly} />

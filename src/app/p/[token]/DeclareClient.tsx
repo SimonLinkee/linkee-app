@@ -62,8 +62,8 @@ export default function DeclareClient({ token }: { token: string }) {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--navy)]">
-      <div className="mx-auto flex min-h-screen max-w-[520px] flex-col bg-[var(--bg)] shadow-[0_0_40px_-20px_rgba(0,0,0,0.3)]">
+    <div className="min-h-screen bg-[#f1e6d6] text-[var(--navy)]">
+      <div className="mx-auto flex min-h-screen max-w-[520px] flex-col bg-[#f1e6d6] shadow-[0_0_40px_-20px_rgba(0,0,0,0.3)]">
         <header className="bg-[var(--navy-deep)] px-5 pt-5 pb-4 text-[var(--panel-fg)]">
           <LinkeeLogo h={26} light />
           {view !== "home" && info && (
