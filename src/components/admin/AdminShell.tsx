@@ -1,7 +1,7 @@
 "use client";
 
 import NotificationPopup from "@/components/NotificationPopup";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { CityProvider, useCity } from "@/components/admin/CityContext";
 import { SidebarV2, TopBarV2 } from "@/components/admin/NavV2";
@@ -14,11 +14,21 @@ function Frame({ children }: { children: ReactNode }) {
   const { ready, isAll, city, cities, select } = useCity();
   const pathname = usePathname();
   const blocked = ready && isAll && CITY_ONLY_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
+  // Espace équipe : toujours le thème clair pour les cases (même si l'ordinateur est en mode sombre), sur un fond bleu moyen (classe theme-c)
+  useEffect(() => {
+    const root = document.documentElement;
+    const prev = root.getAttribute("data-theme");
+    root.setAttribute("data-theme", "light");
+    return () => {
+      if (prev === null) root.removeAttribute("data-theme");
+      else root.setAttribute("data-theme", prev);
+    };
+  }, []);
 
   return (
     <div className="flex min-h-screen">
       <SidebarV2 />
-      <div className="min-w-0 flex-1">
+      <div className="theme-c min-w-0 flex-1">
         {/* thin band in the colour of the city you are browsing */}
         <div className="h-1.5 w-full transition-colors" style={{ background: !ready ? "transparent" : isAll ? "linear-gradient(90deg,#2a78d6,#eb6834,#1baf7a,#B23B72,#7C5CD9)" : (city?.color ?? "transparent") }} />
         {ready && <TopBarV2 />}

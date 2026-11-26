@@ -151,3 +151,27 @@
   .install-jiggle, .install-plus, .install-shine { animation: none; }
   .install-shine { display: none; }
 }
+
+/* ───────── Espace équipe : fond bleu moyen, cases blanches (proposition C) ─────────
+   Posé sur la zone principale de l'espace équipe (classe « theme-c », voir AdminShell).
+   • Sur le fond : le texte et les variables (--navy, --slate…) passent en clair, pour que les titres posés directement sur le bleu restent lisibles.
+   • Dans une case (fond blanc, champ, pastille…) : les variables reviennent aux valeurs foncées ; les textes qui ont leur propre couleur ne changent pas
+     (règle placée dans la couche « components », moins prioritaire que les classes Tailwind). */
+.theme-c {
+  background: #2d4075;
+  color: #f6efe6;
+  --navy: #f6efe6;
+  --slate: #c9d3ea;
+  --muted: #aab7d4;
+  --border: rgba(246, 239, 230, 0.28);
+  --shadow: 0 3px 10px rgba(0, 10, 40, 0.35);
+}
+@layer components {
+  .theme-c :where([class~="bg-[var(--card)]"], [class~="bg-white"], [class~="bg-[var(--input-bg)]"], [class~="bg-[var(--track)]"], [class~="bg-[var(--good-bg)]"], [class~="bg-[var(--critical-bg)]"], [class~="bg-[var(--warn-bg)]"]) {
+    --navy: #001641;
+    --slate: #4d5c7a;
+    --muted: #9aa3b8;
+    --border: #c5cfe3;
+    color: var(--navy);
+  }
+}
