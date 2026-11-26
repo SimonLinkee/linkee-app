@@ -74,7 +74,7 @@ export default function DeclareClient({ token }: { token: string }) {
           <h1 className="mt-2 font-display text-[24px] leading-tight font-black">
             {error ? "Lien non valable" : !info ? "Chargement…" : view === "home" ? `Bonjour, ${info.name}` : view === "exc" ? "Collecte exceptionnelle" : view === "don" ? "Déclarer un don" : "Merci !"}
           </h1>
-          {info && view === "home" && <p className="mt-0.5 text-[13px] opacity-80">Votre espace : pas de compte à créer. Que souhaitez-vous faire ?</p>}
+          {info && view === "home" && <p className="mt-0.5 text-[13px] opacity-80">Pas de compte à créer, rien à installer : choisissez ce que vous souhaitez faire.</p>}
           {info && view === "exc" && <p className="mt-0.5 text-[13px] opacity-80">Dites-nous quand et quoi : votre demande est prise en compte tout de suite.</p>}
           {info && view === "don" && <p className="mt-0.5 text-[13px] opacity-80">Saisissez les quantités, joignez un fichier, ou les deux.</p>}
         </header>
@@ -116,6 +116,31 @@ function Home({ info, go }: { info: Info; go: (v: View) => void }) {
   const days = info.creneaux ? CRENEAUX_DAYS.flatMap((d) => (info.creneaux![d.k] ?? []).map((s) => ({ d: d.l, h: `${hm(s.open)} – ${hm(s.close)}`, p: s.weekParity }))) : [];
   return (
     <>
+      <button type="button" onClick={() => go("don")} className="flex min-h-[84px] items-center gap-4 rounded-[20px] bg-[#eb6834] px-5 py-4 text-left text-white shadow-[0_10px_24px_-10px_rgba(235,104,52,0.8)]">
+        <span className="flex h-[52px] w-[52px] flex-none items-center justify-center rounded-full bg-white/25 text-[26px]">📦</span>
+        <span className="flex-1">
+          <strong className="block font-display text-[22px] leading-tight uppercase">Déclarer un don (Cerfa)</strong>
+          <span className="text-[13px] opacity-95">Types de produits, poids, valeur du don, bon de livraison : en une minute, sans compte.</span>
+        </span>
+        <span className="text-[24px]" aria-hidden="true">→</span>
+      </button>
+      <button type="button" onClick={() => go("exc")} className="flex min-h-[84px] items-center gap-4 rounded-[20px] bg-[#7c5cd9] px-5 py-4 text-left text-white shadow-[0_10px_24px_-10px_rgba(124,92,217,0.8)]">
+        <span className="flex h-[52px] w-[52px] flex-none items-center justify-center rounded-full bg-white/25 text-[26px]">📅</span>
+        <span className="flex-1">
+          <strong className="block font-display text-[22px] leading-tight">Besoin d&apos;une collecte exceptionnelle ?</strong>
+          <span className="text-[13px] opacity-95">Un volume en plus, hors de votre créneau habituel ? Demandez-le ici.</span>
+        </span>
+        <span className="text-[24px]" aria-hidden="true">→</span>
+      </button>
+      {next && (
+        <div className="flex items-center gap-3 rounded-[14px] bg-[#e3f5f9] px-3.5 py-3 text-[14px] text-[#04262e]">
+          <span className="text-[22px]">🚚</span>
+          <div>
+            <b className="block capitalize">Prochaine collecte : {dayLabel(next.date)}</b>
+            {next.time ? <span>vers {hm(next.time)}</span> : <span>horaire à confirmer par l&apos;antenne</span>}
+          </div>
+        </div>
+      )}
       <section className={boxCls}>
         <h2 className="mb-1.5 text-[11px] font-bold tracking-[0.07em] text-[var(--slate)] uppercase">Vos collectes habituelles</h2>
         {days.length > 0 ? (
@@ -137,36 +162,13 @@ function Home({ info, go }: { info: Info; go: (v: View) => void }) {
         {info.denrees.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {info.denrees.map((d) => (
-              <span key={d} className="rounded-[40px] bg-[var(--turquoise-bg,#e3f5f9)] px-3 py-1 text-[12.5px] font-semibold text-[#0e6b7a]">{d}</span>
+              <span key={d} className="rounded-[40px] bg-[#e3f5f9] px-3 py-1 text-[12.5px] font-semibold text-[#0e6b7a]">{d}</span>
             ))}
           </div>
         ) : (
           <p className="text-[14px] text-[var(--slate)]">{info.category ?? "Non renseigné"}</p>
         )}
       </section>
-      {next && (
-        <div className="flex items-center gap-3 rounded-[14px] bg-[#e3f5f9] px-3.5 py-3 text-[14px] text-[#04262e]">
-          <span className="text-[22px]">🚚</span>
-          <div>
-            <b className="block capitalize">Prochaine collecte : {dayLabel(next.date)}</b>
-            {next.time ? <span>vers {hm(next.time)}</span> : <span>horaire à confirmer par l&apos;antenne</span>}
-          </div>
-        </div>
-      )}
-      <button type="button" onClick={() => go("exc")} className="flex min-h-[72px] items-center gap-3.5 rounded-[18px] bg-[#eb6834] px-4 py-3.5 text-left text-white">
-        <span className="flex h-[44px] w-[44px] flex-none items-center justify-center rounded-full bg-white/25 text-[22px]">📅</span>
-        <span>
-          <strong className="block font-display text-[17px]">Un don à nous confier ?</strong>
-          <span className="text-[12.5px] opacity-90">Demandez une collecte exceptionnelle : jour, heure, produits</span>
-        </span>
-      </button>
-      <button type="button" onClick={() => go("don")} className="flex min-h-[72px] items-center gap-3.5 rounded-[18px] bg-[var(--navy-deep)] px-4 py-3.5 text-left text-[var(--panel-fg)]">
-        <span className="flex h-[44px] w-[44px] flex-none items-center justify-center rounded-full bg-white/20 text-[22px]">📦</span>
-        <span>
-          <strong className="block font-display text-[17px]">Un don à déclarer (Cerfa) ?</strong>
-          <span className="text-[12.5px] opacity-90">Déclarez vos quantités ou joignez votre bon de livraison</span>
-        </span>
-      </button>
     </>
   );
 }
