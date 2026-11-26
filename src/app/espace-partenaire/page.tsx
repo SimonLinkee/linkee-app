@@ -405,16 +405,16 @@ export default function EspacePartenairePage() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("choice");
   const [tab, setTab] = useState<Tab>("activite");
-  // Espace partenaire : toujours le thème clair (même si le téléphone / l'ordinateur est en mode sombre), sur un fond beige plus soutenu
-  // que les cartes blanches, avec des bordures plus marquées : on distingue bien chaque case.
+  // Espace partenaire : toujours le thème clair (même si le téléphone / l'ordinateur est en mode sombre), avec un fond de niveau
+  // intermédiaire (bleu-gris doux) sur lequel les cartes blanches ressortent bien, et des bordures plus marquées.
   useEffect(() => {
     const root = document.documentElement;
     const prevTheme = root.getAttribute("data-theme");
     const prevBorder = root.style.getPropertyValue("--border");
     const prevBg = document.body.style.background;
     root.setAttribute("data-theme", "light");
-    root.style.setProperty("--border", "#d6c4ac");
-    document.body.style.background = "#f1e6d6";
+    root.style.setProperty("--border", "#a9b7d1");
+    document.body.style.background = "#c6d1e5";
     return () => {
       if (prevTheme === null) root.removeAttribute("data-theme");
       else root.setAttribute("data-theme", prevTheme);
@@ -834,7 +834,6 @@ export default function EspacePartenairePage() {
           {tab === "activite" && (
             <div>
               <PanelHead title="Mon activité" sub="Vos prochaines collectes, votre historique et votre tableau de bord." />
-              <DeclareDonButton key={"don" + site.id} partnerId={site.id} />
               <SupportQrCard key={site.id} partnerId={site.id} name={site.name} logoUrl={site.logo} />
               <Card locked title="Informations de collecte" icon={LOCK} tag="Défini par Linkee" note="Ces informations sont renseignées par votre référent Linkee — contactez-le pour toute mise à jour.">
                 <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
@@ -856,6 +855,7 @@ export default function EspacePartenairePage() {
                 <ExcForm key={siteKey} siteName={site.name} onSubmit={addRequest} pro={site.benevoleOnly} />
                 {site.benevoleOnly && <AntenneContactNote cityId={site.cityId} />}
               </Card>
+              <DeclareDonButton key={"don" + site.id} partnerId={site.id} />
               {siteKey && <EntityActivity key={siteKey} kind="partner" id={siteKey} />}
               <div className="mt-8 mb-3.5 flex items-center gap-3.5">
                 <h2 className="font-display text-[20px] font-black whitespace-nowrap text-[var(--navy)]">Tableau de bord</h2>

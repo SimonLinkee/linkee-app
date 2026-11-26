@@ -1,27 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { useEffect, useState } from "react";
 import SupportQrButtons from "@/components/partner/SupportQrButtons";
 
 // Dans l'espace du partenaire : son support A4 avec QR code à afficher pour ses équipes (migration 086 : il lit son propre lien).
 export default function SupportQrCard({ partnerId, name, logoUrl }: { partnerId: string; name: string; logoUrl?: string | null }) {
-  const supabase = useMemo(() => createClient(), []);
   const [token, setToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let off = false;
-    supabase
-      .from("partner_links")
-      .select("token,enabled")
-      .eq("partner_id", partnerId)
-      .maybeSingle()
-      .then(({ data }) => !off && setToken(data && (data as { enabled: boolean }).enabled ? (data as { token: string }).token : null));
+    fetch(`/api/partner-link?partnerId=${partnerId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: { token?: string; enabled?: boolean } | null) => !off && setToken(j?.token && j.enabled ? j.token : null))
+      .catch(() => !off && setToken(null));
     return () => {
       off = true;
     };
-  }, [supabase, partnerId]);
+  }, [partnerId]);
 
   if (!token) return null;
   const url = `${window.location.origin}/p/${token}`;
