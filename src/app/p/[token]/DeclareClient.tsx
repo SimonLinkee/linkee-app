@@ -71,7 +71,7 @@ export default function DeclareClient({ token }: { token: string }) {
           <h1 className="mt-2 font-display text-[24px] leading-tight font-black">
             {error ? "Lien non valable" : !info ? "Chargement…" : view === "home" ? `Bonjour, ${info.name}` : view === "exc" ? "Collecte exceptionnelle" : view === "don" ? "Déclarer un don" : "Merci !"}
           </h1>
-          {info && view === "home" && <p className="mt-0.5 text-[13px] opacity-80">Déclarez vos dons en quelques secondes, sans compte.</p>}
+          {info && view === "home" && <p className="mt-0.5 text-[13px] opacity-80">Votre espace : pas de compte à créer. Que souhaitez-vous faire ?</p>}
           {info && view === "exc" && <p className="mt-0.5 text-[13px] opacity-80">Dites-nous quand et quoi : votre demande est prise en compte tout de suite.</p>}
           {info && view === "don" && <p className="mt-0.5 text-[13px] opacity-80">Saisissez les quantités, joignez un fichier, ou les deux.</p>}
         </header>
@@ -153,15 +153,15 @@ function Home({ info, go }: { info: Info; go: (v: View) => void }) {
       <button type="button" onClick={() => go("exc")} className="flex min-h-[72px] items-center gap-3.5 rounded-[18px] bg-[#eb6834] px-4 py-3.5 text-left text-white">
         <span className="flex h-[44px] w-[44px] flex-none items-center justify-center rounded-full bg-white/25 text-[22px]">📅</span>
         <span>
-          <strong className="block font-display text-[17px]">Demander une collecte exceptionnelle</strong>
-          <span className="text-[12.5px] opacity-90">Un jour et une heure qui sortent de l&apos;ordinaire</span>
+          <strong className="block font-display text-[17px]">Un don à nous confier ?</strong>
+          <span className="text-[12.5px] opacity-90">Demandez une collecte exceptionnelle : jour, heure, produits</span>
         </span>
       </button>
       <button type="button" onClick={() => go("don")} className="flex min-h-[72px] items-center gap-3.5 rounded-[18px] bg-[var(--navy-deep)] px-4 py-3.5 text-left text-[var(--panel-fg)]">
         <span className="flex h-[44px] w-[44px] flex-none items-center justify-center rounded-full bg-white/20 text-[22px]">📦</span>
         <span>
-          <strong className="block font-display text-[17px]">Déclarer un don</strong>
-          <span className="text-[12.5px] opacity-90">Quantités, bon de livraison ou fichier Excel</span>
+          <strong className="block font-display text-[17px]">Un don à déclarer (Cerfa) ?</strong>
+          <span className="text-[12.5px] opacity-90">Déclarez vos quantités ou joignez votre bon de livraison</span>
         </span>
       </button>
     </>

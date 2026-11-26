@@ -60,22 +60,23 @@ export async function drawSupport(o: { url: string; name: string; logoUrl?: stri
     ctx.drawImage(linkee, (W - lw) / 2, 70, lw, (linkee.height * lw) / linkee.width);
   }
   text("ANTI-GASPI · COLLECTES · DISTRIBUTIONS", 318, 26, TURQ, true);
-  text("Vous avez un don à nous confier ?", 430, 60, NAVY, true);
-  text("Scannez le QR code pour déclarer votre don", 515, 38, SLATE);
+  text("Un don à nous confier ?", 405, 58, NAVY, true);
+  text("Un don à déclarer (Cerfa) ?", 480, 58, NAVY, true);
+  text("Scannez le QR code pour accéder à votre espace", 566, 36, SLATE);
 
   // le QR code, dans une carte blanche arrondie
   const qs = 640;
   const qr = document.createElement("canvas");
   await QRCode.toCanvas(qr, o.url, { errorCorrectionLevel: "Q", margin: 0, width: qs, color: { dark: NAVY, light: "#ffffff" } });
   const cx = (W - qs) / 2 - 50;
-  roundRect(ctx, cx, 610, qs + 100, qs + 100, 48);
+  roundRect(ctx, cx, 650, qs + 100, qs + 100, 48);
   ctx.fillStyle = "#ffffff";
   ctx.fill();
   ctx.lineWidth = 3;
   ctx.strokeStyle = LINE;
   ctx.stroke();
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(qr, (W - qs) / 2, 660, qs, qs);
+  ctx.drawImage(qr, (W - qs) / 2, 700, qs, qs);
   ctx.imageSmoothingEnabled = true;
 
   text("Aucune application à installer, aucun compte à créer.", 1415, 30, SLATE);
